@@ -1,23 +1,32 @@
-Freeciv
-=======
+### How to compile Freeciv for macOS
 
-[![Build Status](https://travis-ci.org/freeciv/freeciv.svg?branch=master)](https://travis-ci.org/freeciv/freeciv) 
-[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
+1. Edit the file `autogen.sh` and change line \#240 from  
+`real_package_name "libtoolize"  "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 || DIE=1`
+to  
+`real_package_name "glibtoolize" "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 || DIE=1`
 
-Freeciv is a Free and Open Source empire-building strategy game inspired by the history of human civilization. 
- 
-Please see the [doc](doc) directory for a complete list of documentation files.
+2. Open the Terminal and set the `PKG_CONFIG_PATH` to  
+`export PKG_CONFIG_PATH=/usr/local/opt/icu4c/lib/pkgconfig:$PKG_CONFIG_PATH`.
 
-Links
-=====
-Freeciv website: [Freeciv.org](http://www.freeciv.org/) 
+3. From the Terminal, run freeciv's `./autogen.sh` script.
 
-Freeciv-web online version: [play.freeciv.org](https://play.freeciv.org/) 
+4. If `autogen.sh` ends without errors, run `./configure` with the following options
 
-Submit patches: [Hostedredmine](http://www.hostedredmine.com/projects/freeciv/) 
+    `./configure --prefix=$HOME/Development/freeciv/freeciv-app --enable-client=gtk3.22,gtk3,sdl2 --enable-freeciv-manual=html --enable-mapimg=auto --enable-debug=no --enable-static=no`
 
-Community forum: [forum.freeciv.org](http://forum.freeciv.org/) 
+5. When the configuration script ends, run `make` to compile freeciv, and then run `make install` to install the freeciv binaries in the `./freeciv-app` directory.
 
 
+### How to clean and start again
+
+From the Terminal, run  
+    `rm -r freeciv-app`  
+    `make distclean`
 
 
+### How to bundle Freeciv for macOS
+
+1. Copy the `data` directory from the root freeciv directory to the installation directory
+    `cp -p -r data ./freeciv-app`
+
+...
