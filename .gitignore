@@ -15,6 +15,7 @@
 .*.swp
 .DS_store
 # Simulated Subversion default ignores end here
+
 # The contents of the svn:ignore property on the branch root.
 /acinclude.m4
 /aclocal.m4
@@ -37,3 +38,7 @@
 /manual*.html
 /core
 /libtool
+
+# Specifc additions for macOS version
+!freeciv-app/lib/*.a
+!freeciv-app/lib/*.la

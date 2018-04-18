@@ -237,7 +237,7 @@ real_package_name "automake" "ftp://ftp.gnu.org/pub/gnu/automake/" 1 11 3 || DIE
 AUTOMAKE=$REALPKGNAME
 real_package_name "aclocal" "ftp://ftp.gnu.org/pub/gnu/automake/" 1 11 3 || DIE=1
 ACLOCAL=$REALPKGNAME
-real_package_name "libtoolize" "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 || DIE=1
+real_package_name "glibtoolize" "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 || DIE=1
 LIBTOOLIZE=$REALPKGNAME
 real_package_name "python" "https://www.python.org/" || DIE=1
 
