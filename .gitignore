@@ -28,5 +28,7 @@
 # /libtool
 
 # Specifc additions for macOS version
-!freeciv-app/lib/*.a
-!freeciv-app/lib/*.la
+# !freeciv-app/lib/*.a
+# !freeciv-app/lib/*.la
+!/build/*
+!/freeciv-app/*
