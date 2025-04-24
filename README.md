@@ -20,16 +20,16 @@ Community forum: [forum.freeciv.org](https://forum.freeciv.org/)
 
 
 
+### Specific info for macOS
 
 0. Add the following lines at the end of the `.gitignore` file:
 
 ```
-# Specific additions for macOS version
 !freeciv-app/lib/*.a
 !freeciv-app/lib/*.la
 ```
 
-1. Install the following packages with `homebrew`
+1. Install these packages with `homebrew`
 ```
 $ brew install autoconf automake
 $ brew install icu4c
