@@ -23,6 +23,7 @@ extern "C" {
 /* common */
 #include "achievements.h"
 #include "actions.h"
+#include "counters.h"
 #include "city.h"
 #include "connection.h"
 #include "events.h"
@@ -44,6 +45,7 @@ extern "C" {
  * tolua_common_z.pkg. */
 typedef struct player Player;
 typedef struct player_ai Player_ai;
+typedef struct counter Counter;
 typedef struct city City;
 typedef struct unit Unit;
 typedef struct tile Tile;
@@ -58,6 +60,7 @@ typedef enum direction8 Direction;
 typedef struct disaster_type Disaster;
 typedef struct achievement Achievement;
 typedef struct action Action;
+typedef struct packet_game_info Game_Info;
 
 typedef void Nonexistent;
 

@@ -15,6 +15,8 @@
 #include <fc_config.h>
 #endif
 
+#include "fc_prehdrs.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -99,7 +101,7 @@ static void con_update_prompt(void)
     rl_forced_update_display();
   }
 #else  /* FREECIV_HAVE_LIBREADLINE */
-  con_dump(C_READY,"> ");
+  con_dump(C_READY, "> ");
   con_flush();
 #endif /* FREECIV_HAVE_LIBREADLINE */
 
@@ -118,10 +120,11 @@ static const char *log_prefix(void)
 #ifdef LOG_TIMERS
   char timestr[32];
   time_t timestamp;
+  struct tm tr;
 
   time(&timestamp);
   strftime(timestr, sizeof(timestr), "%Y/%m/%d %H:%M:%S",
-           localtime(&timestamp));
+           fc_localtime(&timestamp, &tr));
 
   fc_snprintf(buf, sizeof(buf), "T%03d - %s", game.info.turn, timestr);
 
@@ -217,8 +220,8 @@ void con_write(enum rfc_status rfc_status, const char *message, ...)
   Write to console and add line-break, and show prompt if required.
   Same as con_write, but without the format string stuff.
   The real reason for this is because __attribute__ complained
-  with con_write(C_COMMENT,"") of "warning: zero-length format string";
-  this allows con_puts(C_COMMENT,"");
+  with con_write(C_COMMENT, "") of "warning: zero-length format string";
+  this allows con_puts(C_COMMENT, "");
 ************************************************************************/
 void con_puts(enum rfc_status rfc_status, const char *str)
 {

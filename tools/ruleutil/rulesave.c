@@ -16,23 +16,28 @@
 #endif
 
 /* utility */
+#include "astring.h"
 #include "registry.h"
 #include "string_vector.h"
 
 /* common */
 #include "achievements.h"
+#include "counters.h"
 #include "game.h"
 #include "government.h"
 #include "map.h"
 #include "movement.h"
 #include "multipliers.h"
+#include "nation.h"
+#include "rgbcolor.h"
+#include "sex.h"
 #include "specialist.h"
 #include "style.h"
 #include "unittype.h"
 #include "version.h"
 
 /* server */
-#include "ruleset.h"
+#include "ruleload.h"
 #include "settings.h"
 
 /* tools/ruleutil */
@@ -42,11 +47,13 @@
 
 /* Ruleset format version */
 /*
- * 1  - Freeciv-2.6 
+ * 1  - Freeciv-2.6
  * 10 - Freeciv-3.0
  * 20 - Freeciv-3.1
+ * 30 - Freeciv-3.2
+ * 40 - Freeciv-3.3
  */
-#define FORMAT_VERSION 20
+#define FORMAT_VERSION RSFORMAT_CURRENT
 
 /**********************************************************************//**
   Create new ruleset section file with common header.
@@ -59,7 +66,7 @@ static struct section_file *create_ruleset_file(const char *rsname,
 
   comment_file_header(sfile);
 
-  if (rsname != NULL && rsname[0] != '\0') {
+  if (rsname != nullptr && rsname[0] != '\0') {
     fc_snprintf(buf, sizeof(buf), "%s %s data for Freeciv", rsname, rstype);
   } else {
     fc_snprintf(buf, sizeof(buf), "Template %s data for Freeciv", rstype);
@@ -77,10 +84,11 @@ static struct section_file *create_ruleset_file(const char *rsname,
   Save int value that has default applied upon loading.
 **************************************************************************/
 static bool save_default_int(struct section_file *sfile, int value,
-                             int default_value, const char *path, const char *entry)
+                             int default_value, const char *path,
+                             const char *entry)
 {
   if (value != default_value) {
-    if (entry != NULL) {
+    if (entry != nullptr) {
       secfile_insert_int(sfile, value,
                          "%s.%s", path, entry);
     } else {
@@ -96,11 +104,12 @@ static bool save_default_int(struct section_file *sfile, int value,
   Save bool value that has default applied upon loading.
 **************************************************************************/
 static bool save_default_bool(struct section_file *sfile, bool value,
-                              bool default_value, const char *path, const char *entry)
+                              bool default_value, const char *path,
+                              const char *entry)
 {
   if ((value && !default_value)
       || (!value && default_value)) {
-    if (entry != NULL) {
+    if (entry != nullptr) {
       secfile_insert_bool(sfile, value,
                           "%s.%s", path, entry);
     } else {
@@ -243,10 +252,10 @@ static bool save_terrain_ref(struct section_file *sfile,
                              const struct terrain *pthis,
                              const char *path, const char *entry)
 {
-  if (save == NULL) {
+  if (save == nullptr) {
     secfile_insert_str(sfile, "none", "%s.%s", path, entry);
   } else if (save == pthis) {
-    secfile_insert_str(sfile, "yes", "%s.%s", path, entry);   
+    secfile_insert_str(sfile, "yes", "%s.%s", path, entry);
   } else {
     secfile_insert_str(sfile, terrain_rule_name(save),
                         "%s.%s", path, entry);
@@ -292,7 +301,7 @@ static bool save_building_list(struct section_file *sfile, int *input,
 }
 
 /**********************************************************************//**
-  Save units vector. Input is NULL terminated array of units
+  Save units vector. Input is nullptr terminated array of units
   to save.
 **************************************************************************/
 static bool save_unit_list(struct section_file *sfile, struct unit_type **input,
@@ -303,7 +312,7 @@ static bool save_unit_list(struct section_file *sfile, struct unit_type **input,
   int i;
 
   set_count = 0;
-  for (i = 0; input[i] != NULL && i < MAX_NUM_UNIT_LIST; i++) {
+  for (i = 0; input[i] != nullptr && i < MAX_NUM_UNIT_LIST; i++) {
     unit_names[set_count++] = utype_rule_name(input[i]);
   }
 
@@ -349,7 +358,7 @@ static bool save_strvec(struct section_file *sfile,
                         struct strvec *to_save,
                         const char *path, const char *entry)
 {
-  if (to_save != NULL) {
+  if (to_save != nullptr) {
     int sect_count = strvec_size(to_save);
     const char *sections[sect_count];
     int i;
@@ -379,16 +388,38 @@ static bool save_buildings_ruleset(const char *filename, const char *name)
 {
   struct section_file *sfile = create_ruleset_file(name, "building");
   int sect_idx;
+  int i;
+  bool uflags_building = FALSE;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
+  }
+
+  for (i = 0; i < MAX_NUM_USER_BUILDING_FLAGS; i++) {
+    const char *flagname = impr_flag_id_name_cb(i + IF_USER_FLAG_1);
+    const char *helptxt = impr_flag_helptxt(i + IF_USER_FLAG_1);
+
+    if (flagname != nullptr) {
+      if (!uflags_building) {
+        comment_uflags_building(sfile);
+        uflags_building = TRUE;
+      }
+
+      secfile_insert_str(sfile, flagname, "control.building_flags%d.name", i);
+
+      /* Save the user flag help text even when it is undefined. That makes
+       * the formatting code happy. The resulting "" is ignored when the
+       * ruleset is loaded. */
+      secfile_insert_str(sfile, helptxt,
+                         "control.building_flags%d.helptxt", i);
+    }
   }
 
   comment_buildings(sfile);
 
   sect_idx = 0;
-  improvement_active_iterate(pb) {
-    if (!pb->disabled) {
+  improvement_re_active_iterate(pb) {
+    if (!pb->ruledit_disabled) {
       char path[512];
       const char *flag_names[IF_COUNT];
       int set_count;
@@ -407,11 +438,17 @@ static bool save_buildings_ruleset(const char *filename, const char *name)
       if (strcmp(pb->graphic_alt, "-")) {
         secfile_insert_str(sfile, pb->graphic_alt, "%s.graphic_alt", path);
       }
+      if (strcmp(pb->graphic_alt2, "-")) {
+        secfile_insert_str(sfile, pb->graphic_alt2, "%s.graphic_alt2", path);
+      }
       if (strcmp(pb->soundtag, "-")) {
         secfile_insert_str(sfile, pb->soundtag, "%s.sound", path);
       }
       if (strcmp(pb->soundtag_alt, "-")) {
         secfile_insert_str(sfile, pb->soundtag_alt, "%s.sound_alt", path);
+      }
+      if (strcmp(pb->soundtag_alt2, "-")) {
+        secfile_insert_str(sfile, pb->soundtag_alt2, "%s.sound_alt2", path);
       }
 
       save_reqs_vector(sfile, &(pb->reqs), path, "reqs");
@@ -435,7 +472,7 @@ static bool save_buildings_ruleset(const char *filename, const char *name)
 
       save_strvec(sfile, pb->helptext, path, "helptext");
     }
-  } improvement_active_iterate_end;
+  } improvement_re_active_iterate_end;
 
   return save_ruleset_file(sfile, filename);
 }
@@ -449,25 +486,25 @@ static bool save_styles_ruleset(const char *filename, const char *name)
   int sect_idx;
   int i;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
   comment_styles(sfile);
 
   sect_idx = 0;
-  styles_active_iterate(pstyle) {
+  styles_re_active_iterate(pstyle) {
     char path[512];
 
     fc_snprintf(path, sizeof(path), "style_%d", sect_idx++);
 
     save_name_translation(sfile, &(pstyle->name), path);
-  } styles_active_iterate_end;
+  } styles_re_active_iterate_end;
 
   comment_citystyles(sfile);
 
   sect_idx = 0;
-  for (i = 0; i < game.control.styles_count; i++) {
+  for (i = 0; i < game.control.num_city_styles; i++) {
     char path[512];
 
     fc_snprintf(path, sizeof(path), "citystyle_%d", sect_idx++);
@@ -479,10 +516,6 @@ static bool save_styles_ruleset(const char *filename, const char *name)
     if (strcmp(city_styles[i].citizens_graphic, "-")) {
       secfile_insert_str(sfile, city_styles[i].citizens_graphic,
                          "%s.citizens_graphic", path);
-    }
-    if (strcmp(city_styles[i].citizens_graphic_alt, "generic")) {
-      secfile_insert_str(sfile, city_styles[i].citizens_graphic_alt,
-                         "%s.citizens_graphic_alt", path);
     }
 
     save_reqs_vector(sfile, &(city_styles[i].reqs), path, "reqs");
@@ -533,8 +566,11 @@ static bool save_action_auto_uflag_block(struct section_file *sfile,
 
       protecor_flag[i++] = req->source.value.unitflag;
     } else if (unexpected_req(req)) {
+      struct astring astr;
+
       log_error("Can't handle action auto performer requirement %s",
-                req_to_fstring(req));
+                req_to_fstring(req, &astr));
+      astr_free(&astr);
 
       return FALSE;
     }
@@ -560,27 +596,36 @@ static bool save_action_auto_uflag_block(struct section_file *sfile,
   order they should be tried.
 **************************************************************************/
 static bool save_action_auto_actions(struct section_file *sfile,
-                                         const int aap,
-                                         const char *actions_path)
+                                     const int aap,
+                                     const char *actions_path)
 {
   enum gen_action unit_acts[MAX_NUM_ACTIONS];
-  size_t i;
+  size_t i, j;
   size_t ret;
 
-  const struct action_auto_perf *auto_perf =
-      action_auto_perf_by_number(aap);
+  const struct action_auto_perf *auto_perf
+    = action_auto_perf_by_number(aap);
 
-  i = 0;
-  for (i = 0;
+  for (i = 0, j = 0;
        i < NUM_ACTIONS && auto_perf->alternatives[i] != ACTION_NONE;
        i++) {
-    unit_acts[i] = auto_perf->alternatives[i];
+    struct action *paction = action_by_number(auto_perf->alternatives[i]);
+
+    if (!action_is_in_use(paction)) {
+      /* Don't mention non enabled actions. */
+      continue;
+    }
+
+    /* This action is included in the output. */
+    unit_acts[j] = auto_perf->alternatives[i];
+    j++;
   }
 
-  ret = secfile_insert_enum_vec(sfile, &unit_acts, i, gen_action,
+  action_array_end((action_id *)unit_acts, j);
+  ret = secfile_insert_enum_vec(sfile, &unit_acts, j, gen_action,
                                 "%s", actions_path);
 
-  if (ret != i) {
+  if (ret != j) {
     log_error("%s: didn't save all actions.", actions_path);
 
     return FALSE;
@@ -628,7 +673,7 @@ static bool save_cities_ruleset(const char *filename, const char *name)
   struct section_file *sfile = create_ruleset_file(name, "cities");
   int sect_idx;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
@@ -695,18 +740,21 @@ static bool save_cities_ruleset(const char *filename, const char *name)
     secfile_insert_int(sfile, game.info.pop_report_zeroes,
                        "parameters.pop_report_zeroes");
   }
-  if (game.info.citizen_nationality != GAME_DEFAULT_NATIONALITY) {
-    secfile_insert_bool(sfile, game.info.citizen_nationality,
-                       "citizen.nationality");
-  }
-  if (game.info.citizen_convert_speed != GAME_DEFAULT_CONVERT_SPEED) {
-    secfile_insert_int(sfile, game.info.citizen_convert_speed,
-                       "citizen.convert_speed");
-  }
+
+  save_default_bool(sfile, game.info.citizen_nationality,
+                    RS_DEFAULT_NATIONALITY,
+                    "citizen.nationality", nullptr);
+  save_default_bool(sfile, game.info.unit_builders_nationality,
+                    RS_DEFAULT_UBUILD_NAT,
+                    "citizen.ubuilder_nationality", nullptr);
+  save_default_int(sfile, game.info.citizen_convert_speed,
+                   RS_DEFAULT_CONVERT_SPEED,
+                   "citizen.convert_speed", nullptr);
   if (game.info.conquest_convert_pct != 0) {
     secfile_insert_int(sfile, game.info.conquest_convert_pct,
                        "citizen.conquest_convert_pct");
   }
+
   if (game.info.citizen_partisans_pct != 0) {
     secfile_insert_int(sfile, game.info.citizen_partisans_pct,
                        "citizen.partisans_pct");
@@ -752,6 +800,11 @@ static bool effect_save(struct effect *peffect, void *data)
   effect_cb_data *cbdata = (effect_cb_data *)data;
   char path[512];
 
+  if (peffect->rulesave.do_not_save) {
+    /* Is supposed to be skipped. */
+    return TRUE;
+  }
+
   fc_snprintf(path, sizeof(path), "effect_%d", cbdata->idx++);
 
   secfile_insert_str(cbdata->sfile,
@@ -760,6 +813,11 @@ static bool effect_save(struct effect *peffect, void *data)
   secfile_insert_int(cbdata->sfile, peffect->value, "%s.value", path);
 
   save_reqs_vector(cbdata->sfile, &peffect->reqs, path, "reqs");
+
+  if (peffect->rulesave.comment != nullptr) {
+    secfile_insert_str(cbdata->sfile, peffect->rulesave.comment,
+                       "%s.comment", path);
+  }
 
   return TRUE;
 }
@@ -771,13 +829,33 @@ static bool save_effects_ruleset(const char *filename, const char *name)
 {
   struct section_file *sfile = create_ruleset_file(name, "effect");
   effect_cb_data data;
+  int i;
+  int sidx;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
   data.idx = 0;
   data.sfile = sfile;
+
+  comment_ueffs(sfile);
+
+  sidx = 0;
+  for (i = EFT_USER_EFFECT_1 ; i <= EFT_USER_EFFECT_LAST; i++) {
+    enum effect_type val = user_effect_ai_valued_as(i);
+
+    if (val != i) {
+      char path[512];
+
+      fc_snprintf(path, sizeof(path), "ueff_%d", sidx++);
+
+      secfile_insert_str(sfile, effect_type_name(i),
+                         "%s.type", path);
+      secfile_insert_str(sfile, effect_type_name(val),
+                         "%s.ai_valued_as", path);
+    }
+  }
 
   comment_effects(sfile);
 
@@ -789,33 +867,390 @@ static bool save_effects_ruleset(const char *filename, const char *name)
 }
 
 /**********************************************************************//**
-  Auto attack should only require war, remaining movement and the absence
-  of blocking utype flags.
+  Save max range of an action.
 **************************************************************************/
-static bool unexpected_auto_attack(const struct requirement *req)
+static bool save_action_max_range(struct section_file *sfile,
+                                  action_id act)
 {
-  return !((req->source.kind == VUT_DIPLREL
-            && req->source.value.diplrel == DS_WAR
-            && req->present)
-           || (req->source.kind == VUT_MINMOVES
-               && req->source.value.minmoves == 1
-               && req->present));
+  struct action *paction = action_by_number(act);
+
+  if (paction->max_distance == ACTION_DISTANCE_UNLIMITED) {
+    return secfile_insert_str(sfile, RS_ACTION_NO_MAX_DISTANCE,
+                              "actions.%s",
+                              action_max_range_ruleset_var_name(act)) != nullptr;
+  } else {
+    return save_default_int(sfile, action_by_number(act)->max_distance,
+                            actres_max_range_default(paction->result),
+                            "actions",
+                            action_max_range_ruleset_var_name(act));
+  }
 }
 
 /**********************************************************************//**
-  Save ui_name of one action.
+  Save range of an action.
 **************************************************************************/
-static bool save_action_ui_name(struct section_file *sfile,
-                                int act, const char *entry_name)
+static bool save_action_range(struct section_file *sfile, action_id act)
 {
-  const char *ui_name = action_by_number(act)->ui_name;
+  struct action *paction = action_by_number(act);
 
-  if (strcmp(ui_name, action_ui_name_default(act))) {
-    secfile_insert_str(sfile, ui_name,
-                       "actions.%s", entry_name);
+  if (action_min_range_ruleset_var_name(act) != nullptr) {
+    /* Min range can be loaded from the ruleset. */
+    save_default_int(sfile,
+                     paction->min_distance,
+                     actres_min_range_default(paction->result),
+                     "actions",
+                     action_min_range_ruleset_var_name(act));
+  }
+
+  if (action_max_range_ruleset_var_name(act) != nullptr) {
+    /* Max range can be loaded from the ruleset. */
+    if (!save_action_max_range(sfile, act)) {
+      return FALSE;
+    }
   }
 
   return TRUE;
+}
+
+/**********************************************************************//**
+  Save details of an action.
+**************************************************************************/
+static bool save_action_kind(struct section_file *sfile, action_id act)
+{
+  if (action_target_kind_ruleset_var_name(act) != nullptr) {
+    struct action *paction = action_by_number(act);
+
+    /* Target kind can be loaded from the ruleset. */
+    if (!action_is_in_use(paction)) {
+      /* Don't save the default for actions that aren't enabled. */
+      return TRUE;
+    }
+
+    secfile_insert_enum(sfile,
+                        action_by_number(act)->target_kind,
+                        action_target_kind,
+                        "actions.%s",
+                        action_target_kind_ruleset_var_name(act));
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Save if an action always will consume the actor.
+**************************************************************************/
+static bool save_action_actor_consuming_always(struct section_file *sfile,
+                                               action_id act)
+{
+  if (action_actor_consuming_always_ruleset_var_name(act) != nullptr) {
+    struct action *paction = action_by_number(act);
+
+    /* Actor consumption can be loaded from the ruleset. */
+    if (!action_is_in_use(paction)) {
+      /* Don't save value for actions that aren't enabled. */
+      return TRUE;
+    }
+
+    save_default_bool(sfile,
+                      action_by_number(act)->actor_consuming_always,
+                      RS_DEFAULT_ACTION_ACTOR_CONSUMING_ALWAYS,
+                      "actions",
+                      action_actor_consuming_always_ruleset_var_name(act));
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Save what actions will block this action.
+**************************************************************************/
+static bool save_action_blocked_by(struct section_file *sfile,
+                                   struct action *paction)
+{
+  enum gen_action action_vec[MAX_NUM_ACTIONS];
+  char comment[1024];
+  int i = 0;
+
+  if (action_blocked_by_ruleset_var_name(paction) == nullptr) {
+    /* Action blocked by shouldn't be written to the ruleset for this
+     * action. */
+    return TRUE;
+  }
+
+  if (!action_is_in_use(paction)) {
+    /* Don't save value for actions that aren't enabled. */
+    return TRUE;
+  }
+
+  fc_snprintf(comment, sizeof(comment),
+              "Forbid \"%s\" if any one of the listed actions are legal.",
+              action_rule_name(paction));
+
+  action_iterate(blocker_id) {
+    struct action *pblocker = action_by_number(blocker_id);
+
+    if (!action_is_in_use(pblocker)) {
+      /* Don't save value for actions that aren't enabled. */
+      continue;
+    }
+
+    if (BV_ISSET(paction->blocked_by, blocker_id)) {
+      action_vec[i] = blocker_id;
+      i++;
+    }
+  } action_iterate_end;
+
+  if (secfile_insert_enum_vec_comment(
+        sfile, &action_vec, i, gen_action, comment, "actions.%s",
+        action_blocked_by_ruleset_var_name(paction))
+      != i) {
+    log_error("Didn't save all %s blocking actions.",
+              action_rule_name(paction));
+
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Save what actions an actor under certain circumstances will be forced to
+  perform after successfully performing this action.
+**************************************************************************/
+static bool save_action_post_success_force(struct section_file *sfile,
+                                           int performer_slot,
+                                           struct action *paction)
+{
+  char action_list_path[100];
+
+  if (action_post_success_forced_ruleset_var_name(paction) == nullptr) {
+    /* Not relevant. */
+    return TRUE;
+  }
+
+  if (!action_is_in_use(paction)) {
+    /* Don't save value for actions that aren't enabled. */
+    return TRUE;
+  }
+
+  fc_snprintf(action_list_path, sizeof(action_list_path),
+              "actions.%s",
+              action_post_success_forced_ruleset_var_name(paction));
+  if (!save_action_auto_actions(sfile, performer_slot, action_list_path)) {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Save a bv_actions to the ruleset as a list of actions.
+**************************************************************************/
+static bool save_bv_actions(struct section_file *sfile,
+                            bv_actions content,
+                            const char *path)
+{
+  enum gen_action action_vec[MAX_NUM_ACTIONS];
+  int i = 0;
+
+  action_iterate(act_id) {
+    struct action *paction = action_by_number(act_id);
+
+    if (!action_is_in_use(paction)) {
+      /* Don't save value for actions that aren't enabled. */
+      continue;
+    }
+
+    if (BV_ISSET(content, act_id)) {
+      action_vec[i] = act_id;
+      i++;
+    }
+  } action_iterate_end;
+
+  if (secfile_insert_enum_vec(sfile, &action_vec, i, gen_action,
+                              "%s", path) != i) {
+    log_error("Didn't save all of %s.", path);
+
+    return FALSE;
+  }
+
+  return TRUE;
+}
+/**********************************************************************//**
+  Save actions.ruleset
+**************************************************************************/
+static bool save_actions_ruleset(const char *filename, const char *name)
+{
+  struct section_file *sfile = create_ruleset_file(name, "actions");
+  enum gen_action action_vec[MAX_NUM_ACTIONS];
+  int i = 0;
+  int sect_idx = 0;
+
+  /* TODO: move action logic from save_game_ruleset to here */
+  if (sfile == nullptr) {
+    return FALSE;
+  }
+  {
+    /* Action auto performers aren't ready to be exposed in the ruleset
+     * yet. The behavior when two action auto performers for the same
+     * cause can fire isn't set in stone yet. How is one of them chosen?
+     * What if all the actions of the chosen action auto performer turned
+     * out to be illegal but one of the other action auto performers that
+     * fired has legal actions? These issues can decide what other action
+     * rules action auto performers can represent in the future. Deciding
+     * should therefore wait until a rule needs action auto performers to
+     * work a certain way. */
+    /* Only one action auto performer, ACTION_AUTO_MOVED_ADJ, is caused
+     * by AAPC_UNIT_MOVED_ADJ. It is therefore safe to expose the full
+     * requirement vector to the ruleset. */
+    const struct action_auto_perf *auto_perf =
+        action_auto_perf_by_number(ACTION_AUTO_MOVED_ADJ);
+
+    comment_auto_attack(sfile);
+
+    save_reqs_vector(sfile, &auto_perf->reqs,
+                     "auto_attack", "if_attacker");
+
+    save_action_auto_actions(sfile, ACTION_AUTO_MOVED_ADJ,
+                             "auto_attack.attack_actions");
+  }
+
+  comment_actions_dc_initial_odds(sfile);
+  if (!save_bv_actions(sfile, game.info.diplchance_initial_odds,
+                       "actions.diplchance_initial_odds")) {
+    return FALSE;
+  }
+
+  if (!save_action_post_success_force(sfile, ACTION_AUTO_POST_BRIBE_UNIT,
+                                      action_by_number(
+                                        ACTION_SPY_BRIBE_UNIT))) {
+    log_error("Didn't save all post success forced actions.");
+    return FALSE;
+  }
+
+  if (!save_action_post_success_force(sfile, ACTION_AUTO_POST_BRIBE_STACK,
+                                      action_by_number(
+                                        ACTION_SPY_BRIBE_STACK))) {
+    log_error("Didn't save all post success forced actions.");
+    return FALSE;
+  }
+
+  if (!save_action_post_success_force(sfile, ACTION_AUTO_POST_ATTACK,
+                                      action_by_number(ACTION_ATTACK))) {
+    log_error("Didn't save all post success forced actions.");
+    return FALSE;
+  }
+
+  if (!save_action_post_success_force(sfile, ACTION_AUTO_POST_WIPE_UNITS,
+                                      action_by_number(ACTION_WIPE_UNITS))) {
+    log_error("Didn't save all post success forced actions.");
+    return FALSE;
+  }
+
+  if (!save_action_auto_actions(sfile, ACTION_AUTO_ESCAPE_CITY,
+                                "actions.escape_city")) {
+    log_error("Didn't save all escape city forced actions.");
+    return FALSE;
+  }
+
+  if (!save_action_auto_actions(sfile, ACTION_AUTO_ESCAPE_STACK,
+                                "actions.unit_stack_death")) {
+    log_error("Didn't save all escape unit stack death forced actions.");
+    return FALSE;
+  }
+
+  save_default_bool(sfile, game.info.poison_empties_food_stock,
+                    RS_DEFAULT_POISON_EMPTIES_FOOD_STOCK,
+                    "actions.poison_empties_food_stock", nullptr);
+
+  save_default_bool(sfile, game.info.steal_maps_reveals_all_cities,
+                    RS_DEFAULT_STEAL_MAP_REVEALS_CITIES,
+                    "actions.steal_maps_reveals_all_cities", nullptr);
+
+  action_iterate(act_id) {
+    struct action *act = action_by_number(act_id);
+
+    save_action_kind(sfile, act_id);
+    save_action_range(sfile, act_id);
+    save_action_actor_consuming_always(sfile, act_id);
+    save_action_blocked_by(sfile, act);
+  } action_iterate_end;
+
+  comment_actions_quiet_actions(sfile);
+
+  i = 0;
+  action_iterate(act) {
+    if (action_by_number(act)->quiet) {
+      action_vec[i] = act;
+      i++;
+    }
+  } action_iterate_end;
+
+  if (secfile_insert_enum_vec(sfile, &action_vec, i, gen_action,
+                              "actions.quiet_actions") != i) {
+    log_error("Didn't save all quiet actions.");
+
+    return FALSE;
+  }
+
+  comment_actions(sfile);
+  for (i = 0; i < MAX_NUM_ACTIONS; i++) {
+    struct action *paction = action_by_number(i);
+
+    if (!action_is_in_use(paction)) {
+      /* Don't mention non enabled actions. */
+      continue;
+    }
+
+    if (paction->configured) {
+      char path[512];
+      const char *ui_name;
+
+      fc_snprintf(path, sizeof(path), "action_%d", i);
+
+      secfile_insert_str(sfile, action_rule_name(paction),
+                         "%s.action", path);
+
+      if (!action_id_is_internal(i)) {
+        ui_name = paction->ui_name;
+
+        if (ui_name == nullptr) {
+          fc_assert(ui_name != nullptr);
+
+          return FALSE;
+        }
+
+        if (strcmp(ui_name, action_ui_name_default(i))) {
+          secfile_insert_str(sfile, ui_name,
+                             "%s.ui_name", path);
+        }
+      }
+    }
+  }
+
+  comment_enablers(sfile);
+  sect_idx = 0;
+  action_enablers_iterate(pae) {
+    char path[512];
+
+    if (pae->rulesave.ruledit_disabled) {
+      continue;
+    }
+
+    fc_snprintf(path, sizeof(path), "enabler_%d", sect_idx++);
+
+    secfile_insert_str(sfile, action_rule_name(enabler_get_action(pae)),
+                       "%s.action", path);
+
+    save_reqs_vector(sfile, &(pae->actor_reqs), path, "actor_reqs");
+    save_reqs_vector(sfile, &(pae->target_reqs), path, "target_reqs");
+
+    if (pae->rulesave.comment != nullptr) {
+      secfile_insert_str(sfile, pae->rulesave.comment, "%s.comment", path);
+    }
+  } action_enablers_iterate_end;
+
+  return save_ruleset_file(sfile, filename);
 }
 
 /**********************************************************************//**
@@ -834,17 +1269,21 @@ static bool save_game_ruleset(const char *filename, const char *name)
   const char *tnames[game.server.ruledit.named_teams];
   enum trade_route_type trt;
   int i;
-  enum gen_action quiet_actions[MAX_NUM_ACTIONS];
   bool locks;
-  int force_capture_units, force_bombard, force_explode_nuclear;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
-  if (game.server.ruledit.description_file != NULL) {
+  if (game.server.ruledit.description_file != nullptr) {
     secfile_insert_str(sfile, game.server.ruledit.description_file,
                        "ruledit.description_file");
+  }
+
+  if (game.server.ruledit.std_tileset_compat) {
+    comment_std_tileset_compat(sfile);
+    secfile_insert_bool(sfile, game.server.ruledit.std_tileset_compat,
+                        "ruledit.std_tileset_compat");
   }
 
   if (game.control.preferred_tileset[0] != '\0') {
@@ -863,7 +1302,11 @@ static bool save_game_ruleset(const char *filename, const char *name)
   secfile_insert_str(sfile, game.control.name, "about.name");
   secfile_insert_str(sfile, game.control.version, "about.version");
 
-  if (game.ruleset_summary != NULL) {
+  if (game.control.alt_dir[0] != '\0') {
+    secfile_insert_str(sfile, game.control.alt_dir, "about.alt_dir");
+  }
+
+  if (game.ruleset_summary != nullptr) {
     struct entry *mod_entry;
 
     mod_entry = secfile_insert_str(sfile, game.ruleset_summary,
@@ -871,8 +1314,8 @@ static bool save_game_ruleset(const char *filename, const char *name)
     entry_str_set_gt_marking(mod_entry, TRUE);
   }
 
-  if (game.ruleset_description != NULL) {
-    if (game.server.ruledit.description_file == NULL) {
+  if (game.ruleset_description != nullptr) {
+    if (game.server.ruledit.description_file == nullptr) {
       secfile_insert_str(sfile, game.ruleset_description,
                          "about.description");
     } else {
@@ -881,7 +1324,7 @@ static bool save_game_ruleset(const char *filename, const char *name)
     }
   }
 
-  if (game.ruleset_capabilities != NULL) {
+  if (game.ruleset_capabilities != nullptr) {
     secfile_insert_str(sfile, game.ruleset_capabilities,
                        "about.capabilities");
   } else {
@@ -895,10 +1338,10 @@ static bool save_game_ruleset(const char *filename, const char *name)
 
   save_default_bool(sfile, game.control.popup_tech_help,
                     FALSE,
-                    "options.popup_tech_help", NULL);
+                    "options.popup_tech_help", nullptr);
   save_default_int(sfile, game.info.base_pollution,
                    RS_DEFAULT_BASE_POLLUTION,
-                   "civstyle.base_pollution", NULL);
+                   "civstyle.base_pollution", nullptr);
 
   set_count = 0;
   for (gs = gameloss_style_begin(); gs != gameloss_style_end(); gs = gameloss_style_next(gs)) {
@@ -908,52 +1351,58 @@ static bool save_game_ruleset(const char *filename, const char *name)
   }
 
   if (set_count > 0) {
+    comment_civstyle_gameloss_style(sfile);
+
     secfile_insert_str_vec(sfile, style_names, set_count,
                            "civstyle.gameloss_style");
   }
 
   save_default_int(sfile, game.info.happy_cost,
                    RS_DEFAULT_HAPPY_COST,
-                   "civstyle.happy_cost", NULL);
+                   "civstyle.happy_cost", nullptr);
   save_default_int(sfile, game.info.food_cost,
                    RS_DEFAULT_FOOD_COST,
-                   "civstyle.food_cost", NULL);
-  save_default_bool(sfile, game.info.civil_war_enabled,
-                    TRUE,
-                    "civstyle.civil_war_enabled", NULL);
-  save_default_bool(sfile, game.info.paradrop_to_transport,
+                   "civstyle.food_cost", nullptr);
+  save_default_bool(sfile,
+                    BV_ISSET(action_by_number(ACTION_PARADROP)->sub_results,
+                             ACT_SUB_RES_MAY_EMBARK),
                     FALSE,
-                    "civstyle.paradrop_to_transport", NULL);
+                    "civstyle.paradrop_to_transport", nullptr);
   save_default_int(sfile, game.info.base_bribe_cost,
                    RS_DEFAULT_BASE_BRIBE_COST,
-                   "civstyle.base_bribe_cost", NULL);
+                   "civstyle.base_bribe_cost", nullptr);
+  if (game.server.ransom_gold != RS_DEFAULT_RANSOM_GOLD) {
+    comment_civstyle_ransom_gold(sfile);
+  }
   save_default_int(sfile, game.server.ransom_gold,
                    RS_DEFAULT_RANSOM_GOLD,
-                   "civstyle.ransom_gold", NULL);
+                   "civstyle.ransom_gold", nullptr);
   save_default_bool(sfile, game.info.pillage_select,
                     RS_DEFAULT_PILLAGE_SELECT,
-                    "civstyle.pillage_select", NULL);
+                    "civstyle.pillage_select", nullptr);
   save_default_bool(sfile, game.info.tech_steal_allow_holes,
                     RS_DEFAULT_TECH_STEAL_HOLES,
-                    "civstyle.tech_steal_allow_holes", NULL);
+                    "civstyle.tech_steal_allow_holes", nullptr);
   save_default_bool(sfile, game.info.tech_trade_allow_holes,
                     RS_DEFAULT_TECH_TRADE_HOLES,
-                    "civstyle.tech_trade_allow_holes", NULL);
+                    "civstyle.tech_trade_allow_holes", nullptr);
   save_default_bool(sfile, game.info.tech_trade_loss_allow_holes,
                     RS_DEFAULT_TECH_TRADE_LOSS_HOLES,
-                    "civstyle.tech_trade_loss_allow_holes", NULL);
+                    "civstyle.tech_trade_loss_allow_holes", nullptr);
   save_default_bool(sfile, game.info.tech_parasite_allow_holes,
                     RS_DEFAULT_TECH_PARASITE_HOLES,
-                    "civstyle.tech_parasite_allow_holes", NULL);
+                    "civstyle.tech_parasite_allow_holes", nullptr);
   save_default_bool(sfile, game.info.tech_loss_allow_holes,
                     RS_DEFAULT_TECH_LOSS_HOLES,
-                    "civstyle.tech_loss_allow_holes", NULL);
+                    "civstyle.tech_loss_allow_holes", nullptr);
   save_default_int(sfile, game.server.upgrade_veteran_loss,
                    RS_DEFAULT_UPGRADE_VETERAN_LOSS,
-                   "civstyle.upgrade_veteran_loss", NULL);
+                   "civstyle.upgrade_veteran_loss", nullptr);
   save_default_int(sfile, game.server.autoupgrade_veteran_loss,
                    RS_DEFAULT_UPGRADE_VETERAN_LOSS,
-                   "civstyle.autoupgrade_veteran_loss", NULL);
+                   "civstyle.autoupgrade_veteran_loss", nullptr);
+
+  comment_civstyle_granary(sfile);
 
   secfile_insert_int_vec(sfile, game.info.granary_food_ini,
                          game.info.granary_num_inis,
@@ -961,7 +1410,7 @@ static bool save_game_ruleset(const char *filename, const char *name)
 
   save_default_int(sfile, game.info.granary_food_inc,
                    RS_DEFAULT_GRANARY_FOOD_INC,
-                   "civstyle.granary_food_inc", NULL);
+                   "civstyle.granary_food_inc", nullptr);
 
   output_type_iterate(o) {
     char buffer[256];
@@ -972,270 +1421,218 @@ static bool save_game_ruleset(const char *filename, const char *name)
 
     save_default_int(sfile, game.info.min_city_center_output[o],
                      RS_DEFAULT_CITY_CENTER_OUTPUT,
-                     buffer, NULL);
+                     buffer, nullptr);
   } output_type_iterate_end;
 
   save_default_int(sfile, game.server.init_vis_radius_sq,
                    RS_DEFAULT_VIS_RADIUS_SQ,
-                   "civstyle.init_vis_radius_sq", NULL);
+                   "civstyle.init_vis_radius_sq", nullptr);
   save_default_int(sfile, game.info.init_city_radius_sq,
                    RS_DEFAULT_CITY_RADIUS_SQ,
-                   "civstyle.init_city_radius_sq", NULL);
+                   "civstyle.init_city_radius_sq", nullptr);
+
+  comment_civstyle_gold_upkeep_style(sfile);
+
   if (0 != fc_strcasecmp(gold_upkeep_style_name(game.info.gold_upkeep_style),
                          RS_DEFAULT_GOLD_UPKEEP_STYLE)) {
     secfile_insert_str(sfile,
                        gold_upkeep_style_name(game.info.gold_upkeep_style),
                        "civstyle.gold_upkeep_style");
   }
+  if (game.info.homeless_gold_upkeep) {
+    comment_civstyle_homeless_gold_upkeep(sfile);
+  }
+  save_default_bool(sfile, game.info.homeless_gold_upkeep, FALSE,
+                    "civstyle.homeless_gold_upkeep", nullptr);
+  save_default_int(sfile, game.info.granularity,
+                   1, "civstyle.output_granularity", nullptr);
+
+  if (game.info.airlift_from_always_enabled || !game.info.airlift_to_always_enabled) {
+    comment_civstyle_airlift_always(sfile);
+  }
+  save_default_bool(sfile, game.info.airlift_from_always_enabled,
+                    FALSE, "civstyle.airlift_from_always_enabled", nullptr);
+  save_default_bool(sfile, game.info.airlift_to_always_enabled,
+                    TRUE, "civstyle.airlift_to_always_enabled", nullptr);
+
+  if (fc_strcasecmp(wonder_visib_type_name(game.info.small_wonder_visibility),
+                    RS_DEFAULT_SMALL_WONDER_VISIBILITY)) {
+    comment_wonder_visibility_small_wonders(sfile);
+    secfile_insert_str(sfile,
+                       wonder_visib_type_name(game.info.small_wonder_visibility),
+                       "wonder_visibility.small_wonders");
+  }
+
   save_default_bool(sfile, game.info.illness_on,
                     RS_DEFAULT_ILLNESS_ON,
-                    "illness.illness_on", NULL);
+                    "illness.illness_on", nullptr);
   save_default_int(sfile, game.info.illness_base_factor,
                    RS_DEFAULT_ILLNESS_BASE_FACTOR,
-                   "illness.illness_base_factor", NULL);
+                   "illness.illness_base_factor", nullptr);
   save_default_int(sfile, game.info.illness_min_size,
                    RS_DEFAULT_ILLNESS_MIN_SIZE,
-                   "illness.illness_min_size", NULL);
+                   "illness.illness_min_size", nullptr);
   save_default_int(sfile, game.info.illness_trade_infection,
                    RS_DEFAULT_ILLNESS_TRADE_INFECTION_PCT,
-                   "illness.illness_trade_infection", NULL);
+                   "illness.illness_trade_infection", nullptr);
   save_default_int(sfile, game.info.illness_pollution_factor,
                    RS_DEFAULT_ILLNESS_POLLUTION_PCT,
-                   "illness.illness_pollution_factor", NULL);
+                   "illness.illness_pollution_factor", nullptr);
+  comment_incite_cost(sfile);
   save_default_int(sfile, game.server.base_incite_cost,
                    RS_DEFAULT_INCITE_BASE_COST,
-                   "incite_cost.base_incite_cost", NULL);
+                   "incite_cost.base_incite_cost", nullptr);
   save_default_int(sfile, game.server.incite_improvement_factor,
                    RS_DEFAULT_INCITE_IMPROVEMENT_FCT,
-                   "incite_cost.improvement_factor", NULL);
+                   "incite_cost.improvement_factor", nullptr);
   save_default_int(sfile, game.server.incite_unit_factor,
                    RS_DEFAULT_INCITE_UNIT_FCT,
-                   "incite_cost.unit_factor", NULL);
+                   "incite_cost.unit_factor", nullptr);
   save_default_int(sfile, game.server.incite_total_factor,
                    RS_DEFAULT_INCITE_TOTAL_FCT,
-                   "incite_cost.total_factor", NULL);
-  save_default_bool(sfile, game.info.slow_invasions,
-                    RS_DEFAULT_SLOW_INVASIONS,
-                    "global_unit_options.slow_invasions", NULL);
+                   "incite_cost.total_factor", nullptr);
 
-  save_action_auto_uflag_block(sfile, ACTION_AUTO_MOVED_ADJ,
-                               "auto_attack.will_never",
-                               unexpected_auto_attack);
-
-  save_default_bool(sfile,
-                    action_id_would_be_blocked_by(ACTION_MARKETPLACE,
-                                                  ACTION_TRADE_ROUTE),
-                    RS_DEFAULT_FORCE_TRADE_ROUTE,
-                    "actions.force_trade_route", NULL);
-
-  /* The ruleset options force_capture_units, force_bombard and
-   * force_explode_nuclear sets their respective action to block many other
-   * actions' blocked_by. Checking one is therefore enough. */
-  force_capture_units =
-      BV_ISSET(action_by_number(ACTION_ATTACK)->blocked_by,
-               ACTION_CAPTURE_UNITS);
-  save_default_bool(sfile, force_capture_units,
-                    RS_DEFAULT_FORCE_CAPTURE_UNITS,
-                    "actions.force_capture_units", NULL);
-  force_bombard =
-      BV_ISSET(action_by_number(ACTION_ATTACK)->blocked_by, ACTION_BOMBARD);
-  save_default_bool(sfile, force_bombard,
-                    RS_DEFAULT_FORCE_BOMBARD,
-                    "actions.force_bombard", NULL);
-  force_explode_nuclear =
-      BV_ISSET(action_by_number(ACTION_ATTACK)->blocked_by, ACTION_NUKE);
-  save_default_bool(sfile, force_explode_nuclear,
-                    RS_DEFAULT_FORCE_EXPLODE_NUCLEAR,
-                    "actions.force_explode_nuclear", NULL);
-
-  save_default_bool(sfile, game.info.poison_empties_food_stock,
-                    RS_DEFAULT_POISON_EMPTIES_FOOD_STOCK,
-                    "actions.poison_empties_food_stock", NULL);
-
-  if (action_by_number(ACTION_BOMBARD)->max_distance
-      == ACTION_DISTANCE_UNLIMITED) {
-    secfile_insert_str(sfile, RS_ACTION_NO_MAX_DISTANCE,
-                       "actions.bombard_max_range");
-  } else {
-    save_default_int(sfile, action_by_number(ACTION_BOMBARD)->max_distance,
-                     RS_DEFAULT_BOMBARD_MAX_RANGE,
-                     "actions.bombard_max_range", NULL);
+  if (game.info.tired_attack != RS_DEFAULT_TIRED_ATTACK) {
+    comment_combat_rules_tired_attack(sfile);
   }
-
-  save_action_ui_name(sfile, ACTION_SPY_POISON, "ui_name_poison_city");
-  save_action_ui_name(sfile, ACTION_SPY_POISON_ESC,
-                      "ui_name_poison_city_escape");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_UNIT,
-                      "ui_name_sabotage_unit");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_UNIT_ESC,
-                      "ui_name_sabotage_unit_escape");
-  save_action_ui_name(sfile, ACTION_SPY_BRIBE_UNIT,
-                      "ui_name_bribe_unit");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_CITY,
-                      "ui_name_sabotage_city");
-  save_action_ui_name(sfile, ACTION_SPY_SABOTAGE_CITY_ESC,
-                      "ui_name_sabotage_city_escape");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_SABOTAGE_CITY,
-                      "ui_name_targeted_sabotage_city");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_SABOTAGE_CITY_ESC,
-                      "ui_name_targeted_sabotage_city_escape");
-  save_action_ui_name(sfile, ACTION_SPY_INCITE_CITY,
-                      "ui_name_incite_city");
-  save_action_ui_name(sfile, ACTION_SPY_INCITE_CITY_ESC,
-                      "ui_name_incite_city_escape");
-  save_action_ui_name(sfile, ACTION_ESTABLISH_EMBASSY,
-                      "ui_name_establish_embassy");
-  save_action_ui_name(sfile, ACTION_ESTABLISH_EMBASSY_STAY,
-                      "ui_name_establish_embassy_stay");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_TECH,
-                      "ui_name_steal_tech");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_TECH_ESC,
-                      "ui_name_steal_tech_escape");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_STEAL_TECH,
-                      "ui_name_targeted_steal_tech");
-  save_action_ui_name(sfile, ACTION_SPY_TARGETED_STEAL_TECH_ESC,
-                      "ui_name_targeted_steal_tech_escape");
-  save_action_ui_name(sfile, ACTION_SPY_INVESTIGATE_CITY,
-                      "ui_name_investigate_city");
-  save_action_ui_name(sfile, ACTION_INV_CITY_SPEND,
-                      "ui_name_investigate_city_spend_unit");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_GOLD,
-                      "ui_name_steal_gold");
-  save_action_ui_name(sfile, ACTION_SPY_STEAL_GOLD_ESC,
-                      "ui_name_steal_gold_escape");
-  save_action_ui_name(sfile, ACTION_STEAL_MAPS,
-                      "ui_name_steal_maps");
-  save_action_ui_name(sfile, ACTION_STEAL_MAPS_ESC,
-                      "ui_name_steal_maps_escape");
-  save_action_ui_name(sfile, ACTION_TRADE_ROUTE,
-                      "ui_name_establish_trade_route");
-  save_action_ui_name(sfile, ACTION_MARKETPLACE,
-                      "ui_name_enter_marketplace");
-  save_action_ui_name(sfile, ACTION_HELP_WONDER,
-                      "ui_name_help_wonder");
-  save_action_ui_name(sfile, ACTION_CAPTURE_UNITS,
-                      "ui_name_capture_units");
-  save_action_ui_name(sfile, ACTION_EXPEL_UNIT,
-                      "ui_name_expel_unit");
-  save_action_ui_name(sfile, ACTION_FOUND_CITY,
-                      "ui_name_found_city");
-  save_action_ui_name(sfile, ACTION_JOIN_CITY,
-                      "ui_name_join_city");
-  save_action_ui_name(sfile, ACTION_BOMBARD,
-                      "ui_name_bombard");
-  save_action_ui_name(sfile, ACTION_SPY_NUKE,
-                      "ui_name_suitcase_nuke");
-  save_action_ui_name(sfile, ACTION_SPY_NUKE_ESC,
-                      "ui_name_suitcase_nuke_escape");
-  save_action_ui_name(sfile, ACTION_NUKE,
-                      "ui_name_explode_nuclear");
-  save_action_ui_name(sfile, ACTION_DESTROY_CITY,
-                      "ui_name_destroy_city");
-  save_action_ui_name(sfile, ACTION_RECYCLE_UNIT,
-                      "ui_name_recycle_unit");
-  save_action_ui_name(sfile, ACTION_DISBAND_UNIT,
-                      "ui_name_disband_unit");
-  save_action_ui_name(sfile, ACTION_HOME_CITY,
-                      "ui_name_home_city");
-  save_action_ui_name(sfile, ACTION_UPGRADE_UNIT,
-                      "ui_name_upgrade_unit");
-  save_action_ui_name(sfile, ACTION_PARADROP,
-                      "ui_name_paradrop_unit");
-  save_action_ui_name(sfile, ACTION_AIRLIFT,
-                      "ui_name_airlift_unit");
-  save_action_ui_name(sfile, ACTION_ATTACK,
-                      "ui_name_attack");
-  save_action_ui_name(sfile, ACTION_CONQUER_CITY,
-                      "ui_name_conquer_city");
-  save_action_ui_name(sfile, ACTION_HEAL_UNIT,
-                      "ui_name_heal_unit");
-  save_action_ui_name(sfile, ACTION_TRANSFORM_TERRAIN,
-                      "ui_name_transform_terrain");
-  save_action_ui_name(sfile, ACTION_IRRIGATE_TF,
-                      "ui_name_irrigate_tf");
-  save_action_ui_name(sfile, ACTION_MINE_TF,
-                      "ui_name_mine_tf");
-  save_action_ui_name(sfile, ACTION_PILLAGE,
-                      "ui_name_pillage");
-  save_action_ui_name(sfile, ACTION_FORTIFY,
-                      "ui_name_fortify");
-  save_action_ui_name(sfile, ACTION_ROAD,
-                      "ui_name_road");
-
-  i = 0;
-  action_iterate(act) {
-    if (action_by_number(act)->quiet) {
-      quiet_actions[i] = act;
-      i++;
-    }
-  } action_iterate_end;
-
-  if (secfile_insert_enum_vec(sfile, &quiet_actions, i, gen_action,
-                              "actions.quiet_actions") != i) {
-    log_error("Didn't save all quiet actions.");
-
-    return FALSE;
-  }
-
-  comment_enablers(sfile);
-  sect_idx = 0;
-  action_enablers_iterate(pae) {
-    char path[512];
-
-    fc_snprintf(path, sizeof(path), "actionenabler_%d", sect_idx++);
-
-    secfile_insert_str(sfile, gen_action_name(pae->action),
-                       "%s.action", path);
-
-    save_reqs_vector(sfile, &(pae->actor_reqs), path, "actor_reqs");
-    save_reqs_vector(sfile, &(pae->target_reqs), path, "target_reqs");
-  } action_enablers_iterate_end;
-
   save_default_bool(sfile, game.info.tired_attack,
                     RS_DEFAULT_TIRED_ATTACK,
-                    "combat_rules.tired_attack", NULL);
+                    "combat_rules.tired_attack", nullptr);
+  if (game.info.only_killing_makes_veteran != RS_DEFAULT_ONLY_KILLING_VETERAN) {
+    comment_combat_rules_only_killing_veteran(sfile);
+  }
+  save_default_bool(sfile, game.info.only_killing_makes_veteran,
+                    RS_DEFAULT_ONLY_KILLING_VETERAN,
+                    "combat_rules.only_killing_makes_veteran", nullptr);
+  if (game.info.only_real_fight_makes_veteran != RS_DEFAULT_ONLY_REAL_FIGHT_VETERAN) {
+    comment_combat_rules_only_real_fight_veteran(sfile);
+  }
+  save_default_bool(sfile, game.info.only_real_fight_makes_veteran,
+                    RS_DEFAULT_ONLY_REAL_FIGHT_VETERAN,
+                    "combat_rules.only_real_fight_makes_veteran", nullptr);
+  if (game.info.combat_odds_scaled_veterancy != RS_DEFAULT_COMBAT_ODDS_SCALED_VETERANCY) {
+    comment_combat_rules_scaled_veterancy(sfile);
+  }
+  save_default_bool(sfile, game.info.combat_odds_scaled_veterancy,
+                    RS_DEFAULT_COMBAT_ODDS_SCALED_VETERANCY,
+                    "combat_rules.combat_odds_scaled_veterancy", nullptr);
+  if (game.info.damage_reduces_bombard_rate != RS_DEFAULT_DAMAGE_REDUCES_BOMBARD_RATE) {
+    comment_combat_rules_damage_reduces_bombard_rate(sfile);
+  }
+  save_default_bool(sfile, game.info.damage_reduces_bombard_rate,
+                    RS_DEFAULT_DAMAGE_REDUCES_BOMBARD_RATE,
+                    "combat_rules.damage_reduces_bombard_rate", nullptr);
+  if (game.info.low_firepower_badwallattacker != 1) {
+    comment_combat_rules_low_fp_badwallattacker(sfile);
+  }
+  save_default_int(sfile, game.info.low_firepower_badwallattacker, 1,
+                   "combat_rules.low_firepower_badwallattacker", nullptr);
+  if (game.info.low_firepower_pearl_harbor != 1) {
+    comment_combat_rules_low_fp_pearl_harbor(sfile);
+  }
+  save_default_int(sfile, game.info.low_firepower_pearl_harbor, 1,
+                   "combat_rules.low_firepower_pearl_harbor", nullptr);
+  if (game.info.low_firepower_combat_bonus != 1) {
+    comment_combat_rules_low_fp_combat_bonus(sfile);
+  }
+  save_default_int(sfile, game.info.low_firepower_combat_bonus, 1,
+                   "combat_rules.low_firepower_combat_bonus", nullptr);
+  if (game.info.low_firepower_nonnat_bombard != 1) {
+    comment_combat_rules_low_fp_nonnat_bombard(sfile);
+  }
+  save_default_int(sfile, game.info.low_firepower_nonnat_bombard, 1,
+                   "combat_rules.low_firepower_nonnat_bombard", nullptr);
+  if (game.info.nuke_pop_loss_pct != RS_DEFAULT_NUKE_POP_LOSS_PCT) {
+    comment_combat_rules_nuke_pop_loss(sfile);
+  }
+  save_default_int(sfile, game.info.nuke_pop_loss_pct,
+                    RS_DEFAULT_NUKE_POP_LOSS_PCT,
+                    "combat_rules.nuke_pop_loss_pct", nullptr);
+  if (game.info.nuke_defender_survival_chance_pct
+      != RS_DEFAULT_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT) {
+    comment_combat_rules_nuke_defender_survival(sfile);
+  }
+  save_default_int(sfile, game.info.nuke_defender_survival_chance_pct,
+                    RS_DEFAULT_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT,
+                    "combat_rules.nuke_defender_survival_chance_pct", nullptr);
   save_default_int(sfile, game.info.border_city_radius_sq,
                    RS_DEFAULT_BORDER_RADIUS_SQ_CITY,
-                   "borders.radius_sq_city", NULL);
+                   "borders.radius_sq_city", nullptr);
   save_default_int(sfile, game.info.border_size_effect,
                    RS_DEFAULT_BORDER_SIZE_EFFECT,
-                   "borders.size_effect", NULL);
+                   "borders.size_effect", nullptr);
+  if (game.info.border_city_permanent_radius_sq
+      != RS_DEFAULT_BORDER_RADIUS_SQ_CITY_PERMANENT) {
+    comment_borders_radius_permanent(sfile);
+  }
   save_default_int(sfile, game.info.border_city_permanent_radius_sq,
                    RS_DEFAULT_BORDER_RADIUS_SQ_CITY_PERMANENT,
-                   "borders.radius_sq_city_permanent", NULL);
+                   "borders.radius_sq_city_permanent", nullptr);
+
+  comment_research_tech_cost_style(sfile);
   secfile_insert_str(sfile, tech_cost_style_name(game.info.tech_cost_style),
                      "research.tech_cost_style");
+  if (game.info.base_tech_cost != RS_DEFAULT_BASE_TECH_COST) {
+    comment_research_base_tech_cost(sfile);
+  }
   save_default_int(sfile, game.info.base_tech_cost,
                    RS_DEFAULT_BASE_TECH_COST,
-                   "research.base_tech_cost", NULL);
+                   "research.base_tech_cost", nullptr);
+  if (game.info.min_tech_cost != RS_DEFAULT_MIN_TECH_COST) {
+    comment_research_min_tech_cost(sfile);
+  }
+  save_default_int(sfile, game.info.min_tech_cost,
+                   RS_DEFAULT_MIN_TECH_COST,
+                   "research.min_tech_cost", nullptr);
+  comment_research_tech_leakage(sfile);
   secfile_insert_str(sfile, tech_leakage_style_name(game.info.tech_leakage),
                      "research.tech_leakage");
+  comment_research_upkeep_style(sfile);
   secfile_insert_str(sfile, tech_upkeep_style_name(game.info.tech_upkeep_style),
                      "research.tech_upkeep_style");
   save_default_int(sfile, game.info.tech_upkeep_divider,
                    RS_DEFAULT_TECH_UPKEEP_DIVIDER,
-                   "research.tech_upkeep_divider", NULL);
+                   "research.tech_upkeep_divider", nullptr);
+  comment_research_free_tech_method(sfile);
   secfile_insert_str(sfile, free_tech_method_name(game.info.free_tech_method),
                      "research.free_tech_method");
 
   save_default_int(sfile, game.info.culture_vic_points,
                    RS_DEFAULT_CULTURE_VIC_POINTS,
-                   "culture.victory_min_points", NULL);
+                   "culture.victory_min_points", nullptr);
   save_default_int(sfile, game.info.culture_vic_lead,
                    RS_DEFAULT_CULTURE_VIC_LEAD,
-                   "culture.victory_lead_pct", NULL);
+                   "culture.victory_lead_pct", nullptr);
+  if (game.info.culture_migration_pml != RS_DEFAULT_CULTURE_MIGRATION_PML) {
+    comment_culture_migration_pml(sfile);
+  }
   save_default_int(sfile, game.info.culture_migration_pml,
                    RS_DEFAULT_CULTURE_MIGRATION_PML,
-                   "culture.migration_pml", NULL);
+                   "culture.migration_pml", nullptr);
+  if (game.info.history_interest_pml != RS_DEFAULT_HISTORY_INTEREST_PML) {
+    comment_culture_history_interest(sfile);
+  }
+  save_default_int(sfile, game.info.history_interest_pml,
+                   RS_DEFAULT_HISTORY_INTEREST_PML,
+                   "culture.history_interest_pml", nullptr);
+  if (game.info.world_peace_turns != RS_DEFAULT_WORLD_PEACE_TURNS) {
+    comment_world_peace_turns(sfile);
+  }
+  save_default_int(sfile, game.info.world_peace_turns,
+                   RS_DEFAULT_WORLD_PEACE_TURNS,
+                   "world_peace.victory_turns", nullptr);
 
   save_default_bool(sfile, game.calendar.calendar_skip_0,
                     RS_DEFAULT_CALENDAR_SKIP_0,
-                    "calendar.skip_year_0", NULL);
+                    "calendar.skip_year_0", nullptr);
   save_default_int(sfile, game.server.start_year,
-                   GAME_START_YEAR,
-                   "calendar.start_year", NULL);
+                   GAME_DEFAULT_START_YEAR,
+                   "calendar.start_year", nullptr);
+  if (game.calendar.calendar_fragments != 0) {
+    comment_calendar_fragments(sfile);
+  }
   save_default_int(sfile, game.calendar.calendar_fragments,
-                   0, "calendar.fragments", NULL);
+                   0, "calendar.fragments", nullptr);
 
   for (i = 0; i < MAX_CALENDAR_FRAGMENTS; i++) {
     if (game.calendar.calendar_fragment_name[i][0] != '\0') {
@@ -1253,7 +1650,7 @@ static bool save_game_ruleset(const char *filename, const char *name)
                        "calendar.negative_label");
   }
 
-  if (game.plr_bg_color != NULL) {
+  if (game.plr_bg_color != nullptr) {
     rgbcolor_save(sfile, game.plr_bg_color, "playercolors.background");
   }
 
@@ -1328,16 +1725,18 @@ static bool save_game_ruleset(const char *filename, const char *name)
                      0, path, "culture");
 
     secfile_insert_str(sfile, pach->first_msg, "%s.first_msg", path);
-    if (pach->cons_msg != NULL) {
+    if (pach->cons_msg != nullptr) {
       secfile_insert_str(sfile, pach->cons_msg, "%s.cons_msg", path);
     }
 
   } achievements_iterate_end;
 
+  comment_trade_settings(sfile);
+
   set_count = 0;
   for (trt = 0; trt < TRT_LAST; trt++) {
     struct trade_route_settings *set = trade_route_settings_by_type(trt);
-    const char *cancelling = traderoute_cancelling_type_name(set->cancelling);
+    const char *cancelling = trade_route_cancelling_type_name(set->cancelling);
 
     if (set->trade_pct != 100 || strcmp(cancelling, "Active")) {
       char path[256];
@@ -1351,16 +1750,27 @@ static bool save_game_ruleset(const char *filename, const char *name)
                          "%s.pct", path);
       secfile_insert_str(sfile, cancelling,
                          "%s.cancelling", path);
-      secfile_insert_str(sfile, traderoute_bonus_type_name(set->bonus_type),
+      secfile_insert_str(sfile, trade_route_bonus_type_name(set->bonus_type),
                          "%s.bonus", path);
     }
+  }
+
+  save_default_int(sfile, game.info.min_trade_route_val,
+                   0, "trade.min_trade_route_val", nullptr);
+
+  save_default_bool(sfile, game.info.reveal_trade_partner,
+                    FALSE, "trade.reveal_trade_partner", nullptr);
+
+  if (game.info.goods_selection != RS_DEFAULT_GOODS_SELECTION) {
+    secfile_insert_str(sfile, goods_selection_method_name(game.info.goods_selection),
+                       "trade.goods_selection");
   }
 
   /* Goods */
   comment_goods(sfile);
 
   sect_idx = 0;
-  goods_active_type_iterate(pgood) {
+  goods_type_re_active_iterate(pgood) {
     char path[512];
     const char *flag_names[GF_COUNT];
     int flagi;
@@ -1374,6 +1784,8 @@ static bool save_game_ruleset(const char *filename, const char *name)
     save_default_int(sfile, pgood->from_pct, 100, path, "from_pct");
     save_default_int(sfile, pgood->to_pct, 100, path, "to_pct");
     save_default_int(sfile, pgood->onetime_pct, 100, path, "onetime_pct");
+    save_default_int(sfile, pgood->select_priority, 1, path, "select_priority");
+    save_default_int(sfile, pgood->replace_priority, 1, path, "replace_priority");
 
     set_count = 0;
     for (flagi = 0; flagi < GF_COUNT; flagi++) {
@@ -1388,11 +1800,53 @@ static bool save_game_ruleset(const char *filename, const char *name)
     }
 
     save_strvec(sfile, pgood->helptext, path, "helptext");
-  } goods_active_type_iterate_end;
+  } goods_type_re_active_iterate_end;
+
+  /* Clauses */
+  comment_clauses(sfile);
+
+  sect_idx = 0;
+  for (i = 0; i < CLAUSE_COUNT; i++) {
+    struct clause_info *info = clause_info_get(i);
+
+    if (info->enabled) {
+      char path[512];
+
+      fc_snprintf(path, sizeof(path), "clause_%d", sect_idx++);
+
+      secfile_insert_str(sfile, clause_type_name(info->type),
+                         "%s.type", path);
+      save_reqs_vector(sfile, &(info->giver_reqs), path, "giver_reqs");
+      save_reqs_vector(sfile, &(info->receiver_reqs), path, "receiver_reqs");
+      save_reqs_vector(sfile, &(info->either_reqs), path, "either_reqs");
+    }
+  }
+
+  /* Counters */
+  comment_counters(sfile);
+
+  sect_idx = 0;
+  counters_re_iterate(pcounter) {
+    char path[512];
+
+    fc_snprintf(path, sizeof(path), "counter_%d", sect_idx++);
+
+    save_name_translation(sfile, &(pcounter->name), path);
+
+    save_default_int(sfile, pcounter->def, 0, path, "def");
+    save_default_int(sfile, pcounter->checkpoint, 0, path, "checkpoint");
+
+    secfile_insert_str(sfile, counter_behaviour_name(pcounter->type), "%s.type", path);
+
+    if (pcounter->helptext != nullptr
+        && strvec_size(pcounter->helptext) > 0) {
+      save_strvec(sfile, pcounter->helptext, "%s.helptext", path);
+    }
+  } counters_re_iterate_end;
 
   locks = FALSE;
   settings_iterate(SSET_ALL, pset) {
-    if (setting_locked(pset)) {
+    if (setting_ruleset_locked(pset)) {
       locks = TRUE;
       break;
     }
@@ -1400,7 +1854,9 @@ static bool save_game_ruleset(const char *filename, const char *name)
 
   set_count = 0;
   settings_iterate(SSET_ALL, pset) {
-    if (setting_get_setdef(pset) == SETDEF_RULESET || setting_locked(pset)) {
+    struct sf_cb_data info = { pset, FALSE };
+
+    if (setting_get_setdef(pset) == SETDEF_RULESET || setting_ruleset_locked(pset)) {
       secfile_insert_str(sfile, setting_name(pset),
                          "settings.set%d.name", set_count);
       switch (setting_type(pset)) {
@@ -1418,12 +1874,12 @@ static bool save_game_ruleset(const char *filename, const char *name)
         break;
       case SST_ENUM:
         secfile_insert_enum_data(sfile, read_enum_value(pset), FALSE,
-                                 setting_enum_secfile_str, pset,
+                                 setting_enum_secfile_str, &info,
                                  "settings.set%d.value", set_count);
         break;
       case SST_BITWISE:
         secfile_insert_enum_data(sfile, setting_bitwise_get(pset), TRUE,
-                                 setting_bitwise_secfile_str, pset,
+                                 setting_bitwise_secfile_str, &info,
                                  "settings.set%d.value", set_count);
         break;
       case SST_COUNT:
@@ -1434,7 +1890,7 @@ static bool save_game_ruleset(const char *filename, const char *name)
       }
 
       if (locks) {
-        secfile_insert_bool(sfile, setting_locked(pset),
+        secfile_insert_bool(sfile, setting_ruleset_locked(pset),
                             "settings.set%d.lock", set_count);
       }
 
@@ -1453,7 +1909,7 @@ static bool save_governments_ruleset(const char *filename, const char *name)
   struct section_file *sfile = create_ruleset_file(name, "government");
   int sect_idx;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
@@ -1463,7 +1919,7 @@ static bool save_governments_ruleset(const char *filename, const char *name)
   comment_govs(sfile);
 
   sect_idx = 0;
-  governments_active_iterate(pg) {
+  governments_re_active_iterate(pg) {
     char path[512];
     struct ruler_title *prtitle;
 
@@ -1473,27 +1929,29 @@ static bool save_governments_ruleset(const char *filename, const char *name)
 
     secfile_insert_str(sfile, pg->graphic_str, "%s.graphic", path);
     secfile_insert_str(sfile, pg->graphic_alt, "%s.graphic_alt", path);
+    secfile_insert_str(sfile, pg->sound_str, "%s.sound", path);
+    secfile_insert_str(sfile, pg->sound_alt, "%s.sound_alt", path);
 
     save_reqs_vector(sfile, &(pg->reqs), path, "reqs");
 
-    if (pg->ai.better != NULL) {
+    if (pg->ai.better != nullptr) {
       save_gov_ref(sfile, pg->ai.better, path,
                    "ai_better");
     }
 
-    ruler_title_hash_lookup(pg->ruler_titles, NULL,
+    ruler_title_hash_lookup(pg->ruler_titles, nullptr,
                             &prtitle);
-    if (prtitle != NULL) {
+    if (prtitle != nullptr) {
       const char *title;
 
       title = ruler_title_male_untranslated_name(prtitle);
-      if (title != NULL) {
+      if (title != nullptr) {
         secfile_insert_str(sfile, title,
                            "%s.ruler_male_title", path);
       }
 
       title = ruler_title_female_untranslated_name(prtitle);
-      if (title != NULL) {
+      if (title != nullptr) {
         secfile_insert_str(sfile, title,
                            "%s.ruler_female_title", path);
       }
@@ -1501,13 +1959,13 @@ static bool save_governments_ruleset(const char *filename, const char *name)
 
     save_strvec(sfile, pg->helptext, path, "helptext");
 
-  } governments_active_iterate_end;
+  } governments_re_active_iterate_end;
 
   comment_policies(sfile);
 
   sect_idx = 0;
   multipliers_iterate(pmul) {
-    if (!pmul->disabled) {
+    if (!pmul->ruledit_disabled) {
       char path[512];
 
       fc_snprintf(path, sizeof(path), "multiplier_%d", sect_idx++);
@@ -1518,6 +1976,10 @@ static bool save_governments_ruleset(const char *filename, const char *name)
       secfile_insert_int(sfile, pmul->stop, "%s.stop", path);
       secfile_insert_int(sfile, pmul->step, "%s.step", path);
       secfile_insert_int(sfile, pmul->def, "%s.default", path);
+
+      save_default_int(sfile, pmul->offset, 0, path, "offset");
+      save_default_int(sfile, pmul->factor, 100, path, "factor");
+      save_default_int(sfile, pmul->minimum_turns, 0, path, "minimum_turns");
 
       save_reqs_vector(sfile, &(pmul->reqs), path, "reqs");
 
@@ -1539,27 +2001,29 @@ static bool save_traits(struct trait_limits *traits,
   enum trait tr;
 
  /* FIXME: Use specenum trait names without duplicating them here.
-   *        Just needs to take care of case. */
+  *        Just needs to take care of case.
+  *        This list is also duplicated in ruleset.c:ruleset_load_traits() */
   const char *trait_names[] = {
     "expansionist",
     "trader",
     "aggressive",
-    NULL
+    "builder",
+    nullptr
   };
 
-  for (tr = trait_begin(); tr != trait_end() && trait_names[tr] != NULL;
+  for (tr = trait_begin(); tr != trait_end() && trait_names[tr] != nullptr;
        tr = trait_next(tr)) {
     int default_default;
 
     default_default = (traits[tr].min + traits[tr].max) / 2;
 
-    if ((default_traits == NULL && traits[tr].min != TRAIT_DEFAULT_VALUE)
-        || (default_traits != NULL && traits[tr].min != default_traits[tr].min)) {
+    if ((default_traits == nullptr && traits[tr].min != TRAIT_DEFAULT_VALUE)
+        || (default_traits != nullptr && traits[tr].min != default_traits[tr].min)) {
       secfile_insert_int(sfile, traits[tr].min, "%s.%s%s_min", secname, field_prefix,
                          trait_names[tr]);
     }
-    if ((default_traits == NULL && traits[tr].max != TRAIT_DEFAULT_VALUE)
-        || (default_traits != NULL && traits[tr].max != default_traits[tr].max)) {
+    if ((default_traits == nullptr && traits[tr].max != TRAIT_DEFAULT_VALUE)
+        || (default_traits != nullptr && traits[tr].max != default_traits[tr].max)) {
       secfile_insert_int(sfile, traits[tr].max, "%s.%s%s_max", secname, field_prefix,
                          trait_names[tr]);
     }
@@ -1589,8 +2053,8 @@ static bool save_nation(struct section_file *sfile, struct nation_type *pnat,
 
   fc_snprintf(path, sizeof(path), "nation_%d", sect_idx++);
 
-  if (pnat->translation_domain == NULL) {
-    secfile_insert_str(sfile, "freeciv", "%s.translation_domain", path);
+  if (pnat->translation_domain == nullptr) {
+    secfile_insert_str(sfile, "freeciv-core", "%s.translation_domain", path);
   } else {
     secfile_insert_str(sfile, pnat->translation_domain, "%s.translation_domain", path);
   }
@@ -1607,7 +2071,7 @@ static bool save_nation(struct section_file *sfile, struct nation_type *pnat,
   nation_groups_iterate(pgroup) {
     if (nation_is_in_group(pnat, pgroup)) {
       list_items[set_count++] = nation_group_rule_name(pgroup);
-    } 
+    }
   } nation_groups_iterate_end;
 
   if (set_count > 0) {
@@ -1626,11 +2090,13 @@ static bool save_nation(struct section_file *sfile, struct nation_type *pnat,
   nation_leader_list_iterate(pnat->leaders, pleader) {
     secfile_insert_str(sfile, nation_leader_name(pleader), "%s.leaders%d.name",
                        path, subsect_idx);
-    secfile_insert_str(sfile, nation_leader_is_male(pleader) ? "Male" : "Female",
+    secfile_insert_str(sfile,
+                       nation_leader_is_male(pleader) ?
+                       sex_rule_name(SEX_MALE) : sex_rule_name(SEX_FEMALE),
                        "%s.leaders%d.sex", path, subsect_idx++);
   } nation_leader_list_iterate_end;
 
-  if (pnat->server.rgb != NULL) {
+  if (pnat->server.rgb != nullptr) {
     rgbcolor_save(sfile, pnat->server.rgb, "%s.color", path);
   }
 
@@ -1695,7 +2161,7 @@ static bool save_nation(struct section_file *sfile, struct nation_type *pnat,
                                     + MAX_NUM_TERRAINS * (strlen(", ") + MAX_LEN_NAME));
 
     strcpy(city_str[set_count], nation_city_name(pncity));
-    switch(nation_city_river_preference(pncity)) {
+    switch (nation_city_river_preference(pncity)) {
     case NCP_DISLIKE:
       strcat(city_str[set_count], " (!river");
       list_started = TRUE;
@@ -1709,9 +2175,9 @@ static bool save_nation(struct section_file *sfile, struct nation_type *pnat,
     }
 
     terrain_type_iterate(pterr) {
-      const char *pref = NULL;
+      const char *pref = nullptr;
 
-      switch(nation_city_terrain_preference(pncity, pterr)) {
+      switch (nation_city_terrain_preference(pncity, pterr)) {
       case NCP_DISLIKE:
         pref = "!";
         break;
@@ -1719,11 +2185,11 @@ static bool save_nation(struct section_file *sfile, struct nation_type *pnat,
         pref = "";
         break;
       case NCP_NONE:
-        pref = NULL;
+        pref = nullptr;
         break;
       }
 
-      if (pref != NULL) {
+      if (pref != nullptr) {
         if (list_started) {
           strcat(city_str[set_count], ", ");
         } else {
@@ -1766,59 +2232,62 @@ static bool save_nations_ruleset(const char *filename, const char *name,
 {
   struct section_file *sfile = create_ruleset_file(name, "nation");
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
-  if (data->nationlist != NULL) {
-    secfile_insert_str(sfile, data->nationlist, "ruledit.nationlist");
-  }
-  if (game.server.ruledit.embedded_nations != NULL) {
-    int i;
-    const char **tmp = fc_malloc(game.server.ruledit.embedded_nations_count * sizeof(char *));
-
-    /* Dance around the secfile_insert_str_vec() parameter type (requires extra const)
-     * resrictions */
-    for (i = 0; i < game.server.ruledit.embedded_nations_count; i++) {
-      tmp[i] = game.server.ruledit.embedded_nations[i];
+  if (data->nationlist != nullptr || game.server.ruledit.embedded_nations != nullptr) {
+    comment_nations_ruledit(sfile);
+    if (data->nationlist != nullptr) {
+      secfile_insert_str(sfile, data->nationlist, "ruledit.nationlist");
     }
+    if (game.server.ruledit.embedded_nations != nullptr) {
+      int i;
+      const char **tmp = fc_malloc(game.server.ruledit.embedded_nations_count * sizeof(char *));
 
-    secfile_insert_str_vec(sfile, tmp,
-                           game.server.ruledit.embedded_nations_count,
-                           "ruledit.embedded_nations");
-    free(tmp);
+      /* Dance around the secfile_insert_str_vec() parameter type (requires extra const)
+       * resrictions */
+      for (i = 0; i < game.server.ruledit.embedded_nations_count; i++) {
+        tmp[i] = game.server.ruledit.embedded_nations[i];
+      }
+
+      secfile_insert_str_vec(sfile, tmp,
+                             game.server.ruledit.embedded_nations_count,
+                             "ruledit.embedded_nations");
+      free(tmp);
+    }
   }
 
-  save_traits(game.server.default_traits, NULL, sfile,
+  save_traits(game.server.default_traits, nullptr, sfile,
               "default_traits", "");
 
-  if (data->nationlist == NULL) {
-    if (game.server.ruledit.allowed_govs != NULL) {
+  if (data->nationlist == nullptr) {
+    if (game.server.ruledit.allowed_govs != nullptr) {
       secfile_insert_str_vec(sfile, game.server.ruledit.allowed_govs,
                              game.server.ruledit.ag_count,
                              "compatibility.allowed_govs");
     }
-    if (game.server.ruledit.allowed_terrains != NULL) {
+    if (game.server.ruledit.allowed_terrains != nullptr) {
       secfile_insert_str_vec(sfile, game.server.ruledit.allowed_terrains,
                              game.server.ruledit.at_count,
                              "compatibility.allowed_terrains");
     }
-    if (game.server.ruledit.allowed_styles != NULL) {
+    if (game.server.ruledit.allowed_styles != nullptr) {
       secfile_insert_str_vec(sfile, game.server.ruledit.allowed_styles,
                              game.server.ruledit.as_count,
                              "compatibility.allowed_styles");
     }
   }
 
-  if (game.default_government != NULL) {
+  if (game.default_government != nullptr) {
     secfile_insert_str(sfile, government_rule_name(game.default_government),
                        "compatibility.default_government");
   }
 
-  if (data->nationlist != NULL) {
+  if (data->nationlist != nullptr) {
     secfile_insert_include(sfile, data->nationlist);
 
-    if (game.server.ruledit.embedded_nations != NULL) {
+    if (game.server.ruledit.embedded_nations != nullptr) {
       int sect_idx;
 
       comment_nations(sfile);
@@ -1828,7 +2297,7 @@ static bool save_nations_ruleset(const char *filename, const char *name,
         struct nation_type *pnat
           = nation_by_rule_name(game.server.ruledit.embedded_nations[sect_idx]);
 
-        if (pnat == NULL) {
+        if (pnat == nullptr) {
           log_error("Embedded nation \"%s\" not found!",
                     game.server.ruledit.embedded_nations[sect_idx]);
         } else {
@@ -1889,9 +2358,9 @@ static bool save_techs_ruleset(const char *filename, const char *name)
   int i;
   int sect_idx;
   struct advance *a_none = advance_by_number(A_NONE);
+  bool uflags_tech = FALSE;
 
-
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
@@ -1899,7 +2368,12 @@ static bool save_techs_ruleset(const char *filename, const char *name)
     const char *flagname = tech_flag_id_name_cb(i + TECH_USER_1);
     const char *helptxt = tech_flag_helptxt(i + TECH_USER_1);
 
-    if (flagname != NULL) {
+    if (flagname != nullptr) {
+      if (!uflags_tech) {
+        comment_uflags_tech(sfile);
+        uflags_tech = TRUE;
+      }
+
       secfile_insert_str(sfile, flagname, "control.flags%d.name", i);
 
       /* Save the user flag help text even when it is undefined. That makes
@@ -1923,7 +2397,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
   comment_techs(sfile);
 
   sect_idx = 0;
-  advance_active_iterate(pa) {
+  advance_re_active_iterate(pa) {
     if (pa->require[AR_ONE] != A_NEVER) {
       char path[512];
       const char *flag_names[TF_COUNT];
@@ -1935,7 +2409,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
       save_name_translation(sfile, &(pa->name), path);
 
       if (game.control.num_tech_classes > 0) {
-        if (pa->tclass != NULL) {
+        if (pa->tclass != nullptr) {
           secfile_insert_str(sfile, tech_class_rule_name(pa->tclass),
                              "%s.class", path);
         }
@@ -1943,7 +2417,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
 
       save_tech_ref(sfile, pa->require[AR_ONE], path, "req1");
       save_tech_ref(sfile, pa->require[AR_TWO], path, "req2");
-      if (pa->require[AR_ROOT] != a_none) {
+      if (pa->require[AR_ROOT] != a_none && !pa->inherited_root_req) {
         save_tech_ref(sfile, pa->require[AR_ROOT], path, "root_req");
       }
 
@@ -1954,7 +2428,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
       if (strcmp("-", pa->graphic_alt)) {
         secfile_insert_str(sfile, pa->graphic_alt, "%s.graphic_alt", path);
       }
-      if (pa->bonus_message != NULL) {
+      if (pa->bonus_message != nullptr) {
         secfile_insert_str(sfile, pa->bonus_message, "%s.bonus_message", path);
       }
 
@@ -1976,7 +2450,7 @@ static bool save_techs_ruleset(const char *filename, const char *name)
       save_strvec(sfile, pa->helptext, path, "helptext");
     }
 
-  } advance_active_iterate_end;
+  } advance_re_active_iterate_end;
 
   return save_ruleset_file(sfile, filename);
 }
@@ -1989,8 +2463,10 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
   struct section_file *sfile = create_ruleset_file(name, "terrain");
   int sect_idx;
   int i;
+  bool uflags_terr = FALSE;
+  bool uflags_extra = FALSE;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
@@ -1998,7 +2474,12 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     const char *flagname = terrain_flag_id_name_cb(i + TER_USER_1);
     const char *helptxt = terrain_flag_helptxt(i + TER_USER_1);
 
-    if (flagname != NULL) {
+    if (flagname != nullptr) {
+      if (!uflags_terr) {
+        comment_uflags_terrain(sfile);
+        uflags_terr = TRUE;
+      }
+
       secfile_insert_str(sfile, flagname, "control.flags%d.name", i);
 
       /* Save the user flag help text even when it is undefined. That makes
@@ -2012,7 +2493,15 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     const char *flagname = extra_flag_id_name_cb(i + EF_USER_FLAG_1);
     const char *helptxt = extra_flag_helptxt(i + EF_USER_FLAG_1);
 
-    if (flagname != NULL) {
+    if (flagname != nullptr) {
+      if (!uflags_extra) {
+        /* TODO: Uncomment this, once there's a way to stop
+         *       the comment getting written inside preceding
+         *       terrain flags table. */
+        /* comment_uflags_extra(sfile); */
+        uflags_extra = TRUE;
+      }
+
       secfile_insert_str(sfile, flagname, "control.extra_flags%d.name", i);
 
       /* Save the user flag help text even when it is undefined. That makes
@@ -2056,7 +2545,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
                        "parameters.igter_cost");
   }
   if (terrain_control.pythagorean_diagonal != RS_DEFAULT_PYTHAGOREAN_DIAGONAL) {
-    secfile_insert_bool(sfile, TRUE,
+    secfile_insert_bool(sfile, terrain_control.pythagorean_diagonal,
                         "parameters.pythagorean_diagonal");
   }
   if (wld.map.server.ocean_resources) {
@@ -2082,6 +2571,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
     secfile_insert_str(sfile, pterr->graphic_str, "%s.graphic", path);
     secfile_insert_str(sfile, pterr->graphic_alt, "%s.graphic_alt", path);
+    secfile_insert_str(sfile, pterr->graphic_alt2, "%s.graphic_alt2", path);
     identifier[0] = pterr->identifier;
     identifier[1] = '\0';
     secfile_insert_str(sfile, identifier, "%s.identifier", path);
@@ -2100,19 +2590,29 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     } output_type_iterate_end;
 
     /* Check resource count */
-    for (r = 0; pterr->resources[r] != NULL; r++) {
+    for (r = 0; pterr->resources[r] != nullptr; r++) {
       /* Just increasing r as long as there is resources */
     }
 
     {
       const char *resource_names[r];
+      bool save_frequencies = FALSE;
 
-      for (r = 0; pterr->resources[r] != NULL; r++) {
-        resource_names[r] = extra_rule_name(pterr->resources[r]);
-      }
+      r = 0;
+      terrain_resources_iterate(pterr, res, freq) {
+        resource_names[r++] = extra_rule_name(res);
+        if (freq != RESOURCE_FREQUENCY_DEFAULT) {
+          save_frequencies = TRUE;
+        }
+      } terrain_resources_iterate_end;
 
       secfile_insert_str_vec(sfile, resource_names, r,
                              "%s.resources", path);
+
+      if (save_frequencies) {
+        secfile_insert_int_vec(sfile, pterr->resource_freq, r,
+                               "%s.resource_freq", path);
+      }
     }
 
     output_type_iterate(o) {
@@ -2126,15 +2626,21 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     secfile_insert_int(sfile, pterr->base_time, "%s.base_time", path);
     secfile_insert_int(sfile, pterr->road_time, "%s.road_time", path);
 
-    save_terrain_ref(sfile, pterr->irrigation_result, pterr, path,
-                     "irrigation_result");
+    save_terrain_ref(sfile, pterr->cultivate_result, pterr, path,
+                     "cultivate_result");
+    secfile_insert_int(sfile, pterr->cultivate_time,
+                       "%s.cultivate_time", path);
+
+    save_terrain_ref(sfile, pterr->plant_result, pterr, path,
+                     "plant_result");
+    secfile_insert_int(sfile, pterr->plant_time,
+                       "%s.plant_time", path);
+
     secfile_insert_int(sfile, pterr->irrigation_food_incr,
                        "%s.irrigation_food_incr", path);
     secfile_insert_int(sfile, pterr->irrigation_time,
                        "%s.irrigation_time", path);
 
-    save_terrain_ref(sfile, pterr->mining_result, pterr, path,
-                     "mining_result");
     secfile_insert_int(sfile, pterr->mining_shield_incr,
                        "%s.mining_shield_incr", path);
     secfile_insert_int(sfile, pterr->mining_time,
@@ -2145,7 +2651,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     secfile_insert_int(sfile, pterr->transform_time,
                        "%s.transform_time", path);
 
-    if (pterr->animal != NULL) {
+    if (pterr->animal != nullptr) {
       secfile_insert_str(sfile, utype_rule_name(pterr->animal),
                          "%s.animal", path);
     } else {
@@ -2153,12 +2659,24 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
                          "%s.animal", path);
     }
 
+    secfile_insert_int(sfile, pterr->placing_time,
+                       "%s.placing_time", path);
     secfile_insert_int(sfile, pterr->pillage_time,
                        "%s.pillage_time", path);
-    secfile_insert_int(sfile, pterr->clean_pollution_time,
-                       "%s.clean_pollution_time", path);
-    secfile_insert_int(sfile, pterr->clean_fallout_time,
-                       "%s.clean_fallout_time", path);
+
+    i = 0;
+    extra_type_iterate(pextra) {
+      int rmtime = pterr->extra_removal_times[extra_index(pextra)];
+
+      if (rmtime != 0) {
+        secfile_insert_str(sfile, extra_rule_name(pextra),
+                           "%s.extra_settings%d.extra",
+                           path, i);
+        secfile_insert_int(sfile, rmtime,
+                           "%s.extra_settings%d.removal_time",
+                           path, i++);
+      }
+    } extra_type_iterate_end;
 
     save_terrain_ref(sfile, pterr->warmer_wetter_result, pterr, path,
                      "warmer_wetter_result");
@@ -2217,7 +2735,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
   sect_idx = 0;
   extra_type_by_cause_iterate(EC_RESOURCE, pres) {
-    if (!pres->disabled) {
+    if (!pres->ruledit_disabled) {
       char path[512];
       char identifier[2];
 
@@ -2233,9 +2751,11 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
         }
       } output_type_iterate_end;
 
-      identifier[0] = pres->data.resource->id_old_save;
-      identifier[1] = '\0';
-      secfile_insert_str(sfile, identifier, "%s.identifier", path);
+      if (pres->data.resource->id_old_save != '\0') {
+        identifier[0] = pres->data.resource->id_old_save;
+        identifier[1] = '\0';
+        secfile_insert_str(sfile, identifier, "%s.identifier", path);
+      }
     }
   } extra_type_by_cause_iterate_end;
 
@@ -2247,7 +2767,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
   comment_extras(sfile);
 
   sect_idx = 0;
-  extra_active_type_iterate(pextra) {
+  extra_type_re_active_iterate(pextra) {
     char path[512];
     const char *flag_names[EF_COUNT];
     const char *cause_names[EC_COUNT];
@@ -2256,6 +2776,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     int flagi;
     int causei;
     int set_count;
+    bool worker_cause;
 
     fc_snprintf(path, sizeof(path), "extra_%d", sect_idx++);
 
@@ -2315,8 +2836,13 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     save_reqs_vector(sfile, &(pextra->appearance_reqs), path, "appearance_reqs");
     save_reqs_vector(sfile, &(pextra->disappearance_reqs), path, "disappearance_reqs");
 
-    if (!pextra->buildable) {
+    worker_cause = is_extra_caused_by_worker_action(pextra);
+    if ((!pextra->buildable && worker_cause)
+        || (pextra->buildable && !worker_cause)) {
       secfile_insert_bool(sfile, pextra->buildable, "%s.buildable", path);
+    }
+    if (!pextra->generated) {
+      secfile_insert_bool(sfile, pextra->generated, "%s.generated", path);
     }
     secfile_insert_int(sfile, pextra->build_time, "%s.build_time", path);
     secfile_insert_int(sfile, pextra->removal_time, "%s.removal_time", path);
@@ -2325,6 +2851,9 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     }
     if (pextra->removal_time_factor != 1) {
       secfile_insert_int(sfile, pextra->removal_time_factor, "%s.removal_time_factor", path);
+    }
+    if (pextra->infracost != 0) {
+      secfile_insert_int(sfile, pextra->infracost, "%s.infracost", path);
     }
     if (pextra->defense_bonus != 0) {
       secfile_insert_int(sfile, pextra->defense_bonus, "%s.defense_bonus", path);
@@ -2353,6 +2882,11 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
     if (set_count > 0) {
       secfile_insert_str_vec(sfile, puc_names, set_count,
                              "%s.native_to", path);
+    }
+
+    if (pextra->no_aggr_near_city >= 0) {
+      secfile_insert_int(sfile, pextra->no_aggr_near_city,
+                         "%s.no_aggr_near_city", path);
     }
 
     set_count = 0;
@@ -2405,18 +2939,15 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
     save_strvec(sfile, pextra->helptext, path, "helptext");
 
-  } extra_active_type_iterate_end;
+  } extra_type_re_active_iterate_end;
 
   comment_bases(sfile);
 
   sect_idx = 0;
   extra_type_by_cause_iterate(EC_BASE, pextra) {
-    if (!pextra->disabled) {
+    if (!pextra->ruledit_disabled) {
       char path[512];
       struct base_type *pbase = extra_base_get(pextra);
-      const char *flag_names[BF_COUNT];
-      int flagi;
-      int set_count;
 
       fc_snprintf(path, sizeof(path), "base_%d", sect_idx++);
 
@@ -2438,18 +2969,6 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
       if (pbase->vision_subs_sq >= 0) {
         secfile_insert_int(sfile, pbase->vision_subs_sq, "%s.vision_subs_sq", path);
       }
-
-      set_count = 0;
-      for (flagi = 0; flagi < BF_COUNT; flagi++) {
-        if (base_has_flag(pbase, flagi)) {
-          flag_names[set_count++] = base_flag_id_name(flagi);
-        }
-      }
-
-      if (set_count > 0) {
-        secfile_insert_str_vec(sfile, flag_names, set_count,
-                               "%s.flags", path);
-      }
     }
   } extra_type_by_cause_iterate_end;
 
@@ -2457,7 +2976,7 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
 
   sect_idx = 0;
   extra_type_by_cause_iterate(EC_ROAD, pextra) {
-    if (!pextra->disabled) {
+    if (!pextra->ruledit_disabled) {
       struct road_type *proad = extra_road_get(pextra);
       char path[512];
       const char *flag_names[RF_COUNT];
@@ -2506,6 +3025,9 @@ static bool save_terrain_ruleset(const char *filename, const char *name)
         break;
       }
 
+      secfile_insert_str(sfile, road_gui_type_name(proad->gui_type),
+                         "%s.gui_type", path);
+
       set_count = 0;
       for (flagi = 0; flagi < RF_COUNT; flagi++) {
         if (road_has_flag(proad, flagi)) {
@@ -2539,7 +3061,7 @@ static bool save_veteran_system(struct section_file *sfile, const char *path,
   for (i = 0; i < vsystem->levels; i++) {
     vlist_name[i] = rule_name_get(&(vsystem->definitions[i].name));
     vlist_power[i] = vsystem->definitions[i].power_fact;
-    vlist_raise[i] = vsystem->definitions[i].raise_chance;
+    vlist_raise[i] = vsystem->definitions[i].base_raise_chance;
     vlist_wraise[i] = vsystem->definitions[i].work_raise_chance;
     vlist_move[i] = vsystem->definitions[i].move_bonus;
   }
@@ -2549,7 +3071,7 @@ static bool save_veteran_system(struct section_file *sfile, const char *path,
   secfile_insert_int_vec(sfile, vlist_power, vsystem->levels,
                          "%s.veteran_power_fact", path);
   secfile_insert_int_vec(sfile, vlist_raise, vsystem->levels,
-                         "%s.veteran_raise_chance", path);
+                         "%s.veteran_base_raise_chance", path);
   secfile_insert_int_vec(sfile, vlist_wraise, vsystem->levels,
                          "%s.veteran_work_raise_chance", path);
   secfile_insert_int_vec(sfile, vlist_move, vsystem->levels,
@@ -2603,8 +3125,10 @@ static bool save_units_ruleset(const char *filename, const char *name)
   struct section_file *sfile = create_ruleset_file(name, "unit");
   int i;
   int sect_idx;
+  bool uflags_utype = FALSE;
+  bool uflags_uclass = FALSE;
 
-  if (sfile == NULL) {
+  if (sfile == nullptr) {
     return FALSE;
   }
 
@@ -2612,7 +3136,12 @@ static bool save_units_ruleset(const char *filename, const char *name)
     const char *flagname = unit_type_flag_id_name_cb(i + UTYF_USER_FLAG_1);
     const char *helptxt = unit_type_flag_helptxt(i + UTYF_USER_FLAG_1);
 
-    if (flagname != NULL) {
+    if (flagname != nullptr) {
+      if (!uflags_utype) {
+        comment_uflags_utype(sfile);
+        uflags_utype = TRUE;
+      }
+
       secfile_insert_str(sfile, flagname, "control.flags%d.name", i);
 
       /* Save the user flag help text even when it is undefined. That makes
@@ -2626,7 +3155,15 @@ static bool save_units_ruleset(const char *filename, const char *name)
     const char *flagname = unit_class_flag_id_name_cb(i + UCF_USER_FLAG_1);
     const char *helptxt = unit_class_flag_helptxt(i + UCF_USER_FLAG_1);
 
-    if (flagname != NULL) {
+    if (flagname != nullptr) {
+      if (!uflags_uclass) {
+        /* TODO: Uncomment this, once there's a way to stop
+         *       the comment getting written inside preceding
+         *       utype flags table. */
+        /* comment_uflags_uclass(sfile); */
+        uflags_uclass = TRUE;
+      }
+
       secfile_insert_str(sfile, flagname, "control.class_flags%d.name", i);
 
       /* Save the user flag help text even when it is undefined. That makes
@@ -2642,9 +3179,8 @@ static bool save_units_ruleset(const char *filename, const char *name)
   comment_uclasses(sfile);
 
   sect_idx = 0;
-  unit_active_class_iterate(puc) {
+  unit_class_re_active_iterate(puc) {
     char path[512];
-    char *hut_str = NULL;
     const char *flag_names[UCF_COUNT];
     int flagi;
     int set_count;
@@ -2659,21 +3195,6 @@ static bool save_units_ruleset(const char *filename, const char *name)
     if (puc->non_native_def_pct != 100) {
       secfile_insert_int(sfile, puc->non_native_def_pct,
                          "%s.non_native_def_pct", path);
-    }
-    if (puc->hut_behavior != HUT_NORMAL) {
-      switch (puc->hut_behavior) {
-      case HUT_NORMAL:
-        hut_str = "Normal";
-        break;
-      case HUT_NOTHING:
-        hut_str = "Nothing";
-        break;
-      case HUT_FRIGHTEN:
-        hut_str = "Frighten";
-        break;
-      }
-      fc_assert(hut_str != NULL);
-      secfile_insert_str(sfile, hut_str, "%s.hut_behavior", path);
     }
 
     set_count = 0;
@@ -2690,13 +3211,13 @@ static bool save_units_ruleset(const char *filename, const char *name)
 
     save_strvec(sfile, puc->helptext, path, "helptext");
 
-  } unit_active_class_iterate_end;
+  } unit_class_re_active_iterate_end;
 
   comment_utypes(sfile);
 
   sect_idx = 0;
-  unit_active_type_iterate(put) {
-    if (!put->disabled) {
+  unit_type_re_active_iterate(put) {
+    if (!put->ruledit_disabled) {
       char path[512];
       const char *flag_names[UTYF_LAST_USER_FLAG + 1];
       int flagi;
@@ -2709,19 +3230,9 @@ static bool save_units_ruleset(const char *filename, const char *name)
       secfile_insert_str(sfile, uclass_rule_name(put->uclass),
                          "%s.class", path);
 
-      save_tech_ref(sfile, put->require_advance, path, "tech_req");
+      save_reqs_vector(sfile, &(put->build_reqs), path, "reqs");
 
-      if (put->need_government != NULL) {
-        secfile_insert_str(sfile, government_rule_name(put->need_government),
-                           "%s.gov_req", path);
-      }
-
-      if (put->need_improvement != NULL) {
-        secfile_insert_str(sfile, improvement_rule_name(put->need_improvement),
-                           "%s.impr_req", path);
-      }
-
-      if (put->obsoleted_by != NULL) {
+      if (put->obsoleted_by != nullptr) {
         secfile_insert_str(sfile, utype_rule_name(put->obsoleted_by),
                            "%s.obsolete_by", path);
       }
@@ -2729,6 +3240,9 @@ static bool save_units_ruleset(const char *filename, const char *name)
       secfile_insert_str(sfile, put->graphic_str, "%s.graphic", path);
       if (strcmp("-", put->graphic_alt)) {
         secfile_insert_str(sfile, put->graphic_alt, "%s.graphic_alt", path);
+      }
+      if (strcmp("-", put->graphic_alt2)) {
+        secfile_insert_str(sfile, put->graphic_alt2, "%s.graphic_alt2", path);
       }
       if (strcmp("-", put->sound_move)) {
         secfile_insert_str(sfile, put->sound_move, "%s.sound_move", path);
@@ -2772,7 +3286,7 @@ static bool save_units_ruleset(const char *filename, const char *name)
         }
       } output_type_iterate_end;
 
-      if (put->converted_to != NULL) {
+      if (put->converted_to != nullptr) {
         secfile_insert_str(sfile, utype_rule_name(put->converted_to),
                            "%s.convert_to", path);
       }
@@ -2783,17 +3297,13 @@ static bool save_units_ruleset(const char *filename, const char *name)
       save_combat_bonuses(sfile, put, path);
       save_uclass_vec(sfile, &(put->targets), path, "targets", TRUE);
 
-      if (put->veteran != NULL) {
+      if (put->veteran != nullptr) {
         save_veteran_system(sfile, path, put->veteran);
       }
 
       if (put->paratroopers_range != 0) {
         secfile_insert_int(sfile, put->paratroopers_range,
                            "%s.paratroopers_range", path);
-        secfile_insert_int(sfile, put->paratroopers_mr_req / SINGLE_MOVE,
-                           "%s.paratroopers_mr_req", path);
-        secfile_insert_int(sfile, put->paratroopers_mr_sub / SINGLE_MOVE,
-                           "%s.paratroopers_mr_sub", path);
       }
       if (put->bombard_rate != 0) {
         secfile_insert_int(sfile, put->bombard_rate,
@@ -2807,6 +3317,9 @@ static bool save_units_ruleset(const char *filename, const char *name)
         secfile_insert_int(sfile, put->city_size,
                            "%s.city_size", path);
       }
+
+      secfile_insert_str(sfile, transp_def_type_name(put->tp_defense),
+                         "%s.tp_defense", path);
 
       set_count = 0;
       for (flagi = 0; flagi <= UTYF_LAST_USER_FLAG; flagi++) {
@@ -2834,7 +3347,7 @@ static bool save_units_ruleset(const char *filename, const char *name)
 
       save_strvec(sfile, put->helptext, path, "helptext");
     }
-  } unit_active_type_iterate_end;
+  } unit_type_re_active_iterate_end;
 
   return save_ruleset_file(sfile, filename);
 }
@@ -2845,12 +3358,12 @@ static bool save_units_ruleset(const char *filename, const char *name)
 static bool save_script_lua(const char *filename, const char *name,
                             const char *buffer)
 {
-  if (buffer != NULL) {
+  if (buffer != nullptr) {
     FILE *ffile = fc_fopen(filename, "w");
     int full_len = strlen(buffer);
     int len;
 
-    if (ffile != NULL) {
+    if (ffile != nullptr) {
       len = fwrite(buffer, 1, full_len, ffile);
 
       if (len != full_len) {
@@ -2871,7 +3384,7 @@ static bool save_script_lua(const char *filename, const char *name,
 **************************************************************************/
 static bool save_luadata(const char *filename)
 {
-  if (game.server.luadata != NULL) {
+  if (game.server.luadata != nullptr) {
     return secfile_save(game.server.luadata, filename, 0, FZ_PLAIN);
   }
 
@@ -2883,7 +3396,7 @@ static bool save_luadata(const char *filename)
 **************************************************************************/
 bool save_ruleset(const char *path, const char *name, struct rule_data *data)
 {
-  if (make_dir(path)) {
+  if (make_dir(path, DIRMODE_DEFAULT)) {
     bool success = TRUE;
     char filename[500];
 
@@ -2916,7 +3429,7 @@ bool save_ruleset(const char *path, const char *name, struct rule_data *data)
       fc_snprintf(filename, sizeof(filename), "%s/governments.ruleset", path);
       success = save_governments_ruleset(filename, name);
     }
-    
+
     if (success) {
       fc_snprintf(filename, sizeof(filename), "%s/nations.ruleset", path);
       success = save_nations_ruleset(filename, name, data);
@@ -2938,6 +3451,11 @@ bool save_ruleset(const char *path, const char *name, struct rule_data *data)
     }
 
     if (success) {
+      fc_snprintf(filename,sizeof(filename), "%s/actions.ruleset",path);
+      success = save_actions_ruleset(filename, name);
+    }
+
+    if (success) {
       fc_snprintf(filename, sizeof(filename), "%s/script.lua", path);
       success = save_script_lua(filename, name, get_script_buffer());
     }
@@ -2954,7 +3472,7 @@ bool save_ruleset(const char *path, const char *name, struct rule_data *data)
 
     return success;
   } else {
-    log_error("Failed to create directory %s", path);
+    log_error(_("Failed to create directory %s"), path);
     return FALSE;
   }
 

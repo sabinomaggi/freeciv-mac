@@ -25,210 +25,206 @@
 /* gui-sdl2 */
 #include "colors.h"
 #include "graphics.h"
-#include "gui_iconv.h"
 #include "gui_id.h"
 #include "gui_tilespec.h"
 #include "mapview.h"
 #include "themespec.h"
-#include "unistring.h"
 #include "utf8string.h"
 #include "widget.h"
 #include "widget_p.h"
 
-struct Utf8Char {
-  struct Utf8Char *next;
-  struct Utf8Char *prev;
+struct utf8_char {
+  struct utf8_char *next;
+  struct utf8_char *prev;
   int bytes;
   char chr[7];
-  SDL_Surface *pTsurf;
+  SDL_Surface *tsurf;
 };
 
-struct EDIT {
-  struct Utf8Char *pBeginTextChain;
-  struct Utf8Char *pEndTextChain;
-  struct Utf8Char *pInputChain;
-  SDL_Surface *pBg;
-  struct widget *pWidget;
-  int ChainLen;
-  int Start_X;
-  int Truelength;
-  int InputChain_X;
+struct text_edit {
+  struct utf8_char *begin_text_chain;
+  struct utf8_char *end_text_chain;
+  struct utf8_char *input_chain;
+  SDL_Surface *bg;
+  struct widget *pwidget;
+  int chain_len;
+  int start_x;
+  int true_length;
+  int input_chain_x;
 };
 
-static size_t chainlen(const struct Utf8Char *pChain);
-static void del_chain(struct Utf8Char *pChain);
-static struct Utf8Char *text2chain(const char *text_in);
-static char *chain2text(const struct Utf8Char *pInChain, size_t len, size_t *size);
+static size_t chainlen(const struct utf8_char *chain);
+static void del_chain(struct utf8_char *chain);
+static struct utf8_char *text2chain(const char *text_in);
+static char *chain2text(const struct utf8_char *in_chain, size_t len, size_t *size);
 
 static int (*baseclass_redraw)(struct widget *pwidget);
 
 /**********************************************************************//**
   Draw the text being edited.
 **************************************************************************/
-static int redraw_edit_chain(struct EDIT *pEdt)
+static int redraw_edit_chain(struct text_edit *edt)
 {
-  struct Utf8Char *pInputChain_TMP;
-  SDL_Rect Dest, Dest_Copy = {0, 0, 0, 0};
-  int iStart_Mod_X;
+  struct utf8_char *input_chain_tmp;
+  SDL_Rect dest, dest_copy = {0, 0, 0, 0};
+  int start_mod_x;
   int ret;
 
-  Dest_Copy.x = pEdt->pWidget->size.x;
-  Dest_Copy.y = pEdt->pWidget->size.y;
+  dest_copy.x = edt->pwidget->size.x;
+  dest_copy.y = edt->pwidget->size.y;
 
-  ret = (*baseclass_redraw)(pEdt->pWidget);
+  ret = (*baseclass_redraw)(edt->pwidget);
   if (ret != 0) {
     return ret;
   }
 
   /* blit theme */
-  Dest = Dest_Copy;
+  dest = dest_copy;
 
-  alphablit(pEdt->pBg, NULL, pEdt->pWidget->dst->surface, &Dest, 255);
+  alphablit(edt->bg, NULL, edt->pwidget->dst->surface, &dest, 255);
 
   /* set start parameters */
-  pInputChain_TMP = pEdt->pBeginTextChain;
-  iStart_Mod_X = 0;
+  input_chain_tmp = edt->begin_text_chain;
+  start_mod_x = 0;
 
-  Dest_Copy.y += (pEdt->pBg->h - pInputChain_TMP->pTsurf->h) / 2;
-  Dest_Copy.x += pEdt->Start_X;
+  dest_copy.y += (edt->bg->h - input_chain_tmp->tsurf->h) / 2;
+  dest_copy.x += edt->start_x;
 
   /* draw loop */
-  while (pInputChain_TMP) {
-    Dest_Copy.x += iStart_Mod_X;
-    /* chech if we draw inside of edit rect */
-    if (Dest_Copy.x > pEdt->pWidget->size.x + pEdt->pBg->w - 4) {
+  while (input_chain_tmp) {
+    dest_copy.x += start_mod_x;
+    /* check if we draw inside of edit rect */
+    if (dest_copy.x > edt->pwidget->size.x + edt->bg->w - 4) {
       break;
     }
 
-    if (Dest_Copy.x > pEdt->pWidget->size.x) {
-      Dest = Dest_Copy;
-      alphablit(pInputChain_TMP->pTsurf, NULL, pEdt->pWidget->dst->surface, &Dest,
+    if (dest_copy.x > edt->pwidget->size.x) {
+      dest = dest_copy;
+      alphablit(input_chain_tmp->tsurf, NULL, edt->pwidget->dst->surface, &dest,
                 255);
     }
 
-    iStart_Mod_X = pInputChain_TMP->pTsurf->w;
+    start_mod_x = input_chain_tmp->tsurf->w;
 
     /* draw cursor */
-    if (pInputChain_TMP == pEdt->pInputChain) {
-      Dest = Dest_Copy;
+    if (input_chain_tmp == edt->input_chain) {
+      dest = dest_copy;
 
-      create_line(pEdt->pWidget->dst->surface,
-                  Dest.x - 1, Dest.y + (pEdt->pBg->h / 8),
-                  Dest.x - 1, Dest.y + pEdt->pBg->h - (pEdt->pBg->h / 4),
+      create_line(edt->pwidget->dst->surface,
+                  dest.x - 1, dest.y + (edt->bg->h / 8),
+                  dest.x - 1, dest.y + edt->bg->h - (edt->bg->h / 4),
                   get_theme_color(COLOR_THEME_EDITFIELD_CARET));
       /* save active element position */
-      pEdt->InputChain_X = Dest_Copy.x;
+      edt->input_chain_x = dest_copy.x;
     }
 
-    pInputChain_TMP = pInputChain_TMP->next;
+    input_chain_tmp = input_chain_tmp->next;
   } /* while - draw loop */
 
-  widget_flush(pEdt->pWidget);
+  widget_flush(edt->pwidget);
 
   return 0;
 }
 
 /**********************************************************************//**
   Create Edit Field surface ( with Text) and blit them to Main.screen,
-  on position 'pEdit_Widget->size.x , pEdit_Widget->size.y'
+  on position 'edit_widget->size.x , edit_widget->size.y'
 
-  Graphic is taken from 'pEdit_Widget->theme'
-  Text is taken from	'pEdit_Widget->string_utf8'
+  Graphic is taken from 'edit_widget->theme'
+  Text is taken from 'edit_widget->string_utf8'
 
   if flag 'FW_DRAW_THEME_TRANSPARENT' is set theme will be blit
   transparent ( Alpha = 128 )
 
-  function return Hight of created surfaces or (-1) if theme surface can't
+  function return height of created surfaces or (-1) if theme surface can't
   be created.
 **************************************************************************/
-static int redraw_edit(struct widget *pEdit_Widget)
+static int redraw_edit(struct widget *edit_widget)
 {
-  int ret;
-
-  if (get_wstate(pEdit_Widget) == FC_WS_PRESSED) {
-    return redraw_edit_chain((struct EDIT *)pEdit_Widget->data.ptr);
+  if (get_wstate(edit_widget) == FC_WS_PRESSED) {
+    return redraw_edit_chain((struct text_edit *)edit_widget->data.ptr);
   } else {
-    int iRet = 0;
-    SDL_Rect rDest = {pEdit_Widget->size.x, pEdit_Widget->size.y, 0, 0};
-    SDL_Surface *pEdit = NULL;
-    SDL_Surface *pText;
+    int ret;
+    SDL_Rect rdest = {edit_widget->size.x, edit_widget->size.y, 0, 0};
+    SDL_Surface *pedit = NULL;
+    SDL_Surface *text;
 
-    ret = (*baseclass_redraw)(pEdit_Widget);
+    ret = (*baseclass_redraw)(edit_widget);
     if (ret != 0) {
       return ret;
     }
 
-    if (pEdit_Widget->string_utf8->text != NULL
-        && get_wflags(pEdit_Widget) & WF_PASSWD_EDIT) {
-      char *backup = pEdit_Widget->string_utf8->text;
+    if (edit_widget->string_utf8->text != NULL
+        && get_wflags(edit_widget) & WF_PASSWD_EDIT) {
+      char *backup = edit_widget->string_utf8->text;
       size_t len = strlen(backup) + 1;
       char *cbuf = fc_calloc(1, len);
 
       memset(cbuf, '*', len - 1);
       cbuf[len - 1] = '\0';
-      pEdit_Widget->string_utf8->text = cbuf;
-      pText = create_text_surf_from_utf8(pEdit_Widget->string_utf8);
+      edit_widget->string_utf8->text = cbuf;
+      text = create_text_surf_from_utf8(edit_widget->string_utf8);
       FC_FREE(cbuf);
-      pEdit_Widget->string_utf8->text = backup;
+      edit_widget->string_utf8->text = backup;
     } else {
-      pText = create_text_surf_from_utf8(pEdit_Widget->string_utf8);
+      text = create_text_surf_from_utf8(edit_widget->string_utf8);
     }
 
-    pEdit = create_bcgnd_surf(pEdit_Widget->theme, get_wstate(pEdit_Widget),
-                              pEdit_Widget->size.w, pEdit_Widget->size.h);
+    pedit = create_bcgnd_surf(edit_widget->theme, get_wstate(edit_widget),
+                              edit_widget->size.w, edit_widget->size.h);
 
-    if (!pEdit) {
+    if (!pedit) {
       return -1;
     }
 
     /* blit theme */
-    alphablit(pEdit, NULL, pEdit_Widget->dst->surface, &rDest, 255);
+    alphablit(pedit, NULL, edit_widget->dst->surface, &rdest, 255);
 
     /* set position and blit text */
-    if (pText) {
-      rDest.y += (pEdit->h - pText->h) / 2;
+    if (text) {
+      rdest.y += (pedit->h - text->h) / 2;
       /* blit centred text to botton */
-      if (pEdit_Widget->string_utf8->style & SF_CENTER) {
-        rDest.x += (pEdit->w - pText->w) / 2;
+      if (edit_widget->string_utf8->style & SF_CENTER) {
+        rdest.x += (pedit->w - text->w) / 2;
       } else {
-        if (pEdit_Widget->string_utf8->style & SF_CENTER_RIGHT) {
-          rDest.x += pEdit->w - pText->w - adj_size(5);
+        if (edit_widget->string_utf8->style & SF_CENTER_RIGHT) {
+          rdest.x += pedit->w - text->w - adj_size(5);
         } else {
-          rDest.x += adj_size(5); /* center left */
+          rdest.x += adj_size(5); /* center left */
         }
       }
 
-      alphablit(pText, NULL, pEdit_Widget->dst->surface, &rDest, 255);
+      alphablit(text, NULL, edit_widget->dst->surface, &rdest, 255);
     }
-    /* pText */
-    iRet = pEdit->h;
+    /* text */
+    ret = pedit->h;
 
     /* Free memory */
-    FREESURFACE(pText);
-    FREESURFACE(pEdit);
+    FREESURFACE(text);
+    FREESURFACE(pedit);
 
-    return iRet;
+    return ret;
   }
 
   return 0;
 }
 
 /**********************************************************************//**
-  Return length of Utf8Char chain.
-  WARRNING: if struct Utf8Char has 1 member and Utf8Char->chr == 0 then
+  Return length of utf8_char chain.
+  WARRNING: if struct utf8_char has 1 member and utf8_char->chr == 0 then
   this function return 1 ( not 0 like in strlen )
 **************************************************************************/
-static size_t chainlen(const struct Utf8Char *pChain)
+static size_t chainlen(const struct utf8_char *chain)
 {
   size_t length = 0;
 
-  if (pChain) {
+  if (chain) {
     while (TRUE) {
       length++;
-      if (pChain->next == NULL) {
-	break;
+      if (chain->next == NULL) {
+        break;
       }
-      pChain = pChain->next;
+      chain = chain->next;
     }
   }
 
@@ -236,39 +232,39 @@ static size_t chainlen(const struct Utf8Char *pChain)
 }
 
 /**********************************************************************//**
-  Delete Utf8Char structure.
+  Delete utf8_char structure.
 **************************************************************************/
-static void del_chain(struct Utf8Char *pChain)
+static void del_chain(struct utf8_char *chain)
 {
   int i, len = 0;
 
-  if (!pChain) {
+  if (!chain) {
     return;
   }
 
-  len = chainlen(pChain);
+  len = chainlen(chain);
 
   if (len > 1) {
-    pChain = pChain->next;
+    chain = chain->next;
     for (i = 0; i < len - 1; i++) {
-      FREESURFACE(pChain->prev->pTsurf);
-      FC_FREE(pChain->prev);
-      pChain = pChain->next;
+      FREESURFACE(chain->prev->tsurf);
+      FC_FREE(chain->prev);
+      chain = chain->next;
     }
   }
 
-  FC_FREE(pChain);
+  FC_FREE(chain);
 }
 
 /**********************************************************************//**
-  Convert utf8 string to Utf8Char structure.
-  Memory alocation -> after all use need call del_chain(...) !
+  Convert utf8 string to utf8_char structure.
+  Memory allocation -> after all use need call del_chain(...) !
 **************************************************************************/
-static struct Utf8Char *text2chain(const char *text_in)
+static struct utf8_char *text2chain(const char *text_in)
 {
   int i, len;
-  struct Utf8Char *out_chain = NULL;
-  struct Utf8Char *chr_tmp = NULL;
+  struct utf8_char *out_chain = NULL;
+  struct utf8_char *chr_tmp = NULL;
   int j;
 
   if (text_in == NULL) {
@@ -281,7 +277,7 @@ static struct Utf8Char *text2chain(const char *text_in)
     return NULL;
   }
 
-  out_chain = fc_calloc(1, sizeof(struct Utf8Char));
+  out_chain = fc_calloc(1, sizeof(struct utf8_char));
   out_chain->chr[0] = text_in[0];
   for (j = 1; (text_in[j] & (128 + 64)) == 128; j++) {
     out_chain->chr[j] = text_in[j];
@@ -290,7 +286,7 @@ static struct Utf8Char *text2chain(const char *text_in)
   chr_tmp = out_chain;
 
   for (i = 1; i < len; i += j) {
-    chr_tmp->next = fc_calloc(1, sizeof(struct Utf8Char));
+    chr_tmp->next = fc_calloc(1, sizeof(struct utf8_char));
     chr_tmp->next->chr[0] = text_in[i];
     for (j = 1; (text_in[i + j] & (128 + 64)) == 128; j++) {
       chr_tmp->next->chr[j] = text_in[i + j];
@@ -304,36 +300,36 @@ static struct Utf8Char *text2chain(const char *text_in)
 }
 
 /**********************************************************************//**
-  Convert Utf8Char structure to chars
-  WARNING: Do not free Utf8Char structure but allocates new char array.
+  Convert utf8_char structure to chars
+  WARNING: Do not free utf8_char structure but allocates new char array.
 **************************************************************************/
-static char *chain2text(const struct Utf8Char *pInChain, size_t len,
+static char *chain2text(const struct utf8_char *in_chain, size_t len,
                         size_t *size)
 {
   int i;
-  char *pOutText = NULL;
+  char *out_text = NULL;
   int oi = 0;
   int total_size = 0;
 
-  if (!(len && pInChain)) {
-    return pOutText;
+  if (!(len && in_chain)) {
+    return out_text;
   }
 
-  pOutText = fc_calloc(8, len + 1);
+  out_text = fc_calloc(8, len + 1);
   for (i = 0; i < len; i++) {
     int j;
 
-    for (j = 0; j < pInChain->bytes && i < len; j++) {
-      pOutText[oi++] = pInChain->chr[j];
+    for (j = 0; j < in_chain->bytes && i < len; j++) {
+      out_text[oi++] = in_chain->chr[j];
     }
 
-    total_size += pInChain->bytes;
-    pInChain = pInChain->next;
+    total_size += in_chain->bytes;
+    in_chain = in_chain->next;
   }
 
   *size = total_size;
 
-  return pOutText;
+  return out_text;
 }
 
 /* =================================================== */
@@ -347,88 +343,88 @@ static char *chain2text(const struct Utf8Char *pInChain, size_t len,
   'length' parameter determinate width of Edit rect.
 
   This function determinate future size of Edit ( width, height ) and
-  save this in: pWidget->size rectangle ( SDL_Rect )
+  save this in: pwidget->size rectangle ( SDL_Rect )
 
   function return pointer to allocated Edit Widget.
 **************************************************************************/
-struct widget *create_edit(SDL_Surface *pBackground, struct gui_layer *pDest,
+struct widget *create_edit(SDL_Surface *background, struct gui_layer *pdest,
                            utf8_str *pstr, int length, Uint32 flags)
 {
   SDL_Rect buf = {0, 0, 0, 0};
-  struct widget *pEdit = widget_new();
+  struct widget *pedit = widget_new();
 
-  pEdit->theme = current_theme->Edit;
-  pEdit->theme2 = pBackground; /* FIXME: make somewhere use of it */
-  pEdit->string_utf8 = pstr;
-  set_wflag(pEdit, (WF_FREE_STRING | WF_FREE_GFX | flags));
-  set_wstate(pEdit, FC_WS_DISABLED);
-  set_wtype(pEdit, WT_EDIT);
-  pEdit->mod = KMOD_NONE;
+  pedit->theme = current_theme->edit;
+  pedit->theme2 = background; /* FIXME: make somewhere use of it */
+  pedit->string_utf8 = pstr;
+  set_wflag(pedit, (WF_FREE_STRING | WF_FREE_GFX | flags));
+  set_wstate(pedit, FC_WS_DISABLED);
+  set_wtype(pedit, WT_EDIT);
+  pedit->mod = KMOD_NONE;
 
-  baseclass_redraw = pEdit->redraw;
-  pEdit->redraw = redraw_edit;
+  baseclass_redraw = pedit->redraw;
+  pedit->redraw = redraw_edit;
 
   if (pstr != NULL) {
-    pEdit->string_utf8->style |= SF_CENTER;
+    pedit->string_utf8->style |= SF_CENTER;
     utf8_str_size(pstr, &buf);
     buf.h += adj_size(4);
   }
 
   length = MAX(length, buf.w + adj_size(10));
 
-  correct_size_bcgnd_surf(current_theme->Edit, &length, &buf.h);
+  correct_size_bcgnd_surf(current_theme->edit, &length, &buf.h);
 
-  pEdit->size.w = length;
-  pEdit->size.h = buf.h;
+  pedit->size.w = length;
+  pedit->size.h = buf.h;
 
-  if (pDest) {
-    pEdit->dst = pDest;
+  if (pdest) {
+    pedit->dst = pdest;
   } else {
-    pEdit->dst = add_gui_layer(pEdit->size.w, pEdit->size.h);
+    pedit->dst = add_gui_layer(pedit->size.w, pedit->size.h);
   }
 
-  return pEdit;
+  return pedit;
 }
 
 /**********************************************************************//**
   set new x, y position and redraw edit.
 **************************************************************************/
-int draw_edit(struct widget *pEdit, Sint16 start_x, Sint16 start_y)
+int draw_edit(struct widget *pedit, Sint16 start_x, Sint16 start_y)
 {
-  pEdit->size.x = start_x;
-  pEdit->size.y = start_y;
+  pedit->size.x = start_x;
+  pedit->size.y = start_y;
 
-  if (get_wflags(pEdit) & WF_RESTORE_BACKGROUND) {
-    refresh_widget_background(pEdit);
+  if (get_wflags(pedit) & WF_RESTORE_BACKGROUND) {
+    refresh_widget_background(pedit);
   }
 
-  return redraw_edit(pEdit);
+  return redraw_edit(pedit);
 }
 
 /**********************************************************************//**
   This functions are pure madness :)
   Create Edit Field surface ( with Text) and blit them to Main.screen,
-  on position 'pEdit_Widget->size.x , pEdit_Widget->size.y'
+  on position 'edit_widget->size.x , edit_widget->size.y'
 
   Main role of this functions are been text input to GUI.
   This code allow you to add, del unichar from unistring.
 
-  Graphic is taken from 'pEdit_Widget->theme'
-  OldText is taken from	'pEdit_Widget->string_utf8'
+  Graphic is taken from 'edit_widget->theme'
+  OldText is taken from 'edit_widget->string_utf8'
 
-  NewText is returned to 'pEdit_Widget->string_utf8' ( after free OldText )
+  NewText is returned to 'edit_widget->string_utf8' ( after free OldText )
 
   if flag 'FW_DRAW_THEME_TRANSPARENT' is set theme will be blit
   transparent ( Alpha = 128 )
 
-  NOTE: This functions can return NULL in 'pEdit_Widget->string_utf8->text' but
-        never free 'pEdit_Widget->string_utf8' struct.
+  NOTE: This functions can return NULL in 'edit_widget->string_utf8->text' but
+        never free 'edit_widget->string_utf8' struct.
 **************************************************************************/
-static Uint16 edit_key_down(SDL_Keysym key, void *pData)
+static Uint16 edit_key_down(SDL_Keysym key, void *data)
 {
-  struct EDIT *pEdt = (struct EDIT *)pData;
-  struct Utf8Char *pInputChain_TMP;
-  bool Redraw = FALSE;
+  struct text_edit *edt = (struct text_edit *)data;
+  struct utf8_char *input_chain_tmp;
+  bool redraw = FALSE;
 
   /* find which key is pressed */
   switch (key.sym) {
@@ -442,20 +438,20 @@ static Uint16 edit_key_down(SDL_Keysym key, void *pData)
       /*
     case SDLK_KP6:
       if (key.mod & KMOD_NUM) {
-	goto INPUT;
+        goto INPUT;
       }
       */
     case SDLK_RIGHT:
     {
       /* move cursor right */
-      if (pEdt->pInputChain->next) {
-        if (pEdt->InputChain_X >= (pEdt->pWidget->size.x + pEdt->pBg->w - adj_size(10))) {
-          pEdt->Start_X -= pEdt->pInputChain->pTsurf->w -
-            (pEdt->pWidget->size.x + pEdt->pBg->w - adj_size(5) - pEdt->InputChain_X);
+      if (edt->input_chain->next) {
+        if (edt->input_chain_x >= (edt->pwidget->size.x + edt->bg->w - adj_size(10))) {
+          edt->start_x -= edt->input_chain->tsurf->w -
+            (edt->pwidget->size.x + edt->bg->w - adj_size(5) - edt->input_chain_x);
         }
 
-	pEdt->pInputChain = pEdt->pInputChain->next;
-	Redraw = TRUE;
+        edt->input_chain = edt->input_chain->next;
+        redraw = TRUE;
       }
     }
     break;
@@ -468,111 +464,111 @@ static Uint16 edit_key_down(SDL_Keysym key, void *pData)
     case SDLK_LEFT:
     {
       /* move cursor left */
-      if (pEdt->pInputChain->prev) {
-        pEdt->pInputChain = pEdt->pInputChain->prev;
-        if ((pEdt->InputChain_X <=
-             (pEdt->pWidget->size.x + adj_size(9))) && (pEdt->Start_X != adj_size(5))) {
-          if (pEdt->InputChain_X != (pEdt->pWidget->size.x + adj_size(5))) {
-            pEdt->Start_X += (pEdt->pWidget->size.x - pEdt->InputChain_X + adj_size(5));
+      if (edt->input_chain->prev) {
+        edt->input_chain = edt->input_chain->prev;
+        if ((edt->input_chain_x <=
+             (edt->pwidget->size.x + adj_size(9))) && (edt->start_x != adj_size(5))) {
+          if (edt->input_chain_x != (edt->pwidget->size.x + adj_size(5))) {
+            edt->start_x += (edt->pwidget->size.x - edt->input_chain_x + adj_size(5));
           }
 
-          pEdt->Start_X += (pEdt->pInputChain->pTsurf->w);
+          edt->start_x += (edt->input_chain->tsurf->w);
         }
-        Redraw = TRUE;
+        redraw = TRUE;
       }
     }
     break;
     /*
     case SDLK_KP7:
       if (key.mod & KMOD_NUM) {
-	goto INPUT;
+        goto INPUT;
       }
     */
     case SDLK_HOME:
     {
       /* move cursor to begin of chain (and edit field) */
-      pEdt->pInputChain = pEdt->pBeginTextChain;
-      Redraw = TRUE;
-      pEdt->Start_X = adj_size(5);
+      edt->input_chain = edt->begin_text_chain;
+      redraw = TRUE;
+      edt->start_x = adj_size(5);
     }
     break;
     /*
     case SDLK_KP1:
       if (key.mod & KMOD_NUM) {
-	goto INPUT;
+        goto INPUT;
       }
     */
     case SDLK_END:
     {
       /* move cursor to end of chain (and edit field) */
-      pEdt->pInputChain = pEdt->pEndTextChain;
-      Redraw = TRUE;
+      edt->input_chain = edt->end_text_chain;
+      redraw = TRUE;
 
-      if (pEdt->pWidget->size.w - pEdt->Truelength < 0) {
-        pEdt->Start_X = pEdt->pWidget->size.w - pEdt->Truelength - adj_size(5);
+      if (edt->pwidget->size.w - edt->true_length < 0) {
+        edt->start_x = edt->pwidget->size.w - edt->true_length - adj_size(5);
       }
     }
     break;
     case SDLK_BACKSPACE:
     {
       /* del element of chain (and move cursor left) */
-      if (pEdt->pInputChain->prev) {
-        if ((pEdt->InputChain_X <=
-             (pEdt->pWidget->size.x + adj_size(9))) && (pEdt->Start_X != adj_size(5))) {
-          if (pEdt->InputChain_X != (pEdt->pWidget->size.x + adj_size(5))) {
-            pEdt->Start_X += (pEdt->pWidget->size.x - pEdt->InputChain_X + adj_size(5));
+      if (edt->input_chain->prev) {
+        if ((edt->input_chain_x <=
+             (edt->pwidget->size.x + adj_size(9))) && (edt->start_x != adj_size(5))) {
+          if (edt->input_chain_x != (edt->pwidget->size.x + adj_size(5))) {
+            edt->start_x += (edt->pwidget->size.x - edt->input_chain_x + adj_size(5));
           }
-          pEdt->Start_X += (pEdt->pInputChain->prev->pTsurf->w);
+          edt->start_x += (edt->input_chain->prev->tsurf->w);
         }
 
-        if (pEdt->pInputChain->prev->prev) {
-          pEdt->pInputChain->prev->prev->next = pEdt->pInputChain;
-          pInputChain_TMP = pEdt->pInputChain->prev->prev;
-          pEdt->Truelength -= pEdt->pInputChain->prev->pTsurf->w;
-          FREESURFACE(pEdt->pInputChain->prev->pTsurf);
-          FC_FREE(pEdt->pInputChain->prev);
-          pEdt->pInputChain->prev = pInputChain_TMP;
+        if (edt->input_chain->prev->prev) {
+          edt->input_chain->prev->prev->next = edt->input_chain;
+          input_chain_tmp = edt->input_chain->prev->prev;
+          edt->true_length -= edt->input_chain->prev->tsurf->w;
+          FREESURFACE(edt->input_chain->prev->tsurf);
+          FC_FREE(edt->input_chain->prev);
+          edt->input_chain->prev = input_chain_tmp;
         } else {
-          pEdt->Truelength -= pEdt->pInputChain->prev->pTsurf->w;
-          FREESURFACE(pEdt->pInputChain->prev->pTsurf);
-          FC_FREE(pEdt->pInputChain->prev);
-          pEdt->pBeginTextChain = pEdt->pInputChain;
+          edt->true_length -= edt->input_chain->prev->tsurf->w;
+          FREESURFACE(edt->input_chain->prev->tsurf);
+          FC_FREE(edt->input_chain->prev);
+          edt->begin_text_chain = edt->input_chain;
         }
 
-        pEdt->ChainLen--;
-        Redraw = TRUE;
+        edt->chain_len--;
+        redraw = TRUE;
       }
     }
     break;
     /*
     case SDLK_KP_PERIOD:
       if (key.mod & KMOD_NUM) {
-	goto INPUT;
+        goto INPUT;
       }
     */
     case SDLK_DELETE:
     {
       /* del element of chain */
-      if (pEdt->pInputChain->next && pEdt->pInputChain->prev) {
-        pEdt->pInputChain->prev->next = pEdt->pInputChain->next;
-        pEdt->pInputChain->next->prev = pEdt->pInputChain->prev;
-        pInputChain_TMP = pEdt->pInputChain->next;
-        pEdt->Truelength -= pEdt->pInputChain->pTsurf->w;
-        FREESURFACE(pEdt->pInputChain->pTsurf);
-        FC_FREE(pEdt->pInputChain);
-        pEdt->pInputChain = pInputChain_TMP;
-        pEdt->ChainLen--;
-        Redraw = TRUE;
+      if (edt->input_chain->next && edt->input_chain->prev) {
+        edt->input_chain->prev->next = edt->input_chain->next;
+        edt->input_chain->next->prev = edt->input_chain->prev;
+        input_chain_tmp = edt->input_chain->next;
+        edt->true_length -= edt->input_chain->tsurf->w;
+        FREESURFACE(edt->input_chain->tsurf);
+        FC_FREE(edt->input_chain);
+        edt->input_chain = input_chain_tmp;
+        edt->chain_len--;
+        redraw = TRUE;
       }
 
-      if (pEdt->pInputChain->next && !pEdt->pInputChain->prev) {
-        pEdt->pInputChain = pEdt->pInputChain->next;
-        pEdt->Truelength -= pEdt->pInputChain->prev->pTsurf->w;
-        FREESURFACE(pEdt->pInputChain->prev->pTsurf);
-        FC_FREE(pEdt->pInputChain->prev);
-        pEdt->pBeginTextChain = pEdt->pInputChain;
-        pEdt->ChainLen--;
-        Redraw = TRUE;
+      if (edt->input_chain->next && !edt->input_chain->prev) {
+        edt->input_chain = edt->input_chain->next;
+        edt->true_length -= edt->input_chain->prev->tsurf->w;
+        FREESURFACE(edt->input_chain->prev->tsurf);
+        FC_FREE(edt->input_chain->prev);
+        edt->begin_text_chain = edt->input_chain;
+        edt->chain_len--;
+        redraw = TRUE;
       }
     }
     break;
@@ -580,8 +576,8 @@ static Uint16 edit_key_down(SDL_Keysym key, void *pData)
     break;
   } /* key pressed switch */
 
-  if (Redraw) {
-    redraw_edit_chain(pEdt);
+  if (redraw) {
+    redraw_edit_chain(edt);
   }
 
   return ID_ERROR;
@@ -590,10 +586,10 @@ static Uint16 edit_key_down(SDL_Keysym key, void *pData)
 /**********************************************************************//**
   Handle textinput strings coming to the edit widget
 **************************************************************************/
-static Uint16 edit_textinput(char *text, void *pData)
+static Uint16 edit_textinput(const char *text, void *data)
 {
-  struct EDIT *pEdt = (struct EDIT *)pData;
-  struct Utf8Char *pInputChain_TMP;
+  struct text_edit *edt = (struct text_edit *)data;
+  struct utf8_char *input_chain_tmp;
   int i;
 
   for (i = 0; text[i] != '\0';) {
@@ -602,57 +598,57 @@ static Uint16 edit_textinput(char *text, void *pData)
     int sum = 128 + 64;
     int addition = 32;
 
-    /* add new element of chain (and move cursor right) */
-    if (pEdt->pInputChain != pEdt->pBeginTextChain) {
-      pInputChain_TMP = pEdt->pInputChain->prev;
-      pEdt->pInputChain->prev = fc_calloc(1, sizeof(struct Utf8Char));
-      pEdt->pInputChain->prev->next = pEdt->pInputChain;
-      pEdt->pInputChain->prev->prev = pInputChain_TMP;
-      pInputChain_TMP->next = pEdt->pInputChain->prev;
+    /* Add new element of chain (and move cursor right) */
+    if (edt->input_chain != edt->begin_text_chain) {
+      input_chain_tmp = edt->input_chain->prev;
+      edt->input_chain->prev = fc_calloc(1, sizeof(struct utf8_char));
+      edt->input_chain->prev->next = edt->input_chain;
+      edt->input_chain->prev->prev = input_chain_tmp;
+      input_chain_tmp->next = edt->input_chain->prev;
     } else {
-      pEdt->pInputChain->prev = fc_calloc(1, sizeof(struct Utf8Char));
-      pEdt->pInputChain->prev->next = pEdt->pInputChain;
-      pEdt->pBeginTextChain = pEdt->pInputChain->prev;
+      edt->input_chain->prev = fc_calloc(1, sizeof(struct utf8_char));
+      edt->input_chain->prev->next = edt->input_chain;
+      edt->begin_text_chain = edt->input_chain->prev;
     }
 
-    pEdt->pInputChain->prev->chr[0] = leading;
+    edt->input_chain->prev->chr[0] = leading;
     /* UTF-8 multibyte handling */
     while (leading >= sum) {
-      pEdt->pInputChain->prev->chr[charlen++] = text[i++];
+      edt->input_chain->prev->chr[charlen++] = text[i++];
       sum += addition;
       addition /= 2;
     }
-    pEdt->pInputChain->prev->chr[charlen] = '\0';
-    pEdt->pInputChain->prev->bytes = charlen;
+    edt->input_chain->prev->chr[charlen] = '\0';
+    edt->input_chain->prev->bytes = charlen;
 
-    if (get_wflags(pEdt->pWidget) & WF_PASSWD_EDIT) {
+    if (get_wflags(edt->pwidget) & WF_PASSWD_EDIT) {
       char passwd_chr[2] = {'*', '\0'};
 
-      pEdt->pInputChain->prev->pTsurf =
-        TTF_RenderUTF8_Blended(pEdt->pWidget->string_utf8->font,
+      edt->input_chain->prev->tsurf =
+        TTF_RenderUTF8_Blended(edt->pwidget->string_utf8->font,
                                passwd_chr,
-                               pEdt->pWidget->string_utf8->fgcol);
+                               edt->pwidget->string_utf8->fgcol);
     } else {
-      pEdt->pInputChain->prev->pTsurf =
-        TTF_RenderUTF8_Blended(pEdt->pWidget->string_utf8->font,
-                               pEdt->pInputChain->prev->chr,
-                               pEdt->pWidget->string_utf8->fgcol);
+      edt->input_chain->prev->tsurf =
+        TTF_RenderUTF8_Blended(edt->pwidget->string_utf8->font,
+                               edt->input_chain->prev->chr,
+                               edt->pwidget->string_utf8->fgcol);
     }
-    pEdt->Truelength += pEdt->pInputChain->prev->pTsurf->w;
+    edt->true_length += edt->input_chain->prev->tsurf->w;
 
-    if (pEdt->InputChain_X >= pEdt->pWidget->size.x + pEdt->pBg->w - adj_size(10)) {
-      if (pEdt->pInputChain == pEdt->pEndTextChain) {
-        pEdt->Start_X = pEdt->pBg->w - adj_size(5) - pEdt->Truelength;
+    if (edt->input_chain_x >= edt->pwidget->size.x + edt->bg->w - adj_size(10)) {
+      if (edt->input_chain == edt->end_text_chain) {
+        edt->start_x = edt->bg->w - adj_size(5) - edt->true_length;
       } else {
-        pEdt->Start_X -= pEdt->pInputChain->prev->pTsurf->w -
-          (pEdt->pWidget->size.x + pEdt->pBg->w - adj_size(5) - pEdt->InputChain_X);
+        edt->start_x -= edt->input_chain->prev->tsurf->w -
+          (edt->pwidget->size.x + edt->bg->w - adj_size(5) - edt->input_chain_x);
       }
     }
 
-    pEdt->ChainLen++;
+    edt->chain_len++;
   }
 
-  redraw_edit_chain(pEdt);
+  redraw_edit_chain(edt);
 
   return ID_ERROR;
 }
@@ -660,16 +656,16 @@ static Uint16 edit_textinput(char *text, void *pData)
 /**********************************************************************//**
   Handle mouse down events on edit widget.
 **************************************************************************/
-static Uint16 edit_mouse_button_down(SDL_MouseButtonEvent *pButtonEvent,
-                                     void *pData)
+static Uint16 edit_mouse_button_down(SDL_MouseButtonEvent *button_event,
+                                     void *data)
 {
-  struct EDIT *pEdt = (struct EDIT *)pData;
+  struct text_edit *edt = (struct text_edit *)data;
 
-  if (pButtonEvent->button == SDL_BUTTON_LEFT) {
-    if (!(pButtonEvent->x >= pEdt->pWidget->size.x
-          && pButtonEvent->x < pEdt->pWidget->size.x + pEdt->pBg->w
-          && pButtonEvent->y >= pEdt->pWidget->size.y
-          && pButtonEvent->y < pEdt->pWidget->size.y + pEdt->pBg->h)) {
+  if (button_event->button == SDL_BUTTON_LEFT) {
+    if (!(button_event->x >= edt->pwidget->size.x
+          && button_event->x < edt->pwidget->size.x + edt->bg->w
+          && button_event->y >= edt->pwidget->size.y
+          && button_event->y < edt->pwidget->size.y + edt->bg->h)) {
       /* exit from loop */
       return (Uint16)ED_MOUSE;
     }
@@ -682,141 +678,141 @@ static Uint16 edit_mouse_button_down(SDL_MouseButtonEvent *pButtonEvent,
   Handle active edit. Returns what should happen to the edit
   next.
 **************************************************************************/
-enum Edit_Return_Codes edit_field(struct widget *pEdit_Widget)
+enum edit_return_codes edit_field(struct widget *edit_widget)
 {
-  struct EDIT pEdt;
-  struct Utf8Char ___last;
-  struct Utf8Char *pInputChain_TMP = NULL;
-  enum Edit_Return_Codes ret;
-  void *backup = pEdit_Widget->data.ptr;
+  struct text_edit edt;
+  struct utf8_char ___last;
+  struct utf8_char *input_chain_tmp = NULL;
+  enum edit_return_codes ret;
+  void *backup = edit_widget->data.ptr;
 
-  pEdt.pWidget = pEdit_Widget;
-  pEdt.ChainLen = 0;
-  pEdt.Truelength = 0;
-  pEdt.Start_X = adj_size(5);
-  pEdt.InputChain_X = 0;
+  edt.pwidget = edit_widget;
+  edt.chain_len = 0;
+  edt.true_length = 0;
+  edt.start_x = adj_size(5);
+  edt.input_chain_x = 0;
 
-  pEdit_Widget->data.ptr = (void *)&pEdt;
+  edit_widget->data.ptr = (void *)&edt;
 
 #if 0
   SDL_EnableUNICODE(1);
   SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
 #endif /* 0 */
 
-  pEdt.pBg = create_bcgnd_surf(pEdit_Widget->theme, 2,
-                               pEdit_Widget->size.w, pEdit_Widget->size.h);
+  edt.bg = create_bcgnd_surf(edit_widget->theme, FC_WS_PRESSED,
+                             edit_widget->size.w, edit_widget->size.h);
 
   /* Creating Chain */
-  pEdt.pBeginTextChain = text2chain(pEdit_Widget->string_utf8->text);
+  edt.begin_text_chain = text2chain(edit_widget->string_utf8->text);
 
   /* Creating Empty (Last) pice of Chain */
-  pEdt.pInputChain = &___last;
-  pEdt.pEndTextChain = pEdt.pInputChain;
-  pEdt.pEndTextChain->chr[0] = 32; /* spacebar */
-  pEdt.pEndTextChain->chr[1] = 0;  /* spacebar */
-  pEdt.pEndTextChain->next = NULL;
-  pEdt.pEndTextChain->prev = NULL;
+  edt.input_chain = &___last;
+  edt.end_text_chain = edt.input_chain;
+  edt.end_text_chain->chr[0] = 32; /* spacebar */
+  edt.end_text_chain->chr[1] = 0;  /* spacebar */
+  edt.end_text_chain->next = NULL;
+  edt.end_text_chain->prev = NULL;
 
   /* set font style (if any ) */
-  if (!((pEdit_Widget->string_utf8->style & 0x0F) & TTF_STYLE_NORMAL)) {
-    TTF_SetFontStyle(pEdit_Widget->string_utf8->font,
-                     (pEdit_Widget->string_utf8->style & 0x0F));
+  if (!((edit_widget->string_utf8->style & 0x0F) & TTF_STYLE_NORMAL)) {
+    TTF_SetFontStyle(edit_widget->string_utf8->font,
+                     (edit_widget->string_utf8->style & 0x0F));
   }
 
-  pEdt.pEndTextChain->pTsurf =
-      TTF_RenderUTF8_Blended(pEdit_Widget->string_utf8->font,
-                             pEdt.pEndTextChain->chr,
-                             pEdit_Widget->string_utf8->fgcol);
+  edt.end_text_chain->tsurf =
+      TTF_RenderUTF8_Blended(edit_widget->string_utf8->font,
+                             edt.end_text_chain->chr,
+                             edit_widget->string_utf8->fgcol);
 
   /* create surface for each font in chain and find chain length */
-  if (pEdt.pBeginTextChain) {
-    pInputChain_TMP = pEdt.pBeginTextChain;
+  if (edt.begin_text_chain) {
+    input_chain_tmp = edt.begin_text_chain;
 
     while (TRUE) {
-      pEdt.ChainLen++;
+      edt.chain_len++;
 
-      if (get_wflags(pEdit_Widget) & WF_PASSWD_EDIT) {
+      if (get_wflags(edit_widget) & WF_PASSWD_EDIT) {
         const char passwd_chr[2] = {'*', '\0'};
 
-        pInputChain_TMP->pTsurf =
-          TTF_RenderUTF8_Blended(pEdit_Widget->string_utf8->font,
+        input_chain_tmp->tsurf =
+          TTF_RenderUTF8_Blended(edit_widget->string_utf8->font,
                                  passwd_chr,
-                                 pEdit_Widget->string_utf8->fgcol);
+                                 edit_widget->string_utf8->fgcol);
       } else {
-        pInputChain_TMP->pTsurf =
-          TTF_RenderUTF8_Blended(pEdit_Widget->string_utf8->font,
-                                 pInputChain_TMP->chr,
-                                 pEdit_Widget->string_utf8->fgcol);
+        input_chain_tmp->tsurf =
+          TTF_RenderUTF8_Blended(edit_widget->string_utf8->font,
+                                 input_chain_tmp->chr,
+                                 edit_widget->string_utf8->fgcol);
       }
 
-      pEdt.Truelength += pInputChain_TMP->pTsurf->w;
+      edt.true_length += input_chain_tmp->tsurf->w;
 
-      if (pInputChain_TMP->next == NULL) {
-	break;
+      if (input_chain_tmp->next == NULL) {
+        break;
       }
 
-      pInputChain_TMP = pInputChain_TMP->next;
+      input_chain_tmp = input_chain_tmp->next;
     }
     /* set terminator of list */
-    pInputChain_TMP->next = pEdt.pInputChain;
-    pEdt.pInputChain->prev = pInputChain_TMP;
-    pInputChain_TMP = NULL;
+    input_chain_tmp->next = edt.input_chain;
+    edt.input_chain->prev = input_chain_tmp;
+    input_chain_tmp = NULL;
   } else {
-    pEdt.pBeginTextChain = pEdt.pInputChain;
+    edt.begin_text_chain = edt.input_chain;
   }
 
-  redraw_edit_chain(&pEdt);
-  
-  set_wstate(pEdit_Widget, FC_WS_PRESSED);
+  redraw_edit_chain(&edt);
+
+  set_wstate(edit_widget, FC_WS_PRESSED);
   {
-    /* local loop */  
-    Uint16 rety = gui_event_loop((void *)&pEdt, NULL,
-                                 edit_key_down, NULL, edit_textinput,
+    /* Local loop */
+    Uint16 rety = gui_event_loop((void *)&edt, NULL,
+                                 edit_key_down, NULL, edit_textinput, NULL, NULL, NULL,
                                  edit_mouse_button_down, NULL, NULL);
 
-    if (pEdt.pBeginTextChain == pEdt.pEndTextChain) {
-      pEdt.pBeginTextChain = NULL;
+    if (edt.begin_text_chain == edt.end_text_chain) {
+      edt.begin_text_chain = NULL;
     }
 
     if (rety == MAX_ID) {
       ret = ED_FORCE_EXIT;
     } else {
-      ret = (enum Edit_Return_Codes) rety;
+      ret = (enum edit_return_codes) rety;
 
-      /* this is here because we have no knowledge that pEdit_Widget exist
+      /* This is here because we have no knowledge that edit_widget exist
          or nor in force exit mode from gui loop */
 
-      /* reset font settings */
-      if (!((pEdit_Widget->string_utf8->style & 0x0F) & TTF_STYLE_NORMAL)) {
-        TTF_SetFontStyle(pEdit_Widget->string_utf8->font, TTF_STYLE_NORMAL);
+      /* Reset font settings */
+      if (!((edit_widget->string_utf8->style & 0x0F) & TTF_STYLE_NORMAL)) {
+        TTF_SetFontStyle(edit_widget->string_utf8->font, TTF_STYLE_NORMAL);
       }
 
       if (ret != ED_ESC) {
         size_t len = 0;
 
-        FC_FREE(pEdit_Widget->string_utf8->text);
-        pEdit_Widget->string_utf8->text =
-          chain2text(pEdt.pBeginTextChain, pEdt.ChainLen, &len);
-        pEdit_Widget->string_utf8->n_alloc = len + 1;
+        FC_FREE(edit_widget->string_utf8->text);
+        edit_widget->string_utf8->text =
+          chain2text(edt.begin_text_chain, edt.chain_len, &len);
+        edit_widget->string_utf8->n_alloc = len + 1;
       }
 
-      pEdit_Widget->data.ptr = backup;
-      set_wstate(pEdit_Widget, FC_WS_NORMAL);
+      edit_widget->data.ptr = backup;
+      set_wstate(edit_widget, FC_WS_NORMAL);
     }
   }
 
-  FREESURFACE(pEdt.pEndTextChain->pTsurf);
+  FREESURFACE(edt.end_text_chain->tsurf);
 
-  del_chain(pEdt.pBeginTextChain);
+  del_chain(edt.begin_text_chain);
 
-  FREESURFACE(pEdt.pBg);
+  FREESURFACE(edt.bg);
 
-  /* disable repeat key */
+  /* Disable repeat key */
 
 #if 0
   SDL_EnableKeyRepeat(0, SDL_DEFAULT_REPEAT_INTERVAL);
 
-  /* disable Unicode */
+  /* Disable Unicode */
   SDL_EnableUNICODE(0);
 #endif /* 0 */
 

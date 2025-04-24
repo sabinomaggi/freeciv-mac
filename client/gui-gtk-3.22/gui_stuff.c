@@ -298,6 +298,10 @@ void setup_dialog(GtkWidget *shell, GtkWidget *parent)
 
   /* Close dialog window on Escape keypress. */
   if (GTK_IS_DIALOG(shell)) {
+    g_signal_connect(shell, "focus_out_event",
+                   G_CALLBACK(fc_lost_focus), NULL);
+    g_signal_connect(shell, "focus_in_event",
+                   G_CALLBACK(fc_gained_focus), NULL);
     g_signal_connect_after(shell, "close", G_CALLBACK(close_callback), shell);
   }
 }
@@ -434,8 +438,10 @@ static void gui_dialog_switch_page_handler(GtkNotebook *notebook,
   n = gtk_notebook_page_num(GTK_NOTEBOOK(dlg->v.tab.notebook), dlg->vbox);
 
   if (n == num) {
-    gtk_style_context_remove_class(gtk_widget_get_style_context(dlg->v.tab.label),
-                                   "alert");
+    GtkStyleContext *context = gtk_widget_get_style_context(dlg->v.tab.label);
+
+    gtk_style_context_remove_class(context, "alert");
+    gtk_style_context_remove_class(context, "notice");
   }
 }
 
@@ -506,7 +512,7 @@ static gboolean click_on_tab_callback(GtkWidget *w,
   Sets pdlg to point to the dialog once it is create, Zeroes pdlg on
   dialog destruction.
   user_data will be passed through response function
-  check_top indicates if the layout deision should depend on the parent.
+  check_top indicates if the layout decision should depend on the parent.
 **************************************************************************/
 void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
                     gpointer user_data, bool check_top)
@@ -541,8 +547,8 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
   action_area = gtk_grid_new();
   gtk_grid_set_row_spacing(GTK_GRID(action_area), 4);
   gtk_grid_set_column_spacing(GTK_GRID(action_area), 4);
-  if (GUI_GTK_OPTION(enable_tabs) &&
-      (check_top && notebook != GTK_NOTEBOOK(top_notebook))
+  if (GUI_GTK_OPTION(enable_tabs)
+      && (check_top && notebook != GTK_NOTEBOOK(top_notebook))
       && !GUI_GTK_OPTION(small_display_layout)) {
     /* We expect this to be short (as opposed to tall); maximise usable
      * height by putting buttons down the right hand side */
@@ -576,16 +582,13 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       dlg->v.window = window;
       g_signal_connect(window, "delete_event",
         G_CALLBACK(gui_dialog_delete_handler), dlg);
-      
+
     }
     break;
   case GUI_DIALOG_TAB:
     {
       GtkWidget *hbox, *label, *image, *button, *event_box;
-      gint w, h;
       gchar *buf;
-
-      gtk_icon_size_lookup(GTK_ICON_SIZE_MENU, &w, &h);
 
       hbox = gtk_grid_new();
 
@@ -601,7 +604,7 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
       button = gtk_button_new();
       gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
       g_signal_connect_swapped(button, "clicked",
-	  G_CALLBACK(gui_dialog_delete_tab_handler), dlg);
+                               G_CALLBACK(gui_dialog_delete_tab_handler), dlg);
 
       buf = g_strdup_printf(_("Close Tab:\n%s"), _("Ctrl+W"));
       gtk_widget_set_tooltip_text(button, buf);
@@ -624,8 +627,8 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
 
       gtk_notebook_append_page(GTK_NOTEBOOK(notebook), vbox, event_box);
       dlg->v.tab.handler_id =
-	g_signal_connect(notebook, "switch-page",
-	    G_CALLBACK(gui_dialog_switch_page_handler), dlg);
+        g_signal_connect(notebook, "switch-page",
+                         G_CALLBACK(gui_dialog_switch_page_handler), dlg);
       dlg->v.tab.child = vbox;
 
       gtk_style_context_add_provider(gtk_widget_get_style_context(label),
@@ -633,7 +636,7 @@ void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
                                      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
       dlg->v.tab.label = label;
       dlg->v.tab.notebook = GTK_WIDGET(notebook);
-      
+
       gtk_widget_add_events(event_box, GDK_BUTTON2_MOTION_MASK);
       g_signal_connect(event_box, "button-press-event",
                        G_CALLBACK(click_on_tab_callback), dlg);
@@ -849,7 +852,7 @@ void gui_dialog_present(struct gui_dialog *dlg)
 	GtkWidget *label = dlg->v.tab.label;
 
         gtk_style_context_add_class(gtk_widget_get_style_context(label),
-                                    "alert");
+                                    "notice");
       }
     }
     break;
@@ -899,9 +902,11 @@ void gui_dialog_alert(struct gui_dialog *dlg)
 
       if (current != n) {
         GtkWidget *label = dlg->v.tab.label;
+        GtkStyleContext *context = gtk_widget_get_style_context(label);
 
-        gtk_style_context_add_class(gtk_widget_get_style_context(label),
-                                    "alert");
+        /* Have only alert - remove notice if it exist. */
+        gtk_style_context_remove_class(context, "notice");
+        gtk_style_context_add_class(context, "alert");
       }
     }
     break;
@@ -1039,8 +1044,13 @@ void gui_update_font(const char *font_name, const char *font_value)
   size = pango_font_description_get_size(desc);
 
   if (size != 0) {
-    str = g_strdup_printf("#Freeciv #%s { font-family: %s; font-size: %dpx;%s%s}",
-                          font_name, fam, size / PANGO_SCALE, style, weight);
+    if (pango_font_description_get_size_is_absolute(desc)) {
+      str = g_strdup_printf("#Freeciv #%s { font-family: %s; font-size: %dpx;%s%s}",
+                            font_name, fam, size / PANGO_SCALE, style, weight);
+    } else {
+      str = g_strdup_printf("#Freeciv #%s { font-family: %s; font-size: %dpt;%s%s}",
+                            font_name, fam, size / PANGO_SCALE, style, weight);
+    }
   } else {
     str = g_strdup_printf("#Freeciv #%s { font-family: %s;%s%s}",
                           font_name, fam, style, weight);
@@ -1149,6 +1159,9 @@ void dlg_tab_provider_prepare(void)
   gtk_css_provider_load_from_data(dlg_tab_provider,
                                   ".alert {\n"
                                   "color: rgba(255, 0, 0, 255);\n"
+                                  "}\n"
+                                  ".notice {\n"
+                                  "color: rgba(0, 0, 255, 255);\n"
                                   "}\n",
                                   -1, NULL);
 }

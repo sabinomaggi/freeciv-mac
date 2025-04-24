@@ -47,22 +47,23 @@
 
 #include "themespec.h"
 
-#define THEMESPEC_SDL2_CAPSTR "+Freeciv-2.6-sdl2-themespec duplicates_ok"
+#define THEMESPEC_SDL2_CAPSTR "+Freeciv-sdl2-3.3-themespec-Devel-2023-Jun-07 duplicates_ok"
 /*
  * Themespec capabilities acceptable to this program:
  *
- * +Freeciv-2.3-themespec  -  basic format for Freeciv versions 2.3.x;
- *                            required
+ * +Freeciv-3.3-sdl2-themespec  -  basic format for Freeciv versions 3.3.x;
+ *                                 required
  *
  * duplicates_ok  -  we can handle existence of duplicate tags
  *                   (lattermost tag which appears is used; themes which
  *                   have duplicates should specify "+duplicates_ok")
  */
 
-#define SPEC_SDL2_CAPSTR "+Freeciv-2.6-sdl2-spec"
+#define SPEC_SDL2_CAPSTR "+Freeciv-sdl2-3.3-spec-Devel-2023-Jun-10"
 /*
  * Individual spec file capabilities acceptable to this program:
- * +Freeciv-2.3-spec  -  basic format for Freeciv versions 2.3.x; required
+ *
+ * +Freeciv-3.3-sdl2-spec  -  basic format for Freeciv versions 3.3.x; required
  */
 
 #define THEMESPEC_SUFFIX ".themespec"
@@ -150,7 +151,7 @@ struct theme {
   struct theme_color_system *color_system;
 };
 
-struct theme *theme = NULL;
+struct theme *active_theme = NULL;
 
 
 /************************************************************************//**
@@ -163,7 +164,7 @@ const char *theme_get_name(const struct theme *t)
 
 /************************************************************************//**
   Return the path within the data directories where the font file can be
-  found.  (It is left up to the GUI code to load and unload this file.)
+  found. (It is left up to the GUI code to load and unload this file.)
 ****************************************************************************/
 const char *theme_font_filename(const struct theme *t)
 {
@@ -171,7 +172,7 @@ const char *theme_font_filename(const struct theme *t)
 }
 
 /************************************************************************//**
-  Return the default font size.
+  Return theme's default font size.
 ****************************************************************************/
 int theme_default_font_size(const struct theme *t)
 {
@@ -293,7 +294,8 @@ static bool check_themespec_capabilities(struct section_file *file,
 static void theme_free_toplevel(struct theme *t)
 {
   if (t->font_filename) {
-    FC_FREE(t->font_filename);
+    free(t->font_filename);
+    t->font_filename = NULL;
   }
 
   t->default_font_size = 0;
@@ -331,15 +333,15 @@ void theme_free(struct theme *ftheme)
 ****************************************************************************/
 void themespec_try_read(const char *theme_name)
 {
-  if (!(theme = theme_read_toplevel(theme_name))) {
+  if (!(active_theme = theme_read_toplevel(theme_name))) {
     struct strvec *list = fileinfolist(get_data_dirs(), THEMESPEC_SUFFIX);
 
     strvec_iterate(list, file) {
       struct theme *t = theme_read_toplevel(file);
 
       if (t) {
-        if (!theme || t->priority > theme->priority) {
-          theme = t;
+        if (active_theme == NULL || t->priority > active_theme->priority) {
+          active_theme = t;
         } else {
           theme_free(t);
         }
@@ -347,23 +349,26 @@ void themespec_try_read(const char *theme_name)
     } strvec_iterate_end;
     strvec_destroy(list);
 
-    if (!theme) {
+    if (active_theme == NULL) {
       log_fatal(_("No usable default theme found, aborting!"));
+
       exit(EXIT_FAILURE);
     }
 
-    log_verbose("Trying theme \"%s\".", theme->name);
+    log_verbose("Trying theme \"%s\".", active_theme->name);
   }
-/*  sz_strlcpy(gui_sdl2_default_theme_name, theme_get_name(theme));*/
+
+  /*  sz_strlcpy(GUI_SDL_OPTION(default_theme_name),
+                 theme_get_name(theme)); */
 }
 
 /************************************************************************//**
   Read a new themespec in from scratch.
 
   Unlike the initial reading code, which reads pieces one at a time,
-  this gets rid of the old data and reads in the new all at once.  If the
-  new theme fails to load the old theme may be reloaded; otherwise the
-  client will exit.  If a NULL name is given the current theme will be
+  this gets rid of the old data and reads in the new all at once.
+  If the new theme fails to load the old theme may be reloaded; otherwise
+  the client will exit. If a NULL name is given the current theme will be
   reread.
 
   It will also call the necessary functions to redraw the graphics.
@@ -372,12 +377,12 @@ void themespec_reread(const char *new_theme_name)
 {
   struct tile *center_tile;
   enum client_states state = client_state();
-  const char *name = new_theme_name ? new_theme_name : theme->name;
-  char theme_name[strlen(name) + 1], old_name[strlen(theme->name) + 1];
+  const char *name = new_theme_name ? new_theme_name : active_theme->name;
+  char theme_name[strlen(name) + 1], old_name[strlen(active_theme->name) + 1];
 
   /* Make local copies since these values may be freed down below */
   sz_strlcpy(theme_name, name);
-  sz_strlcpy(old_name, theme->name);
+  sz_strlcpy(old_name, active_theme->name);
 
   log_normal(_("Loading theme \"%s\"."), theme_name);
 
@@ -391,35 +396,36 @@ void themespec_reread(const char *new_theme_name)
    *
    * We free all old data in preparation for re-reading it.
    */
-  theme_free_sprites(theme);
-  theme_free_toplevel(theme);
+  theme_free_sprites(active_theme);
+  theme_free_toplevel(active_theme);
 
   /* Step 2:  Read.
    *
-   * We read in the new theme.  This should be pretty straightforward.
+   * We read in the new theme. This should be pretty straightforward.
    */
-  if (!(theme = theme_read_toplevel(theme_name))) {
-    if (!(theme = theme_read_toplevel(old_name))) {
+  if (!(active_theme = theme_read_toplevel(theme_name))) {
+    if (!(active_theme = theme_read_toplevel(old_name))) {
       /* Always fails. */
-      fc_assert_exit_msg(NULL != theme,
+      fc_assert_exit_msg(NULL != active_theme,
                          "Failed to re-read the currently loaded theme.");
     }
   }
-/*  sz_strlcpy(gui_sdl2_default_theme_name, theme->name);*/
-  theme_load_sprites(theme);
+  /* sz_strlcpy(GUI_SDL_OPTION(default_theme_name), theme->name); */
+
+  theme_load_sprites(active_theme);
 
   /* Step 3: Setup
    *
-   * This is a seriously sticky problem.  On startup, we build a hash
+   * This is a seriously sticky problem. On startup, we build a hash
    * from all the sprite data. Then, when we connect to a server, the
    * server sends us ruleset data a piece at a time and we use this data
-   * to assemble the sprite structures.  But if we change while connected
-   *  we have to reassemble all of these.  This should just involve
-   * calling themespec_setup_*** on everything.  But how do we tell what
+   * to assemble the sprite structures. But if we change while connected
+   *  we have to reassemble all of these. This should just involve
+   * calling themespec_setup_*** on everything. But how do we tell what
    * "everything" is?
    *
    * The below code just does things straightforwardly, by setting up
-   * each possible sprite again.  Hopefully it catches everything, and
+   * each possible sprite again. Hopefully it catches everything, and
    * doesn't mess up too badly if we change themes while not connected
    * to a server.
    */
@@ -437,8 +443,8 @@ void themespec_reread(const char *new_theme_name)
 /*  theme_changed();*/
   can_slide = FALSE;
   center_tile_mapcanvas(center_tile);
-  /* update_map_canvas_visible forces a full redraw.  Otherwise with fast
-   * drawing we might not get one.  Of course this is slower. */
+  /* update_map_canvas_visible() forces a full redraw. Otherwise with fast
+   * drawing we might not get one. Of course this is slower. */
   update_map_canvas_visible();
   can_slide = TRUE;
 }
@@ -447,7 +453,7 @@ void themespec_reread(const char *new_theme_name)
   Loads the given graphics file (found in the data path) into a newly
   allocated sprite.
 ****************************************************************************/
-static struct sprite *load_gfx_file(const char *gfx_filename)
+static struct sprite *load_sdl2_gfx_file(const char *gfx_filename)
 {
   const char **gfx_fileexts = gfx_fileextensions(), *gfx_fileext;
   struct sprite *s;
@@ -461,7 +467,7 @@ static struct sprite *load_gfx_file(const char *gfx_filename)
     sprintf(full_name, "%s.%s", gfx_filename, gfx_fileext);
     if ((real_full_name = fileinfoname(get_data_dirs(), full_name))) {
       log_debug("trying to load gfx file \"%s\".", real_full_name);
-      s = load_gfxfile(real_full_name);
+      s = load_gfxfile(real_full_name, FALSE);
       if (s) {
         return s;
       }
@@ -469,13 +475,14 @@ static struct sprite *load_gfx_file(const char *gfx_filename)
   }
 
   log_error("Could not load gfx file \"%s\".", gfx_filename);
+
   return NULL;
 }
 
 /************************************************************************//**
   Ensure that the big sprite of the given spec file is loaded.
 ****************************************************************************/
-static void ensure_big_sprite(struct specfile *sf)
+static void theme_ensure_big_sprite(struct specfile *sf)
 {
   struct section_file *file;
   const char *gfx_filename;
@@ -485,7 +492,7 @@ static void ensure_big_sprite(struct specfile *sf)
     return;
   }
 
-  /* Otherwise load it.  The big sprite will sometimes be freed and will have
+  /* Otherwise load it. The big sprite will sometimes be freed and will have
    * to be reloaded, but most of the time it's just loaded once, the small
    * sprites are extracted, and then it's freed. */
   if (!(file = secfile_load(sf->file_name, TRUE))) {
@@ -500,13 +507,18 @@ static void ensure_big_sprite(struct specfile *sf)
 
   gfx_filename = secfile_lookup_str(file, "file.gfx");
 
-  sf->big_sprite = load_gfx_file(gfx_filename);
+  sf->big_sprite = load_sdl2_gfx_file(gfx_filename);
 
   if (!sf->big_sprite) {
     log_fatal("Could not load gfx file for the spec file \"%s\".",
               sf->file_name);
     exit(EXIT_FAILURE);
   }
+
+  /* We don't check unused fields here as most fields are only read
+   * at the specs scanning time. */
+  /*  secfile_check_unused(file); */
+
   secfile_destroy(file);
 }
 
@@ -531,8 +543,11 @@ static void scan_specfile(struct theme *t, struct specfile *sf,
     exit(EXIT_FAILURE);
   }
 
-  /* currently unused */
+  /* Currently unused */
   (void) secfile_entry_by_path(file, "info.artists");
+
+  /* This isn't used during the scan, only when the gfx is really loaded */
+  (void) secfile_entry_by_path(file, "file.gfx");
 
   sections = secfile_sections_by_name_prefix(file, "grid_");
 
@@ -714,7 +729,8 @@ struct theme *theme_read_toplevel(const char *theme_name)
   bool duplicates_ok;
   struct theme *t = theme_new();
   const char *langname;
-  const char *filename, *c;
+  const char *filename, *t_fontname;
+  const char *lang;
 
   fname = themespec_fullname(theme_name);
   if (!fname) {
@@ -744,29 +760,35 @@ struct theme *theme_read_toplevel(const char *theme_name)
   file_capstr = secfile_lookup_str(file, "themespec.options");
   duplicates_ok = has_capabilities("+duplicates_ok", file_capstr);
 
-  (void) secfile_entry_by_path(file, "themespec.name"); /* currently unused */
+  (void) secfile_entry_by_path(file, "themespec.name"); /* Currently unused */
 
   sz_strlcpy(t->name, theme_name);
   t->priority = secfile_lookup_int_default(file, 0, "themespec.priority");
 
   langname = setup_langname();
-  if (langname) {
-    if (strstr(langname, "zh_CN") != NULL) {
-      c = secfile_lookup_str(file, "themespec.font_file_zh_CN");
-    } else if (strstr(langname, "ja") != NULL) {
-      c = secfile_lookup_str(file, "themespec.font_file_ja");
-    } else if (strstr(langname, "ko") != NULL) {
-      c = secfile_lookup_str(file, "themespec.font_file_ko");
+
+  t_fontname = NULL;
+  for (i = 0;
+       (lang = secfile_lookup_str_default(file, NULL, "themespec.fonts%d.langname", i)) != NULL;
+       i++) {
+    if (langname != NULL && strstr(langname, lang) != NULL) {
+      t_fontname = secfile_lookup_str(file, "themespec.fonts%d.font_file", i);
+      /* Don't break the loop, but read all the entries to avoid "unused entry" warnings */
     } else {
-      c = secfile_lookup_str(file, "themespec.font_file");
+      (void) secfile_entry_lookup(file, "themespec.fonts%d.font_file", i);
     }
-  } else {
-    c = secfile_lookup_str(file, "themespec.font_file");
   }
-  if ((filename = fileinfoname(get_data_dirs(), c))) {
+
+  if (t_fontname == NULL) {
+    t_fontname = secfile_lookup_str(file, "themespec.default_font_file");
+  } else {
+    (void) secfile_entry_lookup(file, "themespec.default_font_file");
+  }
+
+  if ((filename = fileinfoname(get_data_dirs(), t_fontname))) {
     t->font_filename = fc_strdup(filename);
   } else {
-    log_fatal("Could not open font: %s", c);
+    log_fatal("Could not open font: %s", t_fontname);
     secfile_destroy(file);
     FC_FREE(fname);
     theme_free(t);
@@ -846,7 +868,7 @@ static struct sprite *theme_load_sprite(struct theme *t, const char *tag_name)
     /* If the sprite hasn't been loaded already, then load it. */
     fc_assert_ret_val(ss->ref_count == 0, NULL);
     if (ss->file) {
-      ss->sprite = load_gfx_file(ss->file);
+      ss->sprite = load_sdl2_gfx_file(ss->file);
       if (!ss->sprite) {
         log_fatal("Couldn't load gfx file \"%s\" for sprite '%s'.",
                   ss->file, tag_name);
@@ -855,7 +877,7 @@ static struct sprite *theme_load_sprite(struct theme *t, const char *tag_name)
     } else {
       int sf_w, sf_h;
 
-      ensure_big_sprite(ss->sf);
+      theme_ensure_big_sprite(ss->sf);
       get_sprite_dimensions(ss->sf->big_sprite, &sf_w, &sf_h);
       if (ss->x < 0 || ss->x + ss->width > sf_w
           || ss->y < 0 || ss->y + ss->height > sf_h) {
@@ -864,8 +886,8 @@ static struct sprite *theme_load_sprite(struct theme *t, const char *tag_name)
         return NULL;
       }
       ss->sprite =
-	crop_sprite(ss->sf->big_sprite, ss->x, ss->y, ss->width, ss->height,
-		    NULL, -1, -1, 1.0, FALSE);
+        crop_sprite(ss->sf->big_sprite, ss->x, ss->y, ss->width, ss->height,
+                    NULL, -1, -1, 1.0, FALSE);
     }
   }
 

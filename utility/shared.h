@@ -19,21 +19,21 @@ extern "C" {
 
 #include <freeciv_config.h>
 
-#include <stdlib.h>		/* size_t */
-#include <string.h>		/* memset */
-#include <time.h>		/* time_t */
+#include <stdlib.h>             /* size_t */
+#include <string.h>             /* memset */
+#include <time.h>               /* time_t */
 
 /* utility */
 #include "log.h"
 #include "support.h" /* bool, fc__attribute */
 
-/* Changing these will break network compatability! */
-#define MAX_LEN_ADDR     256	/* see also MAXHOSTNAMELEN and RFC 1123 2.1 */
+/* Changing these will break network compatibility! */
+#define MAX_LEN_ADDR     256    /* See also MAXHOSTNAMELEN and RFC 1123 2.1 */
 #define MAX_LEN_PATH    4095
 
 /* Use FC_INFINITY to denote that a certain event will never occur or
    another unreachable condition. */
-#define FC_INFINITY    	(1000 * 1000 * 1000)
+#define FC_INFINITY     (1000 * 1000 * 1000)
 
 #ifndef FREECIV_TESTMATIC
 /* Initialize something for the sole purpose of silencing false compiler warning
@@ -48,6 +48,7 @@ enum fc_tristate { TRI_NO, TRI_YES, TRI_MAYBE };
 
 enum fc_tristate fc_tristate_and(enum fc_tristate one,
                                  enum fc_tristate two);
+enum fc_tristate fc_tristate_or(enum fc_tristate one, enum fc_tristate two);
 
 #ifndef MAX
 #define MAX(x,y) (((x)>(y))?(x):(y))
@@ -84,7 +85,7 @@ enum fc_tristate fc_tristate_and(enum fc_tristate one,
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #define ADD_TO_POINTER(p, n) ((void *)((char *)(p)+(n)))
 
-#define FC_MEMBER(type, member) (((type *) NULL)->member)
+#define FC_MEMBER(type, member) (((type *) nullptr)->member)
 #define FC_MEMBER_OFFSETOF(type, member) ((size_t) &FC_MEMBER(type, member))
 #define FC_MEMBER_SIZEOF(type, member) sizeof(FC_MEMBER(type, member))
 #define FC_MEMBER_ARRAY_SIZE(type, member) \
@@ -92,27 +93,23 @@ enum fc_tristate fc_tristate_and(enum fc_tristate one,
 
 #define FC_INT_TO_PTR(i) ((void *) (intptr_t) (i))
 #define FC_PTR_TO_INT(p) ((int) (intptr_t) (p))
-#define FC_UINT_TO_PTR(u) ((void *) (intptr_t) (u))
-#define FC_PTR_TO_UINT(p) ((unsigned int) (intptr_t) (p))
-#define FC_SIZE_TO_PTR(s) ((void *) (intptr_t) (s))
-#define FC_PTR_TO_SIZE(p) ((size_t) (intptr_t) (p))
 
 /****************************************************************************
   Used to initialize an array 'a' of size 'size' with value 'val' in each
   element. Note that the value is evaluated for each element.
 ****************************************************************************/
-#define INITIALIZE_ARRAY(array, size, value)				    \
-  {									    \
-    int _ini_index;							    \
-    									    \
-    for (_ini_index = 0; _ini_index < (size); _ini_index++) {		    \
-      (array)[_ini_index] = (value);					    \
-    }									    \
+#define INITIALIZE_ARRAY(array, size, value)                                \
+  {                                                                         \
+    int _ini_index;                                                         \
+                                                                            \
+    for (_ini_index = 0; _ini_index < (size); _ini_index++) {               \
+      (array)[_ini_index] = (value);                                        \
+    }                                                                       \
   }
 
 #ifndef PATH_SEPARATOR
 #if defined(FREECIV_MSWINDOWS) || defined(_WIN32) || defined(__WIN32__) || defined(__EMX__) || defined(__DJGPP__)
-  /* Win32, OS/2, DOS */
+  /* Windows, OS/2, DOS */
 # define PATH_SEPARATOR ";"
 #else
   /* Unix */
@@ -121,7 +118,7 @@ enum fc_tristate fc_tristate_and(enum fc_tristate one,
 #endif /* PATH_SEPARATOR */
 
 #if defined(FREECIV_MSWINDOWS) || defined(_WIN32) || defined(__WIN32__) || defined(__EMX__) || defined(__DJGPP__)
-  /* Win32, OS/2, DOS */
+  /* Windows, OS/2, DOS */
 # define DIR_SEPARATOR "\\"
 # define DIR_SEPARATOR_CHAR '\\'
 #else
@@ -146,30 +143,37 @@ int compare_strings_ptrs(const void *first, const void *second);
 int compare_strings_strvec(const char *const *first,
                            const char *const *second);
 
-char *skip_leading_spaces(char *s);
-void remove_leading_spaces(char *s);
-void remove_trailing_spaces(char *s);
+char *skip_leading_spaces(char *s)
+  fc__attribute((nonnull (1)));
+void remove_leading_spaces(char *s)
+  fc__attribute((nonnull (1)));
+void remove_trailing_spaces(char *s)
+  fc__attribute((nonnull (1)));
 void remove_leading_trailing_spaces(char *s);
 
 bool check_strlen(const char *str, size_t len, const char *errmsg);
 size_t loud_strlcpy(char *buffer, const char *str, size_t len,
-		   const char *errmsg);
+                    const char *errmsg);
 /* Convenience macro. */
 #define sz_loud_strlcpy(buffer, str, errmsg) \
     loud_strlcpy(buffer, str, sizeof(buffer), errmsg)
 
 char *end_of_strn(char *str, int *nleft);
 
-bool str_to_int(const char *str, int *pint);
-bool str_to_float(const char *str, float *pfloat);
+bool str_to_int(const char *str, int *pint)
+  fc__attribute((nonnull (1)));
+bool str_to_uint(const char *str, unsigned int *pint)
+  fc__attribute((nonnull (1)));
+bool str_to_float(const char *str, float *pfloat)
+  fc__attribute((nonnull (1)));
 
 /**************************************************************************
-...
+  ...
 **************************************************************************/
 struct fileinfo {
-  char *name;           /* descriptive file name string */
-  char *fullname;       /* full absolute filename */
-  time_t mtime;         /* last modification time  */
+  char *name;           /* Descriptive file name string */
+  char *fullname;       /* Full absolute filename */
+  time_t mtime;         /* Last modification time  */
 };
 
 #define SPECLIST_TAG fileinfo
@@ -199,41 +203,41 @@ void free_fileinfo_data(void);
 
 void init_nls(void);
 void free_nls(void);
-char *setup_langname(void);
+const char *setup_langname(void);
 void switch_lang(const char *lang);
 
 void dont_run_as_root(const char *argv0, const char *fallback);
 
-/*** matching prefixes: ***/
+/*** Matching prefixes: ***/
 
 enum m_pre_result {
-  M_PRE_EXACT,		/* matches with exact length */
-  M_PRE_ONLY,		/* only matching prefix */
-  M_PRE_AMBIGUOUS,	/* first of multiple matching prefixes */
-  M_PRE_EMPTY,		/* prefix is empty string (no match) */
-  M_PRE_LONG,		/* prefix is too long (no match) */
-  M_PRE_FAIL,		/* no match at all */
-  M_PRE_LAST		/* flag value */
+  M_PRE_EXACT,          /* Matches with exact length */
+  M_PRE_ONLY,           /* Only matching prefix */
+  M_PRE_AMBIGUOUS,      /* First of multiple matching prefixes */
+  M_PRE_EMPTY,          /* Prefix is empty string (no match) */
+  M_PRE_LONG,           /* Prefix is too long (no match) */
+  M_PRE_FAIL,           /* No match at all */
+  M_PRE_LAST            /* Flag value */
 };
 
 const char *m_pre_description(enum m_pre_result result);
 
-/* function type to access a name from an index: */
+/* Function type to access a name from an index: */
 typedef const char *(*m_pre_accessor_fn_t)(int);
 
-/* function type to compare prefix: */
+/* Function type to compare prefix: */
 typedef int (*m_pre_strncmp_fn_t)(const char *, const char *, size_t n);
 
-/* function type to calculate effective string length: */
+/* Function type to calculate effective string length: */
 typedef size_t (m_strlen_fn_t)(const char *str);
 
 enum m_pre_result match_prefix(m_pre_accessor_fn_t accessor_fn,
-			       size_t n_names,
-			       size_t max_len_name,
-			       m_pre_strncmp_fn_t cmp_fn,
+                               size_t n_names,
+                               size_t max_len_name,
+                               m_pre_strncmp_fn_t cmp_fn,
                                m_strlen_fn_t len_fn,
-			       const char *prefix,
-			       int *ind_result);
+                               const char *prefix,
+                               int *ind_result);
 enum m_pre_result match_prefix_full(m_pre_accessor_fn_t accessor_fn,
                                     size_t n_names,
                                     size_t max_len_name,
@@ -247,11 +251,17 @@ enum m_pre_result match_prefix_full(m_pre_accessor_fn_t accessor_fn,
 
 char *get_multicast_group(bool ipv6_preferred);
 void free_multicast_group(void);
-void interpret_tilde(char* buf, size_t buf_size, const char* filename);
-char *interpret_tilde_alloc(const char* filename);
+void interpret_tilde(char *buf, size_t buf_size, const char *filename);
+char *interpret_tilde_alloc(const char *filename);
 char *skip_to_basename(char *filepath);
 
-bool make_dir(const char *pathname);
+#define DIRMODE_DEFAULT (-1)
+
+bool make_dir(const char *pathname, int mode)
+       fc__attribute((nonnull (1)));
+bool make_dir_for_file(char *filename)
+       fc__attribute((nonnull (1)));
+
 bool path_is_absolute(const char *filename);
 
 char scanin(const char **buf, char *delimiters, char *dest, int size);
@@ -308,7 +318,7 @@ struct cf_sequence {
   };
 };
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of boolean type.
 ****************************************************************************/
 static inline struct cf_sequence cf_bool_seq(char letter, bool value)
@@ -322,7 +332,7 @@ static inline struct cf_sequence cf_bool_seq(char letter, bool value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of boolean type (result will be
   translated).
 ****************************************************************************/
@@ -337,7 +347,7 @@ static inline struct cf_sequence cf_trans_bool_seq(char letter, bool value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of character type (%c).
 ****************************************************************************/
 static inline struct cf_sequence cf_char_seq(char letter, char value)
@@ -351,7 +361,7 @@ static inline struct cf_sequence cf_char_seq(char letter, char value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of integer type (%d).
 ****************************************************************************/
 static inline void cf_int_seq(char letter, int value, struct cf_sequence *out)
@@ -361,7 +371,7 @@ static inline void cf_int_seq(char letter, int value, struct cf_sequence *out)
   out->int_value = value;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of hexadecimal type (%x).
 ****************************************************************************/
 static inline struct cf_sequence cf_hexa_seq(char letter, int value)
@@ -375,7 +385,7 @@ static inline struct cf_sequence cf_hexa_seq(char letter, int value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of float type (%f).
 ****************************************************************************/
 static inline struct cf_sequence cf_float_seq(char letter, float value)
@@ -389,7 +399,7 @@ static inline struct cf_sequence cf_float_seq(char letter, float value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of pointer type (%p).
 ****************************************************************************/
 static inline struct cf_sequence cf_ptr_seq(char letter, const void *value)
@@ -403,7 +413,7 @@ static inline struct cf_sequence cf_ptr_seq(char letter, const void *value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Build an argument for fc_snprintcf() of string type (%s).
 ****************************************************************************/
 static inline struct cf_sequence cf_str_seq(char letter, const char *value)
@@ -417,7 +427,7 @@ static inline struct cf_sequence cf_str_seq(char letter, const char *value)
   return sequence;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Must finish the list of the arguments of fc_snprintcf().
 ****************************************************************************/
 static inline struct cf_sequence cf_end(void)
@@ -435,4 +445,4 @@ bool formats_match(const char *format1, const char *format2);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__SHARED_H */
+#endif /* FC__SHARED_H */

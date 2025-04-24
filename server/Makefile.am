@@ -1,16 +1,8 @@
 ## Process this file with automake to produce Makefile.in
 
-SUBDIRS = advisors generator scripting
+SUBDIRS = advisors generator savegame scripting ruleset
 
-if FREECIV_WEB
-srvbin = freeciv-web
-else
-srvbin = freeciv-server
-endif
-
-if SERVER
-bin_PROGRAMS = $(srvbin)
-endif
+bin_PROGRAMS = freeciv-server
 
 lib_LTLIBRARIES = libfreeciv-srv.la
 AM_CPPFLAGS = \
@@ -23,16 +15,20 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/utility \
 	-I$(srcdir)/advisors \
 	-I$(srcdir)/generator \
+	-I$(srcdir)/ruleset \
+	-I$(srcdir)/savegame \
 	-I$(srcdir)/scripting \
 	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums \
+	$(LUA_CFLAGS) \
 	$(FCDB_MYSQL_CFLAGS) $(FCDB_POSTGRES_CFLAGS) $(FCDB_SQLITE3_CFLAGS)
 
 if MINGW
-SERVERICON=../windows/servericon.o
+SERVERICON = $(top_builddir)/platforms/windows/icons/servericon.o
 endif
 
 exe_sources = \
-		civserver.c
+		srv_entrypoint.c
 
 libfreeciv_srv_la_SOURCES = \
 		actiontools.c	\
@@ -73,6 +69,7 @@ libfreeciv_srv_la_SOURCES = \
 		handchat.h	\
 		hand_gen.c	\
 		hand_gen.h	\
+		infrapts.c	\
 		maphand.c	\
 		maphand.h	\
 		meta.c		\
@@ -85,26 +82,14 @@ libfreeciv_srv_la_SOURCES = \
 		plrhand.h	\
 		report.c	\
 		report.h	\
-		rscompat.c	\
-		rscompat.h	\
-		rssanity.c	\
-		rssanity.h	\
-		ruleset.c	\
-		ruleset.h	\
 		sanitycheck.c	\
 		sanitycheck.h	\
-		savecompat.c	\
-		savecompat.h	\
-		savegame.c	\
-		savegame.h	\
-		savegame2.c	\
-		savegame2.h	\
-		savegame3.c	\
-		savegame3.h	\
 		score.c		\
 		score.h		\
 		sernet.c	\
 		sernet.h	\
+		setcompat.c	\
+		setcompat.h	\
 		settings.c	\
 		settings.h	\
 		spacerace.c	\
@@ -113,6 +98,8 @@ libfreeciv_srv_la_SOURCES = \
 		srv_log.h	\
 		srv_main.c	\
 		srv_main.h	\
+		srv_signal.c	\
+		srv_signal.h	\
 		stdinhand.c	\
 		stdinhand.h	\
 		techtools.h	\
@@ -128,7 +115,7 @@ libfreeciv_srv_la_SOURCES = \
 # outside this directory (when building common) there's no point in
 # setting them to BUILT_SOURCES.
 
-da_libs = 
+da_libs =
 
 if AI_MOD_DEFAULT_NEEDED
 da_libs += $(top_builddir)/ai/default/libdefaultai.la
@@ -137,9 +124,6 @@ endif
 if AI_MOD_STATIC_CLASSIC
 da_libs += $(top_builddir)/ai/classic/libclassicai.la
 endif
-if AI_MOD_STATIC_THREADED
-da_libs += $(top_builddir)/ai/threaded/libthreadedai.la
-endif
 if AI_MOD_STATIC_TEX
 da_libs += $(top_builddir)/ai/tex/libtexai.la
 endif
@@ -147,7 +131,7 @@ if AI_MOD_STATIC_STUB
 da_libs += $(top_builddir)/ai/stub/libstubai.la
 endif
 
-# These files are not generated to builddir, but to srcdir */
+# These files are not generated to builddir, but to srcdir
 MAINTAINERCLEANFILES = \
 	$(srcdir)/hand_gen.c \
 	$(srcdir)/hand_gen.h
@@ -157,6 +141,8 @@ srvlibs = \
  $(top_builddir)/ai/libaicommon.la \
  $(top_builddir)/server/advisors/libadvisors.la \
  $(top_builddir)/server/generator/libgenerator.la \
+ $(top_builddir)/server/ruleset/libruleload.la \
+ $(top_builddir)/server/savegame/libsavegame.la \
  $(top_builddir)/server/scripting/libscripting_fcdb.la \
  $(top_builddir)/server/scripting/libscripting_server.la
 
@@ -169,25 +155,12 @@ exe_ldflags =
 exe_ldadd = \
  ./libfreeciv-srv.la \
  $(top_builddir)/common/libfreeciv.la \
+ $(top_builddir)/dependencies/cvercmp/libcvercmp.la \
  $(INTLLIBS) \
  $(MAPIMG_WAND_LIBS) \
  $(TINYCTHR_LIBS) \
  $(SERVER_LIBS) $(SERVERICON)
 
-if FREECIV_WEB
-freeciv_web_SOURCES = $(exe_sources)
-freeciv_web_LDFLAGS = $(exe_ldflags)
-freeciv_web_LDADD = $(exe_ldadd)
-else
 freeciv_server_SOURCES = $(exe_sources)
 freeciv_server_LDFLAGS = $(exe_ldflags)
 freeciv_server_LDADD = $(exe_ldadd)
-endif
-
-desktopfiledir = @DESKTOPDIR@
-desktopfile_DATA = \
-	freeciv-server.desktop
-
-appdatafiledir = @APPDATADIR@
-appdatafile_DATA = \
-	freeciv-server.appdata.xml

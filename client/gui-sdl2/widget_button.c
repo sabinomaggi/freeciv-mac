@@ -37,257 +37,258 @@
 static int (*baseclass_redraw)(struct widget *pwidget);
 
 /**********************************************************************//**
-  Create Icon Button image with text and Icon then blit to Dest(ination)
-  on positon pIButton->size.x , pIButton->size.y.
-  WARNING: pDest must exist.
+  Create Icon Button image with text and Icon then blit to dest(ination)
+  on position icon_button->size.x, icon_button->size.y.
 
-  Text with attributes is taken from pIButton->string_utf8 parameter.
+  Text with attributes is taken from icob_button->string_utf8 parameter.
 
-  Graphic for button is taken from pIButton->theme surface
+  Graphic for button is taken from icon_button->theme surface
   and blit to new created image.
 
-  Graphic for Icon is taken from pIButton->theme2 surface and blit to new
+  Graphic for Icon is taken from icon_button->theme2 surface and blit to new
   created image.
 
-  function return (-1) if there are no Icon nor Text.
-  Else return 0.
+  @return 0 on success, 1 when there is no icon nor text,
+          or negative SDL error
 **************************************************************************/
-static int redraw_ibutton(struct widget *pIButton)
+static int redraw_ibutton(struct widget *icon_button)
 {
   SDL_Rect dest = { 0, 0, 0, 0 };
-  utf8_str TMPString;
-  SDL_Surface *pButton = NULL, *pText = NULL, *pIcon = pIButton->theme2;
-  Uint16 Ix, Iy, x;
+  utf8_str tmp_str;
+  SDL_Surface *button = NULL, *text = NULL, *icon = icon_button->theme2;
+  Uint16 ix, iy, x;
   Uint16 y = 0; /* FIXME: possibly uninitialized */
   int ret;
 
-  ret = (*baseclass_redraw)(pIButton);
+  ret = (*baseclass_redraw)(icon_button);
   if (ret != 0) {
     return ret;
   }
 
-  if (pIButton->string_utf8 != NULL) {
-    /* make copy of string_utf8 */
-    TMPString = *pIButton->string_utf8;
+  if (icon_button->string_utf8 != NULL) {
+    /* Make copy of string_utf8 */
+    tmp_str = *icon_button->string_utf8;
 
-    if (get_wstate(pIButton) == FC_WS_NORMAL) {
-      TMPString.fgcol = *get_theme_color(COLOR_THEME_WIDGET_NORMAL_TEXT);
-    } else if (get_wstate(pIButton) == FC_WS_SELECTED) {
-      TMPString.fgcol = *get_theme_color(COLOR_THEME_WIDGET_SELECTED_TEXT);
-      TMPString.style |= TTF_STYLE_BOLD;
-    } else if (get_wstate(pIButton) == FC_WS_PRESSED) {
-      TMPString.fgcol = *get_theme_color(COLOR_THEME_WIDGET_PRESSED_TEXT);
-    } else if (get_wstate(pIButton) == FC_WS_DISABLED) {
-      TMPString.fgcol = *get_theme_color(COLOR_THEME_WIDGET_DISABLED_TEXT);
+    if (get_wstate(icon_button) == FC_WS_NORMAL) {
+      tmp_str.fgcol = *get_theme_color(COLOR_THEME_WIDGET_NORMAL_TEXT);
+    } else if (get_wstate(icon_button) == FC_WS_SELECTED) {
+      tmp_str.fgcol = *get_theme_color(COLOR_THEME_WIDGET_SELECTED_TEXT);
+      tmp_str.style |= TTF_STYLE_BOLD;
+    } else if (get_wstate(icon_button) == FC_WS_PRESSED) {
+      tmp_str.fgcol = *get_theme_color(COLOR_THEME_WIDGET_PRESSED_TEXT);
+    } else if (get_wstate(icon_button) == FC_WS_DISABLED) {
+      tmp_str.fgcol = *get_theme_color(COLOR_THEME_WIDGET_DISABLED_TEXT);
     }
 
-    pText = create_text_surf_from_utf8(&TMPString);
+    text = create_text_surf_from_utf8(&tmp_str);
   }
 
-  if (!pText && !pIcon) {
-    return -1;
+  if (!text && !icon) {
+    return 1;
   }
 
-  /* create Button graphic */
-  pButton = create_bcgnd_surf(pIButton->theme, get_wstate(pIButton),
-                              pIButton->size.w, pIButton->size.h);
+  /* Create Button graphic */
+  button = create_bcgnd_surf(icon_button->theme, get_wstate(icon_button),
+                             icon_button->size.w, icon_button->size.h);
 
-  clear_surface(pIButton->dst->surface, &pIButton->size);
-  alphablit(pButton, NULL, pIButton->dst->surface, &pIButton->size, 255);
-  FREESURFACE(pButton);
+  clear_surface(icon_button->dst->surface, &icon_button->size);
+  alphablit(button, NULL, icon_button->dst->surface, &icon_button->size, 255);
+  FREESURFACE(button);
 
-  if (pIcon) { /* Icon */
-    if (pText) {
-      if (get_wflags(pIButton) & WF_ICON_CENTER_RIGHT) {
-        Ix = pIButton->size.w - pIcon->w - 5;
+  if (icon) { /* Icon */
+    if (text) {
+      if (get_wflags(icon_button) & WF_ICON_CENTER_RIGHT) {
+        ix = icon_button->size.w - icon->w - 5;
       } else {
-        if (get_wflags(pIButton) & WF_ICON_CENTER) {
-          Ix = (pIButton->size.w - pIcon->w) / 2;
+        if (get_wflags(icon_button) & WF_ICON_CENTER) {
+          ix = (icon_button->size.w - icon->w) / 2;
         } else {
-          Ix = 5;
+          ix = 5;
         }
       }
 
-      if (get_wflags(pIButton) & WF_ICON_ABOVE_TEXT) {
-        Iy = 3;
-        y = 3 + pIcon->h + 3 + (pIButton->size.h -
-                                (pIcon->h + 6) - pText->h) / 2;
+      if (get_wflags(icon_button) & WF_ICON_ABOVE_TEXT) {
+        iy = 3;
+        y = 3 + icon->h + 3 + (icon_button->size.h -
+                               (icon->h + 6) - text->h) / 2;
       } else {
-        if (get_wflags(pIButton) & WF_ICON_UNDER_TEXT) {
-          y = 3 + (pIButton->size.h - (pIcon->h + 3) - pText->h) / 2;
-          Iy = y + pText->h + 3;
-        } else { /* center */
-          Iy = (pIButton->size.h - pIcon->h) / 2;
-          y = (pIButton->size.h - pText->h) / 2;
+        if (get_wflags(icon_button) & WF_ICON_UNDER_TEXT) {
+          y = 3 + (icon_button->size.h - (icon->h + 3) - text->h) / 2;
+          iy = y + text->h + 3;
+        } else { /* Center */
+          iy = (icon_button->size.h - icon->h) / 2;
+          y = (icon_button->size.h - text->h) / 2;
         }
       }
-    } else { /* no text */
-      Iy = (pIButton->size.h - pIcon->h) / 2;
-      Ix = (pIButton->size.w - pIcon->w) / 2;
+    } else { /* No text */
+      iy = (icon_button->size.h - icon->h) / 2;
+      ix = (icon_button->size.w - icon->w) / 2;
     }
 
-    if (get_wstate(pIButton) == FC_WS_PRESSED) {
-      Ix += 1;
-      Iy += 1;
+    if (get_wstate(icon_button) == FC_WS_PRESSED) {
+      ix += 1;
+      iy += 1;
     }
 
-    dest.x = pIButton->size.x + Ix;
-    dest.y = pIButton->size.y + Iy;
+    dest.x = icon_button->size.x + ix;
+    dest.y = icon_button->size.y + iy;
 
-    ret = alphablit(pIcon, NULL, pIButton->dst->surface, &dest, 255);
+    ret = alphablit(icon, NULL, icon_button->dst->surface, &dest, 255);
     if (ret) {
-      FREESURFACE(pText);
-      return ret - 10;
+      FREESURFACE(text);
+      return ret;
     }
   }
 
-  if (pText) {
-    if (pIcon) {
-      if (!(get_wflags(pIButton) & WF_ICON_ABOVE_TEXT)
-          && !(get_wflags(pIButton) & WF_ICON_UNDER_TEXT)) {
-        if (get_wflags(pIButton) & WF_ICON_CENTER_RIGHT) {
-          if (pIButton->string_utf8->style & SF_CENTER) {
-            x = (pIButton->size.w - (pIcon->w + 5) - pText->w) / 2;
+  if (text) {
+    if (icon) {
+      if (!(get_wflags(icon_button) & WF_ICON_ABOVE_TEXT)
+          && !(get_wflags(icon_button) & WF_ICON_UNDER_TEXT)) {
+        if (get_wflags(icon_button) & WF_ICON_CENTER_RIGHT) {
+          if (icon_button->string_utf8->style & SF_CENTER) {
+            x = (icon_button->size.w - (icon->w + 5) - text->w) / 2;
           } else {
-            if (pIButton->string_utf8->style & SF_CENTER_RIGHT) {
-              x = pIButton->size.w - (pIcon->w + 7) - pText->w;
+            if (icon_button->string_utf8->style & SF_CENTER_RIGHT) {
+              x = icon_button->size.w - (icon->w + 7) - text->w;
             } else {
               x = 5;
             }
           }
-          /* end WF_ICON_CENTER_RIGHT */
+          /* End WF_ICON_CENTER_RIGHT */
         } else {
-          if (get_wflags(pIButton) & WF_ICON_CENTER) {
-            /* text is blit on icon */
-            goto Alone;
-            /* end WF_ICON_CENTER */
-          } else { /* icon center left - default */
-            if (pIButton->string_utf8->style & SF_CENTER) {
-              x = 5 + pIcon->w + ((pIButton->size.w -
-                                   (pIcon->w + 5) - pText->w) / 2);
+          if (get_wflags(icon_button) & WF_ICON_CENTER) {
+            /* Text is blit on icon */
+            goto alone;
+            /* End WF_ICON_CENTER */
+          } else { /* Icon center left - default */
+            if (icon_button->string_utf8->style & SF_CENTER) {
+              x = 5 + icon->w + ((icon_button->size.w -
+                                  (icon->w + 5) - text->w) / 2);
             } else {
-              if (pIButton->string_utf8->style & SF_CENTER_RIGHT) {
-                x = pIButton->size.w - pText->w - 5;
-              } else { /* text center left */
-                x = 5 + pIcon->w + 3;
+              if (icon_button->string_utf8->style & SF_CENTER_RIGHT) {
+                x = icon_button->size.w - text->w - 5;
+              } else { /* Text center left */
+                x = 5 + icon->w + 3;
               }
             }
-          } /* end icon center left - default */
+          } /* End icon center left - default */
         }
         /* 888888888888888888 */
       } else {
-        goto Alone;
+        goto alone;
       }
     } else {
-      /* !pIcon */
-      y = (pIButton->size.h - pText->h) / 2;
-    Alone:
-      if (pIButton->string_utf8->style & SF_CENTER) {
-        x = (pIButton->size.w - pText->w) / 2;
+      /* !icon */
+      y = (icon_button->size.h - text->h) / 2;
+
+    alone:
+      if (icon_button->string_utf8->style & SF_CENTER) {
+        x = (icon_button->size.w - text->w) / 2;
       } else {
-        if (pIButton->string_utf8->style & SF_CENTER_RIGHT) {
-          x = pIButton->size.w - pText->w - 5;
+        if (icon_button->string_utf8->style & SF_CENTER_RIGHT) {
+          x = icon_button->size.w - text->w - 5;
         } else {
           x = 5;
         }
       }
     }
 
-    if (get_wstate(pIButton) == FC_WS_PRESSED) {
+    if (get_wstate(icon_button) == FC_WS_PRESSED) {
       x += 1;
     } else {
       y -= 1;
     }
 
-    dest.x = pIButton->size.x + x;
-    dest.y = pIButton->size.y + y;
+    dest.x = icon_button->size.x + x;
+    dest.y = icon_button->size.y + y;
 
-    ret = alphablit(pText, NULL, pIButton->dst->surface, &dest, 255);
+    ret = alphablit(text, NULL, icon_button->dst->surface, &dest, 255);
   }
 
-  FREESURFACE(pText);
+  FREESURFACE(text);
 
-  return 0;
+  return ret;
 }
 
 /**********************************************************************//**
-  Create Icon Button image with text and Icon then blit to Dest(ination)
-  on positon pTIButton->size.x , pTIButton->size.y. WARRING: pDest must
-  exist.
+  Create Icon Button image with text and Icon then blit to dest(ination)
+  on position theme_icon_button->size.x, theme_icon_button->size.y.
 
-  Text with atributes is taken from pTIButton->string_utf8 parameter.
+  Text with attributes is taken from theme_icon_button->string_utf8 parameter.
 
-  Graphic for button is taken from pTIButton->theme surface
+  Graphic for button is taken from theme_icon_button->theme surface
   and blit to new created image.
 
-  Graphic for Icon Theme is taken from pTIButton->theme2 surface
+  Graphic for Icon Theme is taken from theme_icon_button->theme2 surface
   and blit to new created image.
 
-  function return (-1) if there are no Icon and Text.  Else return 0.
+  @return 0 on success, 1 when there is no icon nor text,
+          or negative SDL error
 **************************************************************************/
-static int redraw_tibutton(struct widget *pTIButton)
+static int redraw_tibutton(struct widget *theme_icon_button)
 {
-  int iRet = 0;
-  SDL_Surface *pIcon;
-  SDL_Surface *pCopy_Of_Icon_Theme;
+  int ret;
+  SDL_Surface *icon;
+  SDL_Surface *copy_of_icon_theme;
 
-  iRet = (*baseclass_redraw)(pTIButton);
-  if (iRet != 0) {
-    return iRet;
+  ret = (*baseclass_redraw)(theme_icon_button);
+  if (ret != 0) {
+    return ret;
   }
 
-  pIcon = create_icon_from_theme(pTIButton->theme2, get_wstate(pTIButton));
-  pCopy_Of_Icon_Theme = pTIButton->theme2;
+  icon = create_icon_from_theme(theme_icon_button->theme2,
+                                get_wstate(theme_icon_button));
+  copy_of_icon_theme = theme_icon_button->theme2;
 
-  pTIButton->theme2 = pIcon;
+  theme_icon_button->theme2 = icon;
 
-  iRet = redraw_ibutton(pTIButton);
+  ret = redraw_ibutton(theme_icon_button);
 
-  FREESURFACE(pTIButton->theme2);
-  pTIButton->theme2 = pCopy_Of_Icon_Theme;
+  FREESURFACE(theme_icon_button->theme2);
+  theme_icon_button->theme2 = copy_of_icon_theme;
 
-  return iRet;
+  return ret;
 }
 
 /**********************************************************************//**
   Create ( malloc ) Icon (theme)Button Widget structure.
 
-  Icon graphic is taken from 'pIcon' surface (don't change with button
-  changes );  Button Theme graphic is taken from current_theme->Button surface;
+  Icon graphic is taken from 'icon' surface (don't change with button
+  changes );  Button Theme graphic is taken from current_theme->button surface;
   Text is taken from 'pstr'.
 
   This function determinate future size of Button ( width, height ) and
-  save this in: pWidget->size rectangle ( SDL_Rect )
+  save this in: pwidget->size rectangle ( SDL_Rect )
 
   function return pointer to allocated Button Widget.
 **************************************************************************/
-struct widget *create_icon_button(SDL_Surface *pIcon, struct gui_layer *pDest,
+struct widget *create_icon_button(SDL_Surface *icon, struct gui_layer *pdest,
                                   utf8_str *pstr, Uint32 flags)
 {
   SDL_Rect buf = {0, 0, 0, 0};
   int w = 0, h = 0;
-  struct widget *pButton;
+  struct widget *button;
 
-  if (!pIcon && !pstr) {
+  if (!icon && !pstr) {
     return NULL;
   }
 
-  pButton = widget_new();
+  button = widget_new();
 
-  pButton->theme = current_theme->Button;
-  pButton->theme2 = pIcon;
-  pButton->string_utf8 = pstr;
-  set_wflag(pButton, (WF_FREE_STRING | flags));
-  set_wstate(pButton, FC_WS_DISABLED);
-  set_wtype(pButton, WT_I_BUTTON);
-  pButton->mod = KMOD_NONE;
-  pButton->dst = pDest;
+  button->theme = current_theme->button;
+  button->theme2 = icon;
+  button->string_utf8 = pstr;
+  set_wflag(button, (WF_FREE_STRING | flags));
+  set_wstate(button, FC_WS_DISABLED);
+  set_wtype(button, WT_I_BUTTON);
+  button->mod = KMOD_NONE;
+  button->dst = pdest;
 
-  baseclass_redraw = pButton->redraw;  
-  pButton->redraw = redraw_ibutton;
+  baseclass_redraw = button->redraw;
+  button->redraw = redraw_ibutton;
 
   if (pstr) {
-    pButton->string_utf8->style |= SF_CENTER;
+    button->string_utf8->style |= SF_CENTER;
     /* if BOLD == true then longest wight */
     if (!(pstr->style & TTF_STYLE_BOLD)) {
       pstr->style |= TTF_STYLE_BOLD;
@@ -301,104 +302,58 @@ struct widget *create_icon_button(SDL_Surface *pIcon, struct gui_layer *pDest,
     h = MAX(h, buf.h);
   }
 
-  if (pIcon) {
+  if (icon) {
     if (pstr) {
       if ((flags & WF_ICON_UNDER_TEXT) || (flags & WF_ICON_ABOVE_TEXT)) {
-        w = MAX(w, pIcon->w + adj_size(2));
-        h = MAX(h, buf.h + pIcon->h + adj_size(4));
+        w = MAX(w, icon->w + adj_size(2));
+        h = MAX(h, buf.h + icon->h + adj_size(4));
       } else {
-        w = MAX(w, buf.w + pIcon->w + adj_size(20));
-        h = MAX(h, pIcon->h + adj_size(2));
+        w = MAX(w, buf.w + icon->w + adj_size(20));
+        h = MAX(h, icon->h + adj_size(2));
       }
     } else {
-      w = MAX(w, pIcon->w + adj_size(2));
-      h = MAX(h, pIcon->h + adj_size(2));
+      w = MAX(w, icon->w + adj_size(2));
+      h = MAX(h, icon->h + adj_size(2));
     }
   } else {
     w += adj_size(10);
     h += adj_size(2);
   }
 
-  correct_size_bcgnd_surf(current_theme->Button, &w, &h);
+  correct_size_bcgnd_surf(current_theme->button, &w, &h);
 
-  pButton->size.w = w;
-  pButton->size.h = h;
+  button->size.w = w;
+  button->size.h = h;
 
-  return pButton;
+  return button;
 }
 
 /**********************************************************************//**
   Create ( malloc ) Theme Icon (theme)Button Widget structure.
 
-  Icon Theme graphic is taken from 'pIcon_theme' surface ( change with
-  button changes ); Button Theme graphic is taken from current_theme->Button
+  Icon Theme graphic is taken from 'icon_theme' surface ( change with
+  button changes ); Button Theme graphic is taken from current_theme->button
   surface; Text is taken from 'pstr'.
 
   This function determinate future size of Button ( width, height ) and
-  save this in: pWidget->size rectangle ( SDL_Rect )
+  save this in: pwidget->size rectangle ( SDL_Rect )
 
   function return pointer to allocated Button Widget.
 **************************************************************************/
-struct widget *create_themeicon_button(SDL_Surface *pIcon_theme,
-                                       struct gui_layer *pDest,
+struct widget *create_themeicon_button(SDL_Surface *icon_theme,
+                                       struct gui_layer *pdest,
                                        utf8_str *pstr,
                                        Uint32 flags)
 {
-  /* extract a single icon */
-  SDL_Surface *pIcon = create_icon_from_theme(pIcon_theme, 1);
-  struct widget *pButton = create_icon_button(pIcon, pDest, pstr, flags);
+  /* Extract a single icon */
+  SDL_Surface *icon = create_icon_from_theme(icon_theme, 1);
+  struct widget *button = create_icon_button(icon, pdest, pstr, flags);
 
-  FREESURFACE(pButton->theme2);
-  pButton->theme2 = pIcon_theme;
-  set_wtype(pButton, WT_TI_BUTTON);
+  FREESURFACE(button->theme2);
+  button->theme2 = icon_theme;
+  set_wtype(button, WT_TI_BUTTON);
 
-  pButton->redraw = redraw_tibutton;
+  button->redraw = redraw_tibutton;
 
-  return pButton;
-}
-
-/**********************************************************************//**
-  Create Button image with text and Icon. Then blit to Main.screen on
-  position start_x, start_y.
-
-  Text with atributes is taken from pButton->string_utf8 parameter.
-
-  Graphic for button is taken from pButton->theme surface and blit to new
-  created image.
-
-  Graphic for Icon theme is taken from pButton->theme2 surface and blit to
-  new created image.
-
-  function return (-1) if there are no Icon and Text.
-  Else return 0.
-**************************************************************************/
-int draw_tibutton(struct widget *pButton, Sint16 start_x, Sint16 start_y)
-{
-  pButton->size.x = start_x;
-  pButton->size.y = start_y;
-
-  return redraw_tibutton(pButton);
-}
-
-/**********************************************************************//**
-  Create Button image with text and Icon.
-  Then blit to Main.screen on positon start_x , start_y.
-
-  Text with atributes is taken from pButton->string_utf8 parameter.
-
-  Graphic for button is taken from pButton->theme surface
-  and blit to new created image.
-
-  Graphic for Icon is taken from pButton->theme2 surface
-  and blit to new created image.
-
-  function return (-1) if there are no Icon and Text.
-  Else return 0.
-**************************************************************************/
-int draw_ibutton(struct widget *pButton, Sint16 start_x, Sint16 start_y)
-{
-  pButton->size.x = start_x;
-  pButton->size.y = start_y;
-
-  return redraw_ibutton(pButton);
+  return button;
 }

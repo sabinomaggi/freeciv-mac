@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996-2004 - The Freeciv Project
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -73,10 +73,15 @@ struct sset_val_name {
 #define SPECENUM_COUNT      OLEVELS_NUM
 #include "specenum_gen.h"
 
-enum setting_default_level { SETDEF_INTERNAL, SETDEF_RULESET, SETDEF_CHANGED };
+enum setting_lock_level { SLOCK_NONE = 0, SLOCK_RULESET, SLOCK_ADMIN };
 
-/* forward declaration */
+/* Forward declaration */
 struct setting;
+
+struct sf_cb_data {
+  struct setting *set;
+  bool compat;
+};
 
 struct setting *setting_by_number(int id);
 struct setting *setting_by_name(const char *name);
@@ -162,7 +167,11 @@ void setting_action(const struct setting *pset);
 
 bool setting_non_default(const struct setting *pset);
 bool setting_locked(const struct setting *pset);
-void setting_lock_set(struct setting *pset, bool lock);
+bool setting_ruleset_locked(const struct setting *pset);
+void setting_ruleset_lock_set(struct setting *pset);
+void setting_admin_lock_set(struct setting *pset);
+void setting_ruleset_lock_clear(struct setting *pset);
+void setting_admin_lock_clear(struct setting *pset);
 
 /* get 'struct setting_list' and related functions: */
 #define SPECLIST_TAG setting
@@ -201,7 +210,8 @@ int settings_number(void);
 void settings_list_update(void);
 struct setting_list *settings_list_get(enum sset_level level);
 
-bool settings_ruleset(struct section_file *file, const char *section, bool act);
+bool settings_ruleset(struct section_file *file, const char *section,
+                      bool act, bool compat);
 
 void send_server_setting(struct conn_list *dest, const struct setting *pset);
 void send_server_settings(struct conn_list *dest);
@@ -211,8 +221,7 @@ void send_server_access_level_settings(struct conn_list *dest,
 void send_server_setting_control(struct connection *pconn);
 
 void setting_changed(struct setting *pset);
-enum setting_default_level setting_get_setdef(struct setting *pset);
-void settings_consider_all_changed(void);
+enum setting_default_level setting_get_setdef(const struct setting *pset);
 
 #ifdef __cplusplus
 }

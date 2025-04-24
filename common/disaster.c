@@ -108,6 +108,23 @@ const char *disaster_rule_name(struct disaster_type *pdis)
 }
 
 /************************************************************************//**
+  Return disaster matching rule name or NULL if there is no disaster
+  with such a name.
+****************************************************************************/
+struct disaster_type *disaster_by_rule_name(const char *name)
+{
+  const char *qs = Qn_(name);
+
+  disaster_type_iterate(pdis) {
+    if (!fc_strcasecmp(disaster_rule_name(pdis), qs)) {
+      return pdis;
+    }
+  } disaster_type_iterate_end;
+
+  return NULL;
+}
+
+/************************************************************************//**
   Check if disaster provides effect
 ****************************************************************************/
 bool disaster_has_effect(const struct disaster_type *pdis,
@@ -122,7 +139,11 @@ bool disaster_has_effect(const struct disaster_type *pdis,
 bool can_disaster_happen(const struct disaster_type *pdis,
                          const struct city *pcity)
 {
-  return are_reqs_active(city_owner(pcity), NULL, pcity, NULL,
-                         city_tile(pcity), NULL, NULL, NULL, NULL, NULL,
+  return are_reqs_active(&(const struct req_context) {
+                           .player = city_owner(pcity),
+                           .city = pcity,
+                           .tile = city_tile(pcity),
+                         },
+                         NULL,
                          &pdis->reqs, RPT_POSSIBLE);
 }

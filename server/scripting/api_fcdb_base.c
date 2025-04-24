@@ -15,6 +15,9 @@
 #include <fc_config.h>
 #endif
 
+/* utility */
+#include "deprecations.h"
+
 /* common/scriptcore */
 #include "luascript.h"
 
@@ -23,13 +26,23 @@
 
 #include "api_fcdb_base.h"
 
-/*************************************************************************//**
+#define OPTION_DEPR_PREFIX "#deprecated."
+
+/**********************************************************************//**
   Return the value for the fcdb setting 'type'.
-*****************************************************************************/
+**************************************************************************/
 const char *api_fcdb_option(lua_State *L, const char *type)
 {
   LUASCRIPT_CHECK_STATE(L, NULL);
   LUASCRIPT_CHECK_ARG_NIL(L, type, 2, string, NULL);
+
+  if (!fc_strncasecmp(OPTION_DEPR_PREFIX, type,
+                      strlen(OPTION_DEPR_PREFIX))) {
+    type = type + strlen(OPTION_DEPR_PREFIX);
+    log_deprecation("Option name for fdb.option(\"%s\") given "
+                    "in a way deprecated since 2.5. "
+                    "Use literal string instead.", type);
+  }
 
   return fcdb_option_get(type);
 }

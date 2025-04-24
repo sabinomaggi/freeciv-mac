@@ -28,22 +28,20 @@
 void setup_gui_funcs();
 
 void qtg_ui_init();
-void qtg_ui_main(int argc, char *argv[]);
+int qtg_ui_main(int argc, char *argv[]);
 void qtg_ui_exit();
 
 enum gui_type qtg_get_gui_type();
 void qtg_insert_client_build_info(char *outbuf, size_t outlen);
-void qtg_adjust_default_options();
 
 void qtg_version_message(const char *vertext);
 void qtg_real_output_window_append(const char *astring,
                                    const struct text_tag_list *tags,
                                    int conn_id);
 
-bool qtg_is_view_supported(enum ts_type type);
 void qtg_tileset_type_set(enum ts_type type);
-void qtg_free_intro_radar_sprites();
-struct sprite *qtg_load_gfxfile(const char *filename);
+struct sprite *qtg_load_gfxfile(const char *filename, bool svgflag);
+struct sprite *qtg_load_gfxnumber(int num);
 struct sprite *qtg_create_sprite(int width, int height, struct color *pcolor);
 void qtg_get_sprite_dimensions(struct sprite *sprite, int *width, int *height);
 struct sprite *qtg_crop_sprite(struct sprite *source,
@@ -60,6 +58,7 @@ struct canvas *qtg_canvas_create(int width, int height);
 void qtg_canvas_free(struct canvas *store);
 void qtg_canvas_set_zoom(struct canvas *store, float zoom);
 bool qtg_has_zoom_support();
+void qtg_canvas_mapview_init(struct canvas *store);
 void qtg_canvas_copy(struct canvas *dest, struct canvas *src,
 		     int src_x, int src_y, int dest_x, int dest_y, int width,
 		     int height);
@@ -70,6 +69,10 @@ void qtg_canvas_put_sprite(struct canvas *pcanvas,
 void qtg_canvas_put_sprite_full(struct canvas *pcanvas,
                                 int canvas_x, int canvas_y,
                                 struct sprite *sprite);
+void qtg_canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                       int canvas_x, int canvas_y,
+                                       int canvas_w, int canvas_h,
+                                       struct sprite *sprite);
 void qtg_canvas_put_sprite_fogged(struct canvas *pcanvas,
                                   int canvas_x, int canvas_y,
                                   struct sprite *psprite,
@@ -93,12 +96,14 @@ void qtg_canvas_put_text(struct canvas *pcanvas, int canvas_x, int canvas_y,
                          enum client_font font, struct color *pcolor,
                          const char *text);
 
+void qtg_map_canvas_size_refresh(void);
+
 void qtg_set_rulesets(int num_rulesets, char **rulesets);
 void qtg_options_extra_init();
 void qtg_server_connect();
 void qtg_add_net_input(int sock);
 void qtg_remove_net_input();
-void qtg_real_conn_list_dialog_update();
+void qtg_real_conn_list_dialog_update(void *unused);
 void qtg_close_connection_dialog();
 void qtg_add_idle_callback(void (callback)(void *), void *data);
 void qtg_sound_bell();
@@ -113,8 +118,6 @@ void qtg_set_unit_icon(int idx, struct unit *punit);
 void qtg_set_unit_icons_more_arrow(bool onoff);
 void qtg_real_focus_units_changed(void);
 void qtg_gui_update_font(const char *font_name, const char *font_value);
-void qtg_set_city_names_font_sizes(int my_city_names_font_size,
-                                   int my_city_productions_font_size);
 
 void qtg_editgui_refresh();
 void qtg_editgui_notify_object_created(int tag, int id);
@@ -124,6 +127,7 @@ void qtg_editgui_tileset_changed();
 void qtg_editgui_popdown_all();
 
 void qtg_update_timeout_label();
+void qtg_start_turn();
 void qtg_real_city_dialog_popup(struct city *pcity);
 void qtg_real_city_dialog_refresh(struct city *pcity);
 void qtg_popdown_city_dialog(struct city *pcity);
@@ -134,9 +138,35 @@ bool qtg_city_dialog_is_open(struct city *pcity);
 
 bool qtg_request_transport(struct unit *pcargo, struct tile *ptile);
 
+void qtg_update_infra_dialog();
+
 void qtg_gui_load_theme(const char *directory, const char *theme_name);
 void qtg_gui_clear_theme();
 char **qtg_get_gui_specific_themes_directories(int *count);
-char **qtg_get_useable_themes_in_directory(const char *directory, int *count);
+char **qtg_get_usable_themes_in_directory(const char *directory, int *count);
 
-#endif /* FC__QTG_CXXSIDE_H */
+void qtg_init_meeting(struct treaty *ptreaty, struct player *they,
+                      struct player *initiator);
+void qtg_recv_cancel_meeting(struct treaty *ptreaty, struct player *they,
+                             struct player *initiator);
+void qtg_prepare_clause_updt(struct treaty *ptreaty, struct player *they);
+void qtg_recv_create_clause(struct treaty *ptreaty, struct player *they);
+void qtg_recv_remove_clause(struct treaty *ptreaty, struct player *they);
+void qtg_recv_accept_treaty(struct treaty *ptreaty, struct player *they);
+
+void qtg_request_action_confirmation(const char *expl,
+                                     struct act_confirmation_data *data);
+
+void qtg_real_science_report_dialog_update(void *unused);
+void qtg_science_report_dialog_redraw();
+void qtg_science_report_dialog_popup(bool raise);
+void qtg_real_economy_report_dialog_update(void *unused);
+void qtg_real_units_report_dialog_update(void *unused);
+void qtg_endgame_report_dialog_start(const struct packet_endgame_report *packet);
+void qtg_endgame_report_dialog_player(const struct packet_endgame_player *packet);
+
+void qtg_popup_image(const char *tag);
+
+void qtg_setup_gui_properties();
+
+#endif // FC__QTG_CXXSIDE_H

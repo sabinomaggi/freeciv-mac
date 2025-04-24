@@ -52,19 +52,19 @@ struct research {
   Tech_type_id researching;
   int bulbs_researched;
 
-  /* If the player changes his research target in a turn, he loses some or
-   * all of the bulbs he's accumulated toward that target.  We save the
-   * original info from the start of the turn so that if he changes back
-   * he will get the bulbs back.
+  /* If the player changes their research target in a turn, they lose some
+   * or all of the bulbs they've accumulated toward that target.  We save
+   * the original info from the start of the turn so that if they change
+   * back they will get the bulbs back.
    *
    * Has the same values as researching, plus A_UNKNOWN used between turns
    * (not -1 anymore) for savegames. */
   Tech_type_id researching_saved;
   int bulbs_researching_saved;
 
-  /* If the player completed a research this turn, this value is turned on
-   * and changing targets may be done without penalty. */
-  bool got_tech;
+  /* For this amount of bulbs, changing targets this turn
+   * may be done without penalty. */
+  int free_bulbs;
 
   struct research_invention {
     /* One of TECH_UNKNOWN, TECH_KNOWN or TECH_PREREQS_KNOWN. */
@@ -75,8 +75,8 @@ struct research {
     bool reachable;
     bool root_reqs_known;
     bv_techs required_techs;
-    int num_required_techs, bulbs_required;
-  } inventions[A_LAST];
+    int num_required_techs, bulbs_required, bulbs_researched_saved;
+  } inventions[A_ARRAY_SIZE];
 
   /* Tech goal (similar to worklists; when one tech is researched the next
    * tech toward the goal will be chosen).  May be A_NONE. */
@@ -169,8 +169,14 @@ struct iterator *research_player_iter_init(struct research_player_iter *it,
                   _presearch)
 #define research_players_iterate_end generic_iterate_end
 
+int research_count(void);
+
+int recalculate_techs_researched(const struct research *presearch);
+
+bool research_future_next(const struct research *presearch);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__RESEARCH_H */
+#endif /* FC__RESEARCH_H */

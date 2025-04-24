@@ -34,7 +34,9 @@
 #include "events.h"
 #include "game.h"
 #include "improvement.h"
+#include "modpack.h"
 #include "movement.h"
+#include "nation.h"
 #include "packets.h"
 
 /* server */
@@ -44,6 +46,7 @@
 #include "notify.h"
 #include "plrhand.h"
 #include "srv_main.h"
+#include "stdinhand.h"
 #include "unittools.h"
 
 /* server/advisors */
@@ -78,8 +81,6 @@ struct team_placement_state {
 #define SPECPQ_PRIORITY_TYPE long
 #include "specpq.h"
 
-static struct strvec *ruleset_choices = NULL;
-
 /************************************************************************//**
   Get role_id for given role character
 ****************************************************************************/
@@ -112,12 +113,15 @@ enum unit_role_id crole_to_role_id(char crole)
 }
 
 /************************************************************************//**
-  Get unit_type for given role character
+  Get unit_type for given role character.
+  If pplayer given, will check also that they don't already have
+  an unique unit.
 ****************************************************************************/
 struct unit_type *crole_to_unit_type(char crole, struct player *pplayer)
 {
   struct unit_type *utype = NULL;
   enum unit_role_id role = crole_to_role_id(crole);
+  int num;
 
   if (role == 0) {
     fc_assert_ret_val(FALSE, NULL);
@@ -125,11 +129,20 @@ struct unit_type *crole_to_unit_type(char crole, struct player *pplayer)
   }
 
   /* Create the unit of an appropriate type, if it exists */
-  if (num_role_units(role) > 0) {
+  num = num_role_units(role);
+  if (num > 0) {
     if (pplayer != NULL) {
+      int i;
+
       utype = first_role_unit_for_player(pplayer, role);
-    }
-    if (utype == NULL) {
+      for (i = 0; utype == NULL && i < num; i++) {
+        struct unit_type *ntype = get_role_unit(role, i);
+
+        if (!utype_player_already_has_this_unique(pplayer, ntype)) {
+          utype = ntype;
+        }
+      }
+    } else {
       utype = get_role_unit(role, 0);
     }
   }
@@ -139,20 +152,28 @@ struct unit_type *crole_to_unit_type(char crole, struct player *pplayer)
 
 /************************************************************************//**
   Place a starting unit for the player. Returns tile where unit was really
-  placed.
+  placed. By default the ptype is used and crole does not matter, but if
+  former is NULL, crole will be used instead.
 ****************************************************************************/
 static struct tile *place_starting_unit(struct tile *starttile,
                                         struct player *pplayer,
-                                        char crole)
+                                        struct unit_type *ptype, char crole)
 {
   struct tile *ptile = NULL;
-  struct unit_type *utype = crole_to_unit_type(crole, pplayer);
+  struct unit_type *utype;
   bool hut_present = FALSE;
+
+  if (ptype != NULL) {
+    utype = ptype;
+  } else {
+    utype = crole_to_unit_type(crole, pplayer);
+  }
 
   if (utype != NULL) {
     iterate_outward(&(wld.map), starttile,
-                    wld.map.xsize + wld.map.ysize, itertile) {
-      if (!is_non_allied_unit_tile(itertile, pplayer)
+                    MAP_NATIVE_WIDTH + MAP_NATIVE_HEIGHT, itertile) {
+      if (!is_non_allied_unit_tile(itertile, pplayer,
+                                   utype_has_flag(utype, UTYF_FLAGLESS))
           && is_native_tile(utype, itertile)) {
         ptile = itertile;
         break;
@@ -165,18 +186,21 @@ static struct tile *place_starting_unit(struct tile *starttile,
     return NULL;
   }
 
-  fc_assert_ret_val(!is_non_allied_unit_tile(ptile, pplayer), NULL);
+  fc_assert_ret_val(!is_non_allied_unit_tile(ptile, pplayer,
+                                             utype_has_flag(utype, UTYF_FLAGLESS)),
+                    NULL);
 
   /* For scenarios or dispersion, huts may coincide with player starts (in 
-   * other cases, huts are avoided as start positions).  Remove any such hut,
+   * other cases, huts are avoided as start positions). Remove any such hut,
    * and make sure to tell the client, since we may have already sent this
    * tile (with the hut) earlier: */
-  extra_type_by_cause_iterate(EC_HUT, pextra) {
+  /* FIXME: Don't remove under a unit that can't enter or frighten hut */
+  extra_type_by_rmcause_iterate(ERM_ENTER, pextra) {
     if (tile_has_extra(ptile, pextra)) {
       tile_extra_rm_apply(ptile, pextra);
       hut_present = TRUE;
     }
-  } extra_type_by_cause_iterate_end;
+  } extra_type_by_rmcause_iterate_end;
 
   if (hut_present) {
     update_tile_knowledge(ptile);
@@ -203,15 +227,29 @@ static struct tile *find_dispersed_position(struct player *pplayer,
 {
   struct tile *ptile;
   int x, y;
+  int bailout;
+
+  if (game.server.dispersion == 0) {
+    bailout = 1; /* One attempt is guaranteed to cover single tile */
+  } else {
+    bailout = game.server.dispersion * 2 + 1; /* Side of the area */
+    bailout *= bailout;                       /* Area */
+    bailout *= 5;                             /* Likely to hit each tile at least once */
+  }
 
   do {
+    if (!bailout--) {
+      return NULL;
+    }
     index_to_map_pos(&x, &y, tile_index(pcenter));
     x += fc_rand(2 * game.server.dispersion + 1) - game.server.dispersion;
     y += fc_rand(2 * game.server.dispersion + 1) - game.server.dispersion;
   } while (!((ptile = map_pos_to_tile(&(wld.map), x, y))
              && tile_continent(pcenter) == tile_continent(ptile)
              && !is_ocean_tile(ptile)
-             && !is_non_allied_unit_tile(ptile, pplayer)));
+             && real_map_distance(pcenter, ptile) < game.server.dispersion
+                + 1
+             && !is_non_allied_unit_tile(ptile, pplayer, TRUE)));
 
   return ptile;
 }
@@ -434,7 +472,7 @@ void init_new_game(void)
 
   /* Convert the startposition hash table in a linked lists, as we mostly
    * need now to iterate it now. And then, we will be able to remove the
-   * assigned start postions one by one. */
+   * assigned start positions one by one. */
   impossible_list = startpos_list_new();
   targeted_list = startpos_list_new();
   flexible_list = startpos_list_new();
@@ -669,6 +707,7 @@ void init_new_game(void)
         /* We need to remove used startpos from the lists. */
         i = 0;
         startpos_list_iterate(flexible_list, plink, psp) {
+          (void)psp; /* To avoid 'set but unused' compiler warning */
           fc_assert(config.startpos[i] == startpos_tile(psp));
           if (state.startpos[i] != -1) {
             startpos_list_erase(flexible_list, plink);
@@ -678,6 +717,7 @@ void init_new_game(void)
         fc_assert(i == config.flexible_startpos_num);
         if (i < config.usable_startpos_num) {
           startpos_list_iterate(impossible_list, plink, psp) {
+            (void)psp; /* To avoid 'set but unused' compiler warning */
             fc_assert(config.startpos[i] == startpos_tile(psp));
             if (state.startpos[i] != -1) {
               startpos_list_erase(impossible_list, plink);
@@ -688,6 +728,7 @@ void init_new_game(void)
         fc_assert(i == config.usable_startpos_num);
       }
 
+      free(state.startpos);
       free(config.startpos);
     }
   }
@@ -757,7 +798,7 @@ void init_new_game(void)
   sulen = strlen(game.server.start_units);
 
   /* Loop over all players, creating their initial units... */
-  players_iterate(pplayer) {
+  shuffled_players_iterate(pplayer) {
     struct tile *ptile;
 
     /* We have to initialise the advisor and ai here as we could make contact
@@ -773,11 +814,14 @@ void init_new_game(void)
     if (game.server.start_city) {
       create_city(pplayer, ptile, city_name_suggestion(pplayer, ptile),
                   NULL);
+
+      /* Expose visible area. */
+      map_show_circle(pplayer, ptile, game.server.init_vis_radius_sq);
     }
 
     if (sulen > 0) {
       /* Place the first unit. */
-      if (place_starting_unit(ptile, pplayer,
+      if (place_starting_unit(ptile, pplayer, NULL,
                               game.server.start_units[0]) != NULL) {
         placed_units[player_index(pplayer)] = 1;
       } else {
@@ -786,10 +830,10 @@ void init_new_game(void)
     } else {
       placed_units[player_index(pplayer)] = 0;
     }
-  } players_iterate_end;
+  } shuffled_players_iterate_end;
 
   /* Place all other units. */
-  players_iterate(pplayer) {
+  shuffled_players_iterate(pplayer) {
     int i;
     struct tile *const ptile = player_startpos[player_index(pplayer)];
     struct nation_type *nation = nation_of_player(pplayer);
@@ -801,8 +845,9 @@ void init_new_game(void)
       struct tile *rand_tile = find_dispersed_position(pplayer, ptile);
 
       /* Create the unit of an appropriate type. */
-      if (place_starting_unit(rand_tile, pplayer,
-                              game.server.start_units[i]) != NULL) {
+      if (rand_tile != NULL
+          && place_starting_unit(rand_tile, pplayer, NULL,
+                                 game.server.start_units[i]) != NULL) {
         placed_units[player_index(pplayer)]++;
       }
     }
@@ -812,11 +857,14 @@ void init_new_game(void)
     while (NULL != nation->init_units[i] && MAX_NUM_UNIT_LIST > i) {
       struct tile *rand_tile = find_dispersed_position(pplayer, ptile);
 
-      create_unit(pplayer, rand_tile, nation->init_units[i], FALSE, 0, 0);
-      placed_units[player_index(pplayer)]++;
+      if (rand_tile != NULL
+          && place_starting_unit(rand_tile, pplayer,
+                                 nation->init_units[i], '\0') != NULL) {
+        placed_units[player_index(pplayer)]++;
+      }
       i++;
     }
-  } players_iterate_end;
+  } shuffled_players_iterate_end;
 
   players_iterate(pplayer) {
     /* Close the active phase for advisor and ai for all players; it was
@@ -827,8 +875,6 @@ void init_new_game(void)
     fc_assert_msg(game.server.start_city || 0 < placed_units[player_index(pplayer)],
                   _("No units placed for %s!"), player_name(pplayer));
   } players_iterate_end;
-
-  shuffle_players();
 }
 
 /************************************************************************//**
@@ -1056,39 +1102,132 @@ const char *new_challenge_filename(struct connection *pc)
   return get_challenge_filename(pc);
 }
 
+struct mrc_sendclient_data {
+  int count;
+  struct packet_ruleset_choices *packet;
+};
+
+/************************************************************************//**
+  Callback called from modpack ruleset cache iteration.
+****************************************************************************/
+static void ruleset_cache_sendclient_cb(const char *mp_name,
+                                        const char *filename, void *data_in)
+{
+  struct mrc_sendclient_data *data = (struct mrc_sendclient_data *)data_in;
+  const int maxlen = sizeof(data->packet->rulesets[data->count]);
+
+  if (data->count >= MAX_NUM_RULESETS) {
+    log_verbose("Can't send more than %d ruleset names to client, "
+                "skipping some", MAX_NUM_RULESETS);
+    return;
+  }
+
+  if (fc_strlcpy(data->packet->rulesets[data->count], mp_name, maxlen) < maxlen) {
+    data->count++;
+  } else {
+    log_verbose("Modpack name '%s' too long to send to client, skipped",
+                mp_name);
+  }
+}
+
+/************************************************************************//**
+  Create cache of available rulesets.
+****************************************************************************/
+void cache_rulesets(void)
+{
+  static bool rulesets_cached = FALSE;
+
+  if (!rulesets_cached) {
+    struct fileinfo_list *ruleset_choices;
+
+    ruleset_choices = get_modpacks_list();
+
+    fileinfo_list_iterate(ruleset_choices, pfile) {
+      struct section_file *sf;
+
+      sf = secfile_load(pfile->fullname, FALSE);
+
+      if (sf != NULL) {
+        modpack_cache_ruleset(sf);
+        secfile_destroy(sf);
+      }
+    } fileinfo_list_iterate_end;
+
+    fileinfo_list_destroy(ruleset_choices);
+
+    rulesets_cached = TRUE;
+  }
+}
+
 /************************************************************************//**
   Call this on a connection with HACK access to send it a set of ruleset
-  choices.  Probably this should be called immediately when granting
+  choices. Probably this should be called immediately when granting
   HACK access to a connection.
 ****************************************************************************/
 static void send_ruleset_choices(struct connection *pc)
 {
   struct packet_ruleset_choices packet;
-  size_t i;
+  struct mrc_sendclient_data data;
 
-  if (ruleset_choices == NULL) {
-    /* This is only read once per server invocation.  Add a new ruleset
-     * and you have to restart the server. */
-    ruleset_choices = fileinfolist(get_data_dirs(), RULESET_SUFFIX);
-  }
+  cache_rulesets();
 
-  packet.ruleset_count = MIN(MAX_NUM_RULESETS, strvec_size(ruleset_choices));
-  for (i = 0; i < packet.ruleset_count; i++) {
-    sz_strlcpy(packet.rulesets[i], strvec_get(ruleset_choices, i));
-  }
+  data.count = 0;
+  data.packet = &packet;
+  modpack_ruleset_cache_iterate(ruleset_cache_sendclient_cb, &data);
+
+  packet.ruleset_count = data.count;
 
   send_packet_ruleset_choices(pc, &packet);
 }
 
 /************************************************************************//**
-  Free list of ruleset choices.
+  Change ruleset based on modpack.
 ****************************************************************************/
-void ruleset_choices_free(void)
+void handle_ruleset_select(struct connection *pc,
+                           const struct packet_ruleset_select *packet)
 {
-  if (ruleset_choices != NULL) {
-    strvec_destroy(ruleset_choices);
-    ruleset_choices = NULL;
+  struct section_file *sf;
+  const char *name;
+
+  if (server_state() != S_S_INITIAL) {
+    log_warn("Unexpected ruleset selection packet from client");
+    return;
   }
+
+  if (pc->access_level < ALLOW_HACK) {
+    log_verbose("Attempt to set ruleset from non-hack level connection");
+  }
+
+  name = modpack_file_from_ruleset_cache(packet->modpack);
+
+  if (name == NULL) {
+    log_error("Modpack \"%s\" not in ruleset cache", packet->modpack);
+    return;
+  }
+
+  sf = secfile_load(name, FALSE);
+
+  if (sf == NULL) {
+    log_error("Failed to load modpack file \"%s\"", name);
+    return;
+  }
+
+  name = modpack_serv_file(sf);
+
+  if (name != NULL) {
+    read_init_script(pc, name, FALSE, FALSE);
+  } else {
+    name = modpack_rulesetdir(sf);
+
+    if (name != NULL) {
+      set_rulesetdir(pc, name, FALSE, 0);
+    } else {
+      log_error("Modpack \"%s\" does not contain ruleset at all",
+                packet->modpack);
+    }
+  }
+
+  secfile_destroy(sf);
 }
 
 /************************************************************************//**

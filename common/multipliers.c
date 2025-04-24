@@ -32,7 +32,7 @@ void multipliers_init(void)
   for (i = 0; i < ARRAY_SIZE(multipliers); i++) {
     name_init(&multipliers[i].name);
     requirement_vector_init(&multipliers[i].reqs);
-    multipliers[i].disabled = FALSE;
+    multipliers[i].ruledit_disabled = FALSE;
     multipliers[i].helptext = NULL;
   }
 }
@@ -136,6 +136,15 @@ struct multiplier *multiplier_by_rule_name(const char *name)
 ****************************************************************************/
 bool multiplier_can_be_changed(struct multiplier *pmul, struct player *pplayer)
 {
-  return are_reqs_active(pplayer, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  int idx = multiplier_index(pmul);
+
+  if (pplayer->multipliers[idx].changed > 0) {
+    /* It has been changed in the past, so require minimum_turns to have passed. */
+    if (game.info.turn - pplayer->multipliers[idx].changed < pmul->minimum_turns) {
+      return FALSE;
+    }
+  }
+
+  return are_reqs_active(&(const struct req_context) { .player = pplayer },
                          NULL, &pmul->reqs, RPT_CERTAIN);
 }

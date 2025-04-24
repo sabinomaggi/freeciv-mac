@@ -24,17 +24,17 @@
   Update a player's acceptance status of a treaty (traditionally shown
   with the thumbs-up/thumbs-down sprite).
 **************************************************************************/
-void handle_diplomacy_accept_treaty(int counterpart, bool I_accepted,
-				    bool other_accepted)
+void gui_gui_recv_accept_treaty(struct treaty *ptreaty, struct player *they)
 {
   /* PORTME */
 }
 
 /**********************************************************************//**
-  Handle the start of a diplomacy meeting - usually by poping up a
+  Handle the start of a diplomacy meeting - usually by popping up a
   diplomacy dialog.
 **************************************************************************/
-void handle_diplomacy_init_meeting(int counterpart, int initiated_from)
+void gui_gui_init_meeting(struct treaty *ptreaty, struct player *they,
+                          struct player *initiator)
 {
   /* PORTME */
 }
@@ -42,8 +42,7 @@ void handle_diplomacy_init_meeting(int counterpart, int initiated_from)
 /**********************************************************************//**
   Update the diplomacy dialog by adding a clause.
 **************************************************************************/
-void handle_diplomacy_create_clause(int counterpart, int giver,
-				    enum clause_type type, int value)
+void gui_gui_recv_create_clause(struct treaty *ptreaty, struct player *they)
 {
   /* PORTME */
 }
@@ -52,7 +51,8 @@ void handle_diplomacy_create_clause(int counterpart, int giver,
   Update the diplomacy dialog when the meeting is canceled (the dialog
   should be closed).
 **************************************************************************/
-void handle_diplomacy_cancel_meeting(int counterpart, int initiated_from)
+void gui_gui_recv_cancel_meeting(struct treaty *ptreaty, struct player *they,
+                                 struct player *initiator)
 {
   /* PORTME */
 }
@@ -60,8 +60,15 @@ void handle_diplomacy_cancel_meeting(int counterpart, int initiated_from)
 /**********************************************************************//**
   Update the diplomacy dialog by removing a clause.
 **************************************************************************/
-void handle_diplomacy_remove_clause(int counterpart, int giver,
-				    enum clause_type type, int value)
+void gui_gui_recv_remove_clause(struct treaty *ptreaty, struct player *they)
+{
+  /* PORTME */
+}
+
+/**********************************************************************//**
+  Prepare to clause creation or removal.
+**************************************************************************/
+void gui_gui_prepare_clause_updt(struct treaty *ptreaty, struct player *they)
 {
   /* PORTME */
 }

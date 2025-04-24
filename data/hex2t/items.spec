@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -15,6 +15,7 @@ artists = "
     Tommy <yobbo3@hotmail.com>
     Eleazar (buoy)
     Vincent Croisier <vincent.croisier@advalvas.be> (ruins)
+    Sveinung Kvilhaugsvik (action_decision_want)
 "
 
 [file]
@@ -35,15 +36,15 @@ tiles = { "row", "column", "tag"
 ; used by all city styles
 
  1,  0, "city.disorder"
- 1,  1, "base.airbase_mg"
+ 1,  1, "base.airbase_mg:0"
  1,  2, "tx.airbase_full"
- 1,  3, "base.airstrip_mg"
- 1,  5, "base.buoy_mg"
- 1,  6, "extra.ruins_mg"
- 3,  8, "base.outpost_fg"
- 3,  9, "base.outpost_bg"
- 4,  8, "base.fortress_fg"
- 4,  9, "base.fortress_bg"
+ 1,  3, "base.airstrip_mg:0"
+ 1,  5, "base.buoy_mg:0"
+ 1,  6, "extra.ruins_mg:0"
+ 3,  8, "base.outpost_fg:0"
+ 3,  9, "base.outpost_bg:0"
+ 4,  8, "base.fortress_fg:0"
+ 4,  9, "base.fortress_bg:0"
 
 ; default city tiles
  2,  2, "cd.city"
@@ -60,7 +61,7 @@ tiles = { "row", "column", "tag"
  2,  5, "city.european_wall_0"
  2,  6, "city.european_wall_1"
  2,  7, "city.european_wall_2"
-   
+
  3,  0, "city.industrial_city_0"
  3,  1, "city.industrial_city_1"
  3,  2, "city.industrial_city_2"
@@ -69,7 +70,7 @@ tiles = { "row", "column", "tag"
  3,  5, "city.industrial_wall_0"
  3,  6, "city.industrial_wall_1"
  3,  7, "city.industrial_wall_2"
-   
+
  9,  0, "city.electricage_city_0"
  9,  1, "city.electricage_city_1"
  9,  2, "city.electricage_city_2"
@@ -78,7 +79,7 @@ tiles = { "row", "column", "tag"
  9,  5, "city.electricage_wall_0"
  9,  6, "city.electricage_wall_1"
  9,  7, "city.electricage_wall_2"
-   
+
  4,  0, "city.modern_city_0"
  4,  1, "city.modern_city_1"
  4,  2, "city.modern_city_2"
@@ -87,7 +88,7 @@ tiles = { "row", "column", "tag"
  4,  5, "city.modern_wall_0"
  4,  6, "city.modern_wall_1"
  4,  7, "city.modern_wall_2"
-   
+
  5,  0, "city.postmodern_city_0"
  5,  1, "city.postmodern_city_1"
  5,  2, "city.postmodern_city_2"
@@ -105,7 +106,7 @@ tiles = { "row", "column", "tag"
  6,  5, "city.classical_wall_0"
  6,  6, "city.classical_wall_1"
  6,  7, "city.classical_wall_2"
-   
+
  7,  0, "city.asian_city_0"
  7,  1, "city.asian_city_1"
  7,  2, "city.asian_city_2"
@@ -114,7 +115,7 @@ tiles = { "row", "column", "tag"
  7,  5, "city.asian_wall_0"
  7,  6, "city.asian_wall_1"
  7,  7, "city.asian_wall_2"
-   
+
 
  8,  0, "city.tropical_city_0"
  8,  1, "city.tropical_city_1"
@@ -211,9 +212,11 @@ tiles = { "row", "column", "tag"
 
 ; Unit activity letters:  (note unit icons have just "u.")
 
+  0, 11, "unit.action_decision_want:1"
+  0, 12, "unit.action_decision_want:0"
   0, 13, "unit.convert"
   0, 14, "unit.auto_attack",
-         "unit.auto_settler"
+         "unit.auto_worker"
   0, 15, "unit.stack"
   0, 16, "unit.loaded"
   0, 17, "unit.connect"
@@ -226,7 +229,8 @@ tiles = { "row", "column", "tag"
   1, 11, "unit.plant"
   1, 12, "unit.pollution"
   1, 13, "unit.road"
-  1, 14, "unit.irrigate"
+  1, 14, "unit.cultivate",
+         "unit.irrigate" ; For rulesets still using this tag
   1, 15, "unit.fortifying",
          "unit.fortress",
          "unit.outpost"

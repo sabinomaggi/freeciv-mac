@@ -61,11 +61,15 @@ void fc_interface_init_tool(void)
 {
   struct functions *funcs = fc_interface_funcs();
 
+  memset(funcs, 0, sizeof(*funcs));
+
   /* May be used when generating help texts */
   funcs->server_setting_by_name = server_ss_by_name;
   funcs->server_setting_name_get = server_ss_name_get;
   funcs->server_setting_type_get = server_ss_type_get;
   funcs->server_setting_val_bool_get = server_ss_val_bool_get;
+  funcs->server_setting_val_int_get = server_ss_val_int_get;
+  funcs->server_setting_val_bitwise_get = server_ss_val_bitwise_get;
 
   /* Not used. Set to dummy functions. */
   funcs->player_tile_vision_get = tool_player_tile_vision_get;
@@ -74,5 +78,5 @@ void fc_interface_init_tool(void)
 
   /* Keep this function call at the end. It checks if all required functions
      are defined. */
-  fc_interface_init();
+  libfreeciv_init(TRUE);
 }

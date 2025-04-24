@@ -22,7 +22,6 @@
  * it can install SDL's own. */
 #ifdef SDL2_PLAIN_INCLUDE
 #include <SDL.h>
-#include <SDL_mixer.h>
 #else  /* PLAIN_INCLUDE */
 #include <SDL2/SDL.h>
 #endif /* PLAIN_INCLUDE */
@@ -62,6 +61,7 @@
 #include "version.h"
 
 /* client */
+#include "audio.h"
 #include "client_main.h"
 #include "climisc.h"
 #include "clinet.h"
@@ -69,6 +69,7 @@
 #include "connectdlg_common.h"
 #include "control.h"
 #include "editor.h"
+#include "gui_properties.h"
 #include "options.h"
 #include "text.h"
 #include "tilespec.h"
@@ -86,6 +87,7 @@
 #include "graphics.h"
 #include "gui_stuff.h"
 #include "happiness.h"
+#include "helpdlg.h"
 #include "inteldlg.h"
 #include "mapctrl.h"
 #include "mapview.h"
@@ -101,7 +103,7 @@
 
 #include "gui_main.h"
 
-const char *client_string = "gui-gtk-3.22";
+const char *client_string = GUI_NAME_FULL;
 
 GtkWidget *map_canvas;                  /* GtkDrawingArea */
 GtkWidget *map_horizontal_scrollbar;
@@ -129,7 +131,6 @@ GtkWidget *top_notebook, *bottom_notebook, *right_notebook;
 GtkWidget *map_widget;
 static GtkWidget *bottom_hpaned;
 
-int city_names_font_size = 0, city_productions_font_size = 0;
 PangoFontDescription *city_names_style = NULL;
 PangoFontDescription *city_productions_style = NULL;
 PangoFontDescription *reqtree_text_style = NULL;
@@ -178,7 +179,6 @@ GtkTextView *main_message_area;
 GtkTextBuffer *message_buffer = NULL;
 static GtkWidget *allied_chat_toggle_button;
 
-static enum Display_color_type display_color_type;  /* practically unused */
 static gint timer_id;                               /*       ditto        */
 static GIOChannel *srv_channel;
 static guint srv_id;
@@ -186,7 +186,12 @@ gint cur_x, cur_y;
 
 static bool gui_up = FALSE;
 
+static bool audio_paused = FALSE;
+static bool client_focus = TRUE;
+
 static struct video_mode vmode = { -1, -1 };
+
+static void set_g_log_callbacks(void);
 
 static gboolean show_info_button_release(GtkWidget *w, GdkEventButton *ev, gpointer data);
 static gboolean show_info_popup(GtkWidget *w, GdkEventButton *ev, gpointer data);
@@ -198,7 +203,7 @@ static void set_wait_for_writable_socket(struct connection *pc,
                                          bool socket_writable);
 
 static void print_usage(void);
-static void parse_options(int argc, char **argv);
+static bool parse_options(int argc, char **argv);
 static gboolean toplevel_key_press_handler(GtkWidget *w, GdkEventKey *ev, gpointer data);
 static gboolean toplevel_key_release_handler(GtkWidget *w, GdkEventKey *ev, gpointer data);
 static gboolean mouse_scroll_mapcanvas(GtkWidget *w, GdkEventScroll *ev);
@@ -218,26 +223,7 @@ static void allied_chat_button_toggled(GtkToggleButton *button,
 
 static void free_unit_table(void);
 
-/**********************************************************************//**
-  Called by the tileset code to set the font size that should be used to
-  draw the city names and productions.
-**************************************************************************/
-void set_city_names_font_sizes(int my_city_names_font_size,
-                               int my_city_productions_font_size)
-{
-  /* This function may be called before the fonts are allocated.  So we
-   * save the values for later. */
-  city_names_font_size = my_city_names_font_size;
-  city_productions_font_size = my_city_productions_font_size;
-  if (city_names_style) {
-    pango_font_description_set_size(city_names_style,
-                                    PANGO_SCALE * city_names_font_size);
-  }
-  if (city_productions_style) {
-    pango_font_description_set_size(city_productions_style,
-                                    PANGO_SCALE * city_productions_font_size);
-  }
-}
+static void adjust_default_options(void);
 
 /**********************************************************************//**
   Callback for freelog
@@ -251,12 +237,22 @@ static void log_callback_utf8(enum log_level level, const char *message,
 }
 
 /**********************************************************************//**
- Called while in gtk_main() (which is all of the time)
- TIMER_INTERVAL is now set by real_timer_callback()
+  Called while in gtk_main() (which is all of the time)
+  TIMER_INTERVAL is now set by real_timer_callback()
 **************************************************************************/
 static gboolean timer_callback(gpointer data)
 {
   double seconds = real_timer_callback();
+
+  if (gui_options.silent_when_not_in_focus) {
+    if (!audio_paused && !client_focus) {
+      audio_pause();
+      audio_paused = TRUE;
+    } else if (audio_paused && client_focus) {
+      audio_resume();
+      audio_paused = FALSE;
+    }
+  }
 
   timer_id = g_timeout_add(seconds * 1000, timer_callback, NULL);
 
@@ -279,26 +275,16 @@ static void print_usage(void)
 
   fc_fprintf(stderr,
              _("-r, --resolution WIDTHxHEIGHT\tAssume given resolution "
-               "screen\n"));
-
-#ifdef GTK3_ZOOM_ENABLED
-  fc_fprintf(stderr,
-             /* TRANS: Keep word 'default' untranslated */
-             _("-z, --zoom LEVEL\tSet zoom level; use value 'default' "
-               "to reset\n\n"));
-#else
-  fc_fprintf(stderr, "\n");
-#endif /* GTK3_ZOOM_ENABLED */
+               "screen\n\n"));
 
   /* TRANS: No full stop after the URL, could cause confusion. */
   fc_fprintf(stderr, _("Report bugs at %s\n"), BUG_URL);
 }
 
 /**********************************************************************//**
-  Search for command line options. right now, it's just help
-  semi-useless until we have options that aren't the same across all clients.
+  Search for gui-specific command-line options.
 **************************************************************************/
-static void parse_options(int argc, char **argv)
+static bool parse_options(int argc, char **argv)
 {
   int i = 1;
 
@@ -307,35 +293,21 @@ static void parse_options(int argc, char **argv)
 
     if (is_option("--help", argv[i])) {
       print_usage();
-      exit(EXIT_SUCCESS);
 
-#ifdef GTK3_ZOOM_ENABLED
-    } else if ((option = get_option_malloc("--zoom", argv, &i, argc, FALSE))) {
-      char *endptr;
-
-      if (strcmp("default", option)) {
-        gui_options.zoom_set = TRUE;
-        gui_options.zoom_default_level = strtof(option, &endptr);
-      } else {
-        gui_options.zoom_set = FALSE;
-      }
-      free(option);
-#endif /* GTK3_ZOOM_ENABLED */
-
+      return FALSE;
     } else if ((option = get_option_malloc("--resolution", argv, &i, argc, FALSE))) {
       if (!string_to_video_mode(option, &vmode)) {
-        fc_fprintf(stderr, _("Illegal video mode '%s'"), option);
+        fc_fprintf(stderr, _("Illegal video mode '%s'\n"), option);
         exit(EXIT_FAILURE);
       }
       free(option);
     }
     /* Can't check against unknown options, as those might be gtk options */
-    /* TODO: gtk+ is about to drop its commandline options anyway,
-     *       so we can stop supporting them and have error checking
-     *       added here. */
 
     i++;
   }
+
+  return TRUE;
 }
 
 /**********************************************************************//**
@@ -402,7 +374,7 @@ gboolean map_canvas_focus(void)
   This function ensures an entry widget (like the inputline) always gets
   first dibs at handling a keyboard event.
 **************************************************************************/
-static gboolean toplevel_handler(GtkWidget *w, GdkEventKey *ev, gpointer data)
+static gboolean toplevel_handler(GtkWidget *w, GdkEvent *ev, gpointer data)
 {
   GtkWidget *focus;
 
@@ -412,7 +384,7 @@ static gboolean toplevel_handler(GtkWidget *w, GdkEventKey *ev, gpointer data)
         || (GTK_IS_TEXT_VIEW(focus)
             && gtk_text_view_get_editable(GTK_TEXT_VIEW(focus)))) {
       /* Propagate event to currently focused entry widget. */
-      if (gtk_widget_event(focus, (GdkEvent *) ev)) {
+      if (gtk_widget_event(focus, ev)) {
 	/* Do not propagate event to our children. */
 	return TRUE;
       }
@@ -472,14 +444,43 @@ static gboolean key_press_map_canvas(GtkWidget *w, GdkEventKey *ev,
     }
   }
 
-#ifdef GTK3_ZOOM_ENABLED
-  if (!(ev->state & GDK_CONTROL_MASK)) {
+  if (ev->state & GDK_SHIFT_MASK) {
+    bool volchange = FALSE;
+
     switch (ev->keyval) {
     case GDK_KEY_plus:
+    case GDK_KEY_KP_Add:
+      gui_options.sound_effects_volume += 10;
+      volchange = TRUE;
+      break;
+
+    case GDK_KEY_minus:
+    case GDK_KEY_KP_Subtract:
+      gui_options.sound_effects_volume -= 10;
+      volchange = TRUE;
+      break;
+
+    default:
+      break;
+    }
+
+    if (volchange) {
+      struct option *poption = optset_option_by_name(client_optset, "sound_effects_volume");
+
+      gui_options.sound_effects_volume = CLIP(0, gui_options.sound_effects_volume, 100);
+      option_changed(poption);
+
+      return TRUE;
+    }
+  } else if (!(ev->state & GDK_CONTROL_MASK)) {
+    switch (ev->keyval) {
+    case GDK_KEY_plus:
+    case GDK_KEY_KP_Add:
       zoom_step_up();
       return TRUE;
 
     case GDK_KEY_minus:
+    case GDK_KEY_KP_Subtract:
       zoom_step_down();
       return TRUE;
 
@@ -487,59 +488,10 @@ static gboolean key_press_map_canvas(GtkWidget *w, GdkEventKey *ev,
       break;
     }
   }
-#endif /* GTK3_ZOOM_ENABLED */
 
   /* Return here if observer */
   if (client_is_observer()) {
     return FALSE;
-  }
-
-  fc_assert(MAX_NUM_BATTLEGROUPS == 4);
-
-  if ((ev->state & GDK_CONTROL_MASK)) {
-    switch (ev->keyval) {
-
-    case GDK_KEY_F1:
-      key_unit_assign_battlegroup(0, (ev->state & GDK_SHIFT_MASK));
-      return TRUE;
-
-    case GDK_KEY_F2:
-      key_unit_assign_battlegroup(1, (ev->state & GDK_SHIFT_MASK));
-      return TRUE;
-
-    case GDK_KEY_F3:
-      key_unit_assign_battlegroup(2, (ev->state & GDK_SHIFT_MASK));
-      return TRUE;
-
-    case GDK_KEY_F4:
-      key_unit_assign_battlegroup(3, (ev->state & GDK_SHIFT_MASK));
-      return TRUE;
-
-    default:
-      break;
-    };
-  } else if ((ev->state & GDK_SHIFT_MASK)) {
-    switch (ev->keyval) {
-
-    case GDK_KEY_F1:
-      key_unit_select_battlegroup(0, FALSE);
-      return TRUE;
-
-    case GDK_KEY_F2:
-      key_unit_select_battlegroup(1, FALSE);
-      return TRUE;
-
-    case GDK_KEY_F3:
-      key_unit_select_battlegroup(2, FALSE);
-      return TRUE;
-
-    case GDK_KEY_F4:
-      key_unit_select_battlegroup(3, FALSE);
-      return TRUE;
-
-    default:
-      break;
-    };
   }
 
   switch (ev->keyval) {
@@ -652,9 +604,7 @@ static gboolean toplevel_key_press_handler(GtkWidget *w, GdkEventKey *ev,
     return FALSE;
   }
 
-  switch (ev->keyval) {
-
-  case GDK_KEY_apostrophe:
+  if (ev->keyval == GDK_KEY_apostrophe) {
     /* Allow this even if not in main map view; chatline is present on
      * some other pages too */
 
@@ -676,12 +626,7 @@ static gboolean toplevel_key_press_handler(GtkWidget *w, GdkEventKey *ev,
     if (inputline_is_visible()) {
       inputline_grab_focus();
       return TRUE;
-    } else {
-      break;
     }
-
-  default:
-    break;
   }
 
   if (!gtk_widget_get_mapped(top_vbox)
@@ -764,7 +709,7 @@ static gboolean mouse_scroll_mapcanvas(GtkWidget *w, GdkEventScroll *ev)
       return FALSE;
   };
 
-  set_mapview_scroll_pos(scroll_x, scroll_y);
+  set_mapview_scroll_pos(scroll_x, scroll_y, mouse_zoom);
 
   /* Emulating mouse move now */
   if (!gtk_widget_has_focus(map_canvas)) {
@@ -780,9 +725,29 @@ static gboolean mouse_scroll_mapcanvas(GtkWidget *w, GdkEventScroll *ev)
     maybe_activate_keyboardless_goto(cur_x, cur_y);
   }
 
-  control_mouse_cursor(canvas_pos_to_tile(cur_x, cur_y));
+  control_mouse_cursor(canvas_pos_to_tile(cur_x, cur_y, mouse_zoom));
 
   return TRUE;
+}
+
+/**********************************************************************//**
+  Freeciv window has lost focus
+**************************************************************************/
+gboolean fc_lost_focus(GtkWidget *w, GdkEventKey *ev, gpointer data)
+{
+  client_focus = FALSE;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Freeciv window has gained focus
+**************************************************************************/
+gboolean fc_gained_focus(GtkWidget *w, GdkEventKey *ev, gpointer data)
+{
+  client_focus = TRUE;
+
+  return FALSE;
 }
 
 /**********************************************************************//**
@@ -811,9 +776,9 @@ static void tearoff_destroy(GtkWidget *w, gpointer data)
 /**********************************************************************//**
   Propagates a keypress in a tearoff back to the toplevel window.
 **************************************************************************/
-static gboolean propagate_keypress(GtkWidget *w, GdkEventKey *ev)
+static gboolean propagate_keypress(GtkWidget *w, GdkEvent *ev)
 {
-  gtk_widget_event(toplevel, (GdkEvent *)ev);
+  gtk_widget_event(toplevel, ev);
 
   return FALSE;
 }
@@ -881,8 +846,29 @@ static GtkWidget *detached_widget_new(void)
 static GtkWidget *detached_widget_fill(GtkWidget *tearbox)
 {
   GtkWidget *b, *fillbox;
+  static GtkCssProvider *detach_button_provider = NULL;
+
+  if (detach_button_provider == NULL) {
+    detach_button_provider = gtk_css_provider_new();
+
+    /* These toggle buttons run vertically down the side of many UI
+     * elements, so they need to be thin horizontally. */
+    gtk_css_provider_load_from_data(detach_button_provider,
+                                    ".detach_button {\n"
+                                    "  padding: 0px 0px 0px 0px;\n"
+                                    "  min-width: 6px;\n"
+                                    "}",
+                                    -1, NULL);
+  }
 
   b = gtk_toggle_button_new();
+  gtk_style_context_add_provider(gtk_widget_get_style_context(b),
+                                 GTK_STYLE_PROVIDER(detach_button_provider),
+                                 GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  gtk_style_context_add_class(gtk_widget_get_style_context(b),
+                              "detach_button");
+  gtk_widget_set_tooltip_text(b, _("Detach/Attach the pane."));
+
   gtk_container_add(GTK_CONTAINER(tearbox), b);
   g_signal_connect(b, "toggled", G_CALLBACK(tearoff_callback), tearbox);
 
@@ -896,7 +882,7 @@ static GtkWidget *detached_widget_fill(GtkWidget *tearbox)
 }
 
 /**********************************************************************//**
-  Called to build the unit_below pixmap table.  This is the table on the
+  Called to build the unit_below pixmap table. This is the table on the
   left of the screen that shows all of the inactive units in the current
   tile.
 
@@ -907,10 +893,14 @@ static void populate_unit_image_table(void)
   int i, width;
   GtkWidget *table = unit_image_table;
   GdkPixbuf *pix;
+  int ttw;
 
-  /* get width of the overview window */
-  width = (overview_canvas_store_width > GUI_GTK_OVERVIEW_MIN_XSIZE) ? overview_canvas_store_width
-                                               : GUI_GTK_OVERVIEW_MIN_XSIZE;
+  /* Get width of the overview window */
+  width = (overview_canvas_store_width > GUI_GTK_OVERVIEW_MIN_XSIZE)
+    ? overview_canvas_store_width
+    : GUI_GTK_OVERVIEW_MIN_XSIZE;
+
+  ttw = tileset_tile_width(tileset);
 
   if (GUI_GTK_OPTION(small_display_layout)) {
     /* We want arrow to appear if there is other units in addition
@@ -918,7 +908,7 @@ static void populate_unit_image_table(void)
        can be 0 other units to not to display arrow. */
     num_units_below = 1 - 1;
   } else {
-    num_units_below = width / (int) tileset_tile_width(tileset);
+    num_units_below = width / ttw;
     num_units_below = CLIP(1, num_units_below, MAX_NUM_UNITS_BELOW);
   }
 
@@ -929,6 +919,7 @@ static void populate_unit_image_table(void)
   gtk_widget_add_events(unit_image, GDK_BUTTON_PRESS_MASK);
   g_object_ref(unit_image);
   unit_image_button = gtk_event_box_new();
+  gtk_widget_set_size_request(unit_image_button, ttw, -1);
   gtk_event_box_set_visible_window(GTK_EVENT_BOX(unit_image_button), FALSE);
   g_object_ref(unit_image_button);
   gtk_container_add(GTK_CONTAINER(unit_image_button), unit_image);
@@ -945,7 +936,9 @@ static void populate_unit_image_table(void)
       gtk_widget_add_events(unit_below_image[i], GDK_BUTTON_PRESS_MASK);
       unit_below_image_button[i] = gtk_event_box_new();
       g_object_ref(unit_below_image_button[i]);
-      gtk_event_box_set_visible_window(GTK_EVENT_BOX(unit_below_image_button[i]), FALSE);
+      gtk_widget_set_size_request(unit_below_image_button[i], ttw, -1);
+      gtk_event_box_set_visible_window(GTK_EVENT_BOX(unit_below_image_button[i]),
+                                       FALSE);
       gtk_container_add(GTK_CONTAINER(unit_below_image_button[i]),
                         unit_below_image[i]);
       g_signal_connect(unit_below_image_button[i],
@@ -958,7 +951,7 @@ static void populate_unit_image_table(void)
     }
   }
 
-  /* create arrow (popup for all units on the selected tile) */
+  /* Create arrow (popup for all units on the selected tile) */
   pix = sprite_get_pixbuf(get_arrow_sprite(tileset, ARROW_RIGHT));
   more_arrow_pixmap = gtk_image_new_from_pixbuf(pix);
   g_object_ref(more_arrow_pixmap);
@@ -987,11 +980,11 @@ static void populate_unit_image_table(void)
   if (!GUI_GTK_OPTION(small_display_layout)) {
     /* Display on bottom row. */
     gtk_grid_attach(GTK_GRID(table), more_arrow_pixmap_container,
-                    MAX_NUM_UNITS_BELOW, 1, 1, 1);
+                    num_units_below, 1, 1, 1);
   } else {
     /* Display on top row (there is no bottom row). */
     gtk_grid_attach(GTK_GRID(table), more_arrow_pixmap_container,
-                    MAX_NUM_UNITS_BELOW, 0, 1, 1);
+                    1, 0, 1, 1);
   }
 
   gtk_widget_show_all(table);
@@ -1033,7 +1026,7 @@ void reset_unit_table(void)
   /* Unreference all of the widgets that we're about to reallocate, thus
    * avoiding a memory leak. Remove them from the container first, just
    * to be safe. Note, the widgets are ref'd in
-   * populatate_unit_image_table. */
+   * populate_unit_image_table. */
   free_unit_table();
 
   populate_unit_image_table();
@@ -1111,15 +1104,33 @@ static void setup_canvas_color_for_state(GtkStateFlags state)
 #endif
 
 /**********************************************************************//**
+  Update tooltip of the Turn Done button
+**************************************************************************/
+void update_turn_done_tooltip(void)
+{
+  struct option *opt = optset_option_by_name(server_optset, "fixedlength");
+
+  if (opt != NULL && option_bool_get(opt)) {
+    gtk_widget_set_tooltip_text(turn_done_button,
+                                _("Fixed length turns"));
+  } else {
+    char buf[256];
+
+    fc_snprintf(buf, sizeof(buf), "%s:\n%s",
+                _("Turn Done"), _("Shift+Return"));
+    gtk_widget_set_tooltip_text(turn_done_button, buf);
+  }
+}
+
+/**********************************************************************//**
   Do the heavy lifting for the widget setup.
 **************************************************************************/
 static void setup_widgets(void)
 {
   GtkWidget *page, *ebox, *hgrid, *hgrid2, *label;
-  GtkWidget *frame, *table, *table2, *paned, *hpaned, *sw, *text;
+  GtkWidget *frame, *table, *table2, *paned, *sw, *text;
   GtkWidget *button, *view, *vgrid, *right_vbox = NULL;
   int i;
-  char buf[256];
   GtkWidget *notebook, *statusbar;
   GtkWidget *dtach_lowbox = NULL;
   struct sprite *spr;
@@ -1128,9 +1139,9 @@ static void setup_widgets(void)
 
   notebook = gtk_notebook_new();
 
-  /* stop mouse wheel notebook page switching. */
+  /* Stop mouse wheel notebook page switching. */
   g_signal_connect(notebook, "scroll_event",
-		   G_CALLBACK(gtk_true), NULL);
+                   G_CALLBACK(gtk_true), NULL);
 
   toplevel_tabs = notebook;
   gtk_notebook_set_show_tabs(GTK_NOTEBOOK(notebook), FALSE);
@@ -1170,6 +1181,8 @@ static void setup_widgets(void)
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, NULL);
 
   top_vbox = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(top_vbox),
+                                 GTK_ORIENTATION_VERTICAL);
   gtk_grid_set_row_spacing(GTK_GRID(top_vbox), 5);
   hgrid = gtk_grid_new();
 
@@ -1177,6 +1190,8 @@ static void setup_widgets(void)
     /* The window is divided into two horizontal panels: overview +
      * civinfo + unitinfo, main view + message window. */
     right_vbox = gtk_grid_new();
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(right_vbox),
+                                   GTK_ORIENTATION_VERTICAL);
     gtk_container_add(GTK_CONTAINER(hgrid), right_vbox);
 
     paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
@@ -1196,7 +1211,7 @@ static void setup_widgets(void)
     gtk_paned_pack1(GTK_PANED(paned), top_vbox, TRUE, FALSE);
     gtk_container_add(GTK_CONTAINER(top_vbox), hgrid);
 
-    /* Overview size designed for netbooks. */
+    /* Overview size designed for big displays (desktops). */
     overview_canvas_store_width = OVERVIEW_CANVAS_STORE_WIDTH;
     overview_canvas_store_height = OVERVIEW_CANVAS_STORE_HEIGHT;
   }
@@ -1206,9 +1221,12 @@ static void setup_widgets(void)
   gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
   gtk_grid_set_column_spacing(GTK_GRID(vgrid), 3);
-  gtk_container_add(GTK_CONTAINER(hgrid), vgrid);
+  /* Put vgrid to the left of anything else in hgrid -- right_vbox is either
+   * the chat/messages pane, or NULL which is OK */
+  gtk_grid_attach_next_to(GTK_GRID(hgrid), vgrid, right_vbox,
+                          GTK_POS_LEFT, 1, 1);
 
-  /* overview canvas */
+  /* Overview canvas */
   ahbox = detached_widget_new();
   gtk_widget_set_hexpand(ahbox, FALSE);
   gtk_widget_set_vexpand(ahbox, FALSE);
@@ -1253,6 +1271,8 @@ static void setup_widgets(void)
   gtk_container_add(GTK_CONTAINER(vgrid), ahbox);
   gtk_widget_set_hexpand(ahbox, FALSE);
   avbox = detached_widget_fill(ahbox);
+  gtk_widget_set_vexpand(avbox, TRUE);
+  gtk_widget_set_valign(avbox, GTK_ALIGN_FILL);
 
   /* Info on player's civilization, when game is running. */
   frame = gtk_frame_new("");
@@ -1261,6 +1281,8 @@ static void setup_widgets(void)
   main_frame_civ_name = frame;
 
   vgrid = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
+                                 GTK_ORIENTATION_VERTICAL);
   gtk_container_add(GTK_CONTAINER(frame), vgrid);
   gtk_widget_set_hexpand(vgrid, TRUE);
 
@@ -1287,7 +1309,7 @@ static void setup_widgets(void)
   gtk_grid_set_column_homogeneous(GTK_GRID(table), TRUE);
   gtk_container_add(GTK_CONTAINER(avbox), table);
 
-  /* citizens for taxrates */
+  /* Citizens for taxrates */
   ebox = gtk_event_box_new();
   gtk_event_box_set_visible_window(GTK_EVENT_BOX(ebox), FALSE);
   gtk_grid_attach(GTK_GRID(table), ebox, 0, 0, 10, 1);
@@ -1311,7 +1333,7 @@ static void setup_widgets(void)
     gtk_container_add(GTK_CONTAINER(ebox), econ_label[i]);
   }
 
-  /* science, environmental, govt, timeout */
+  /* Science, environmental, govt, timeout */
   spr = client_research_sprite();
   if (spr != NULL) {
     bulb_label = gtk_image_new_from_surface(spr->surface);
@@ -1383,17 +1405,14 @@ static void setup_widgets(void)
   gtk_container_add(GTK_CONTAINER(frame), timeout_label);
 
 
-  /* turn done */
+  /* Turn done */
   turn_done_button = gtk_button_new_with_label(_("Turn Done"));
 
   gtk_grid_attach(GTK_GRID(table), turn_done_button, 0, 2, 10, 1);
 
   g_signal_connect(turn_done_button, "clicked",
                    G_CALLBACK(end_turn_callback), NULL);
-
-  fc_snprintf(buf, sizeof(buf), "%s:\n%s",
-              _("Turn Done"), _("Shift+Return"));
-  gtk_widget_set_tooltip_text(turn_done_button, buf);
+  update_turn_done_tooltip();
 
   /* Selected unit status */
 
@@ -1455,6 +1474,8 @@ static void setup_widgets(void)
     gtk_paned_pack1(GTK_PANED(paned), top_notebook, TRUE, FALSE);
   } else if (GUI_GTK_OPTION(message_chat_location) == GUI_GTK_MSGCHAT_MERGED) {
     right_vbox = gtk_grid_new();
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(right_vbox),
+                                   GTK_ORIENTATION_VERTICAL);
 
     gtk_container_add(GTK_CONTAINER(right_vbox), top_notebook);
     gtk_container_add(GTK_CONTAINER(right_vbox), ingame_votebar);
@@ -1543,9 +1564,11 @@ static void setup_widgets(void)
   /* *** The message window -- this is a detachable widget *** */
 
   if (GUI_GTK_OPTION(message_chat_location) == GUI_GTK_MSGCHAT_MERGED) {
-    bottom_hpaned = hpaned = paned;
+    bottom_hpaned = paned;
     right_notebook = bottom_notebook = top_notebook;
   } else {
+    GtkWidget *hpaned;
+
     dtach_lowbox = detached_widget_new();
     gtk_paned_pack2(GTK_PANED(paned), dtach_lowbox, FALSE, TRUE);
     avbox = detached_widget_fill(dtach_lowbox);
@@ -1656,11 +1679,84 @@ static void setup_widgets(void)
 }
 
 /**********************************************************************//**
+  g_log callback to log with freelog
+**************************************************************************/
+static void g_log_to_freelog_cb(const gchar *log_domain,
+                                GLogLevelFlags log_level,
+                                const gchar *message,
+                                gpointer user_data)
+{
+  enum log_level fllvl = LOG_ERROR;
+
+  switch (log_level) {
+  case G_LOG_LEVEL_DEBUG:
+    fllvl = LOG_DEBUG;
+    break;
+  case G_LOG_LEVEL_WARNING:
+    fllvl = LOG_WARN;
+    break;
+  default:
+    break;
+  }
+
+  if (log_domain != NULL) {
+    log_base(fllvl, "%s: %s", log_domain, message);
+  } else {
+    log_base(fllvl, "%s", message);
+  }
+}
+
+/**********************************************************************//**
+  g_log callback to log with freelog
+**************************************************************************/
+static GLogWriterOutput g_log_writer_to_freelog_cb(GLogLevelFlags log_level,
+                                                   const GLogField *fields,
+                                                   gsize n_fields,
+                                                   gpointer user_data)
+{
+  /* No need to have formatter of our own - let's use glib's default one. */
+  gchar *out = g_log_writer_format_fields(log_level, fields, n_fields, FALSE);
+
+  g_log_to_freelog_cb(NULL, log_level, out, NULL);
+
+  return G_LOG_WRITER_HANDLED;
+}
+
+/**********************************************************************//**
+  Set up g_log callback for a single domain.
+**************************************************************************/
+static void set_g_log_callback_domain(const char *domain)
+{
+  g_log_set_handler(domain,
+                    G_LOG_LEVEL_CRITICAL | G_LOG_LEVEL_ERROR | G_LOG_LEVEL_WARNING
+                    | G_LOG_LEVEL_MASK
+                    | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION,
+                    g_log_to_freelog_cb, NULL);
+}
+
+/**********************************************************************//**
+  Set up g_log callbacks.
+**************************************************************************/
+static void set_g_log_callbacks(void)
+{
+  /* Old API, still used by many log producers */
+  g_log_set_default_handler(g_log_to_freelog_cb, NULL);
+
+  set_g_log_callback_domain("Gtk");
+  set_g_log_callback_domain("Gdk");
+  set_g_log_callback_domain("Glib");
+
+  /* glib >= 2.50 API */
+  g_log_set_writer_func(g_log_writer_to_freelog_cb, NULL, NULL);
+}
+
+/**********************************************************************//**
   Called from main().
 **************************************************************************/
 void ui_init(void)
 {
   log_set_callback(log_callback_utf8);
+  set_g_log_callbacks();
   set_frame_by_frame_animation();
 }
 
@@ -1669,7 +1765,62 @@ void ui_init(void)
 **************************************************************************/
 int main(int argc, char **argv)
 {
-  return client_main(argc, argv);
+  return client_main(argc, argv, FALSE);
+}
+
+/**********************************************************************//**
+  Migrate gtk3 client specific options from gtk2 client options.
+**************************************************************************/
+static void migrate_options_from_gtk2(void)
+{
+  log_normal(_("Migrating options from gtk2 to gtk3 client"));
+
+#define MIGRATE_OPTION(opt) gui_options.gui_gtk3_##opt = gui_options.gui_gtk2_##opt;
+#define MIGRATE_STR_OPTION(opt) \
+  strncpy(gui_options.gui_gtk3_##opt, gui_options.gui_gtk2_##opt,      \
+          sizeof(gui_options.gui_gtk3_##opt));
+
+  /* Default theme name is never migrated */
+  /* 'fullscreen', 'small_display_layout', and 'message_chat_location'
+   * not migrated, as (unlike Gtk2), Gtk3-client tries to pick better
+   * defaults for these in fresh installations based on screen size (see
+   * adjust_default_options()); so user is probably better served by
+   * getting these adaptive defaults than whatever they had for Gtk2.
+   * Since 'fullscreen' isn't migrated, we don't need to worry about
+   * preserving gui_gtk2_migrated_from_2_5 either. */
+  MIGRATE_OPTION(map_scrollbars);
+  MIGRATE_OPTION(dialogs_on_top);
+  MIGRATE_OPTION(show_task_icons);
+  MIGRATE_OPTION(enable_tabs);
+  MIGRATE_OPTION(show_chat_message_time);
+  MIGRATE_OPTION(new_messages_go_to_top);
+  MIGRATE_OPTION(show_message_window_buttons);
+  MIGRATE_OPTION(metaserver_tab_first);
+  MIGRATE_OPTION(allied_chat_only);
+  MIGRATE_OPTION(mouse_over_map_focus);
+  MIGRATE_OPTION(chatline_autocompletion);
+  MIGRATE_OPTION(citydlg_xsize);
+  MIGRATE_OPTION(citydlg_ysize);
+  MIGRATE_OPTION(popup_tech_help);
+
+  MIGRATE_STR_OPTION(font_city_label);
+  MIGRATE_STR_OPTION(font_notify_label);
+  MIGRATE_STR_OPTION(font_spaceship_label);
+  MIGRATE_STR_OPTION(font_help_label);
+  MIGRATE_STR_OPTION(font_help_link);
+  MIGRATE_STR_OPTION(font_help_text);
+  MIGRATE_STR_OPTION(font_chatline);
+  MIGRATE_STR_OPTION(font_beta_label);
+  MIGRATE_STR_OPTION(font_small);
+  MIGRATE_STR_OPTION(font_comment_label);
+  MIGRATE_STR_OPTION(font_city_names);
+  MIGRATE_STR_OPTION(font_city_productions);
+  MIGRATE_STR_OPTION(font_reqtree_text);
+
+#undef MIGRATE_OPTION
+#undef MIGRATE_STR_OPTION
+
+  gui_options.gui_gtk3_migrated_from_gtk2 = TRUE;
 }
 
 /**********************************************************************//**
@@ -1685,6 +1836,14 @@ static void migrate_options_from_gtk3(void)
           sizeof(GUI_GTK_OPTION(opt)));
 
   /* Default theme name is never migrated */
+
+  /* Simulate gui-gtk3's migrate_options_from_2_5() */
+  if (!gui_options.gui_gtk3_migrated_from_2_5) {
+    log_normal(_("Migrating gtk3-client options from freeciv-2.5 options."));
+    gui_options.gui_gtk3_fullscreen = gui_options.migrate_fullscreen;
+    gui_options.gui_gtk3_migrated_from_2_5 = TRUE;
+  }
+
   MIGRATE_OPTION(fullscreen);
   MIGRATE_OPTION(map_scrollbars);
   MIGRATE_OPTION(dialogs_on_top);
@@ -1726,136 +1885,172 @@ static void migrate_options_from_gtk3(void)
 /**********************************************************************//**
   Called from client_main(), is what it's named.
 **************************************************************************/
-void ui_main(int argc, char **argv)
+int ui_main(int argc, char **argv)
 {
   PangoFontDescription *toplevel_font_name;
   guint sig;
 
-  parse_options(argc, argv);
+  if (parse_options(argc, argv)) {
+    char window_name[1024];
 
-  /* the locale has already been set in init_nls() and the Win32-specific
-   * locale logic in gtk_init() causes problems with zh_CN (see PR#39475) */
-  gtk_disable_setlocale();
+    /* The locale has already been set in init_nls() and the windows-specific
+     * locale logic in gtk_init() causes problems with zh_CN (see PR#39475) */
+    gtk_disable_setlocale();
 
-  /* GTK withdraw gtk options. Process GTK arguments */
-  gtk_init(&argc, &argv);
-
-  dlg_tab_provider_prepare();
-
-  toplevel = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-  gtk_window_set_position(GTK_WINDOW(toplevel), GTK_WIN_POS_CENTER);
-  if (vmode.width > 0 && vmode.height > 0) {
-    gtk_window_resize(GTK_WINDOW(toplevel), vmode.width, vmode.height);
-  }
-  g_signal_connect(toplevel, "key_press_event",
-                   G_CALLBACK(toplevel_handler), NULL);
-
-  gtk_window_set_role(GTK_WINDOW(toplevel), "toplevel");
-  gtk_widget_realize(toplevel);
-  gtk_widget_set_name(toplevel, "Freeciv");
-  root_window = gtk_widget_get_window(toplevel);
-
-  if (!GUI_GTK_OPTION(migrated_from_gtk3)) {
-    migrate_options_from_gtk3();
-  }
-
-  if (GUI_GTK_OPTION(fullscreen)) {
-    gtk_window_fullscreen(GTK_WINDOW(toplevel));
-  }
-
-  gtk_window_set_title(GTK_WINDOW (toplevel), _("Freeciv"));
-
-  g_signal_connect(toplevel, "delete_event",
-                   G_CALLBACK(quit_dialog_callback), NULL);
-
-  /* Disable GTK+ cursor key focus movement */
-  sig = g_signal_lookup("focus", GTK_TYPE_WIDGET);
-  g_signal_handlers_disconnect_matched(toplevel, G_SIGNAL_MATCH_ID, sig,
-                                       0, 0, 0, 0);
-  g_signal_connect(toplevel, "focus", G_CALLBACK(toplevel_focus), NULL);
-
-
-  display_color_type = get_visual();
-
-  options_iterate(client_optset, poption) {
-    if (OT_FONT == option_type(poption)) {
-      /* Force to call the appropriated callback. */
-      option_changed(poption);
+    /* GTK withdraw gtk options. Process GTK arguments */
+    if (!gtk_init_check(&argc, &argv)) {
+      log_fatal(_("Failed to open graphical mode."));
+      return EXIT_FAILURE;
     }
-  } options_iterate_end;
 
-  toplevel_font_name = pango_context_get_font_description(
-                           gtk_widget_get_pango_context(toplevel));
+    help_system_init();
 
-  if (NULL == city_names_style) {
-    city_names_style = pango_font_description_copy(toplevel_font_name);
-    log_error("city_names_style should have been set by options.");
-  }
-  if (NULL == city_productions_style) {
-    city_productions_style = pango_font_description_copy(toplevel_font_name);
-    log_error("city_productions_style should have been set by options.");
-  }
-  if (NULL == reqtree_text_style) {
-    reqtree_text_style = pango_font_description_copy(toplevel_font_name);
-    log_error("reqtree_text_style should have been set by options.");
-  }
+    dlg_tab_provider_prepare();
 
-  set_city_names_font_sizes(city_names_font_size, city_productions_font_size);
+    toplevel = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_position(GTK_WINDOW(toplevel), GTK_WIN_POS_CENTER);
+    if (vmode.width > 0 && vmode.height > 0) {
+      gtk_window_resize(GTK_WINDOW(toplevel), vmode.width, vmode.height);
+    }
+    g_signal_connect(toplevel, "key_press_event",
+                     G_CALLBACK(toplevel_handler), NULL);
 
-  tileset_init(tileset);
-  tileset_load_tiles(tileset);
+    g_signal_connect(toplevel, "focus_out_event",
+                     G_CALLBACK(fc_lost_focus), NULL);
+    g_signal_connect(toplevel, "focus_in_event",
+                     G_CALLBACK(fc_gained_focus), NULL);
 
-  /* keep the icon of the executable on Windows (see PR#36491) */
+    gtk_window_set_role(GTK_WINDOW(toplevel), "toplevel");
+    gtk_widget_realize(toplevel);
+    gtk_widget_set_name(toplevel, "Freeciv");
+    root_window = gtk_widget_get_window(toplevel);
+
+    if (gui_options.first_boot) {
+      adjust_default_options();
+      /* We're using fresh defaults for this version of this client,
+       * so prevent any future migrations from other clients / versions */
+      GUI_GTK_OPTION(migrated_from_gtk3) = TRUE;
+      /* Avoid also marking gtk3 as migrated, so that it can have its own
+       * run of its adjust_default_options() if it is ever run (as a
+       * side effect of Gtk2->Gtk3 migration). */
+    } else {
+      if (!GUI_GTK_OPTION(migrated_from_gtk3)) {
+        if (!gui_options.gui_gtk3_migrated_from_gtk2) {
+          migrate_options_from_gtk2();
+          /* We want a fresh look at screen-size-related options after Gtk2 */
+          adjust_default_options();
+          /* We don't ever want to consider pre-2.6 fullscreen option again
+           * (even for gui-gtk3) */
+          gui_options.gui_gtk3_migrated_from_2_5 = TRUE;
+        }
+        migrate_options_from_gtk3();
+      }
+    }
+
+    if (GUI_GTK_OPTION(fullscreen)) {
+      gtk_window_fullscreen(GTK_WINDOW(toplevel));
+    }
+
+    fc_snprintf(window_name, sizeof(window_name), _("Freeciv (%s)"), GUI_NAME_SHORT);
+    gtk_window_set_title(GTK_WINDOW(toplevel), window_name);
+
+    g_signal_connect(toplevel, "delete_event",
+                     G_CALLBACK(quit_dialog_callback), NULL);
+
+    /* Disable GTK+ cursor key focus movement */
+    sig = g_signal_lookup("focus", GTK_TYPE_WIDGET);
+    g_signal_handlers_disconnect_matched(toplevel, G_SIGNAL_MATCH_ID, sig,
+                                         0, 0, 0, 0);
+    g_signal_connect(toplevel, "focus", G_CALLBACK(toplevel_focus), NULL);
+
+    options_iterate(client_optset, poption) {
+      if (OT_FONT == option_type(poption)) {
+        /* Force to call the appropriate callback. */
+        option_changed(poption);
+      }
+    } options_iterate_end;
+
+    toplevel_font_name = pango_context_get_font_description(
+                             gtk_widget_get_pango_context(toplevel));
+
+    if (NULL == city_names_style) {
+      city_names_style = pango_font_description_copy(toplevel_font_name);
+      log_error("city_names_style should have been set by options.");
+    }
+    if (NULL == city_productions_style) {
+      city_productions_style = pango_font_description_copy(toplevel_font_name);
+      log_error("city_productions_style should have been set by options.");
+    }
+    if (NULL == reqtree_text_style) {
+      reqtree_text_style = pango_font_description_copy(toplevel_font_name);
+      log_error("reqtree_text_style should have been set by options.");
+    }
+
+    tileset_init(tileset);
+    tileset_load_tiles(tileset);
+
+    /* Keep the icon of the executable on Windows (see PR#36491) */
 #ifndef FREECIV_MSWINDOWS
-  {
-    GdkPixbuf *pixbuf = sprite_get_pixbuf(get_icon_sprite(tileset, ICON_FREECIV));
+    {
+      GdkPixbuf *pixbuf = sprite_get_pixbuf(get_icon_sprite(tileset, ICON_FREECIV));
 
-    /* Only call this after tileset_load_tiles is called. */
-    gtk_window_set_icon(GTK_WINDOW(toplevel), pixbuf);
-    g_object_unref(pixbuf);
-  }
+      /* Only call this after tileset_load_tiles is called. */
+      gtk_window_set_icon(GTK_WINDOW(toplevel), pixbuf);
+      g_object_unref(pixbuf);
+    }
 #endif /* FREECIV_MSWINDOWS */
 
-  setup_widgets();
-  load_cursors();
-  cma_fe_init();
-  diplomacy_dialog_init();
-  luaconsole_dialog_init();
-  happiness_dialog_init();
-  citizens_dialog_init();
-  intel_dialog_init();
-  spaceship_dialog_init();
-  chatline_init();
-  init_mapcanvas_and_overview();
+    setup_widgets();
+    load_cursors();
+    cma_fe_init();
+    diplomacy_dialog_init();
+    luaconsole_dialog_init();
+    happiness_dialog_init();
+    citizens_dialog_init();
+    intel_dialog_init();
+    spaceship_dialog_init();
+    chatline_init();
+    init_mapcanvas_and_overview();
 
-  tileset_use_preferred_theme(tileset);
+    tileset_use_preferred_theme(tileset);
 
-  gtk_widget_show(toplevel);
+    gtk_widget_show(toplevel);
 
-  /* assumes toplevel showing */
-  set_client_state(C_S_DISCONNECTED);
+    /* Assumes toplevel showing */
+    set_client_state(C_S_DISCONNECTED);
 
-  /* assumes client_state is set */
-  timer_id = g_timeout_add(TIMER_INTERVAL, timer_callback, NULL);
+    /* Assumes client_state is set */
+    timer_id = g_timeout_add(TIMER_INTERVAL, timer_callback, NULL);
 
-  gui_up = TRUE;
-  gtk_main();
-  gui_up = FALSE;
+    gui_up = TRUE;
+    gtk_main();
+    gui_up = FALSE;
 
-  destroy_server_scans();
-  free_mapcanvas_and_overview();
-  spaceship_dialog_done();
-  intel_dialog_done();
-  citizens_dialog_done();
-  luaconsole_dialog_done();
-  happiness_dialog_done();
-  diplomacy_dialog_done();
-  cma_fe_done();
-  free_unit_table();
-  editgui_free();
-  gtk_widget_destroy(toplevel_tabs);
-  message_buffer = NULL; /* Result of destruction of everything */
-  tileset_free_tiles(tileset);
+    destroy_server_scans();
+    free_mapcanvas_and_overview();
+    spaceship_dialog_done();
+    intel_dialog_done();
+    citizens_dialog_done();
+    luaconsole_dialog_done();
+    happiness_dialog_done();
+    diplomacy_dialog_done();
+    cma_fe_done();
+    free_unit_table();
+
+    /* We have extra ref for unit_info_box that has protected
+     * it from getting destroyed when editinfobox_refresh()
+     * moves widgets around. Free that extra ref here. */
+    g_object_unref(unit_info_box);
+
+    editgui_free();
+    gtk_widget_destroy(toplevel_tabs);
+    gtk_widget_destroy(toplevel);
+    menus_free();
+    message_buffer = NULL; /* Result of destruction of everything */
+    tileset_free_tiles(tileset);
+  }
+
+  return EXIT_SUCCESS;
 }
 
 /**********************************************************************//**
@@ -2053,8 +2248,8 @@ static gboolean show_info_popup(GtkWidget *w, GdkEventButton *ev, gpointer data)
 **************************************************************************/
 static void end_turn_callback(GtkWidget *w, gpointer data)
 {
-    gtk_widget_set_sensitive(turn_done_button, FALSE);
-    user_ended_turn();
+  gtk_widget_set_sensitive(turn_done_button, FALSE);
+  user_ended_turn();
 }
 
 /**********************************************************************//**
@@ -2093,8 +2288,8 @@ static void set_wait_for_writable_socket(struct connection *pc,
 }
 
 /**********************************************************************//**
-  This function is called after the client succesfully
-  has connected to the server
+  This function is called after the client has successfully
+  connected to the server
 **************************************************************************/
 void add_net_input(int sock)
 {
@@ -2131,7 +2326,7 @@ static void quit_dialog_response(GtkWidget *dialog, gint response)
   if (response == GTK_RESPONSE_YES) {
     start_quitting();
     if (client.conn.used) {
-      disconnect_from_server();
+      disconnect_from_server(FALSE);
     }
     quit_gtk_main();
   }
@@ -2234,6 +2429,18 @@ static void allied_chat_only_callback(struct option *poption)
 }
 
 /**********************************************************************//**
+  Option callback for the 'fullscreen' gtk-gui option.
+**************************************************************************/
+void fullscreen_opt_refresh(struct option *poption)
+{
+  if (GUI_GTK_OPTION(fullscreen)) {
+    gtk_window_fullscreen(GTK_WINDOW(toplevel));
+  } else {
+    gtk_window_unfullscreen(GTK_WINDOW(toplevel));
+  }
+}
+
+/**********************************************************************//**
   Change the city names font.
 **************************************************************************/
 static void apply_city_names_font(struct option *poption)
@@ -2272,18 +2479,20 @@ static void apply_reqtree_text_font(struct option *poption)
 **************************************************************************/
 void options_extra_init(void)
 {
-
   struct option *poption;
 
 #define option_var_set_callback(var, callback)                              \
-  if ((poption = optset_option_by_name(client_optset, GUI_GTK_OPTION_STR(var)))) { \
+  if ((poption = optset_option_by_name(client_optset,                       \
+                                       GUI_GTK_OPTION_STR(var)))) {         \
     option_set_changed_callback(poption, callback);                         \
   } else {                                                                  \
-    log_error("Didn't find option %s!", GUI_GTK_OPTION_STR(var));      \
+    log_error("Didn't find option %s!", GUI_GTK_OPTION_STR(var));           \
   }
 
   option_var_set_callback(allied_chat_only,
                           allied_chat_only_callback);
+  option_var_set_callback(fullscreen,
+                          fullscreen_opt_refresh);
 
   option_var_set_callback(font_city_names,
                           apply_city_names_font);
@@ -2339,27 +2548,62 @@ void insert_client_build_info(char *outbuf, size_t outlen)
 }
 
 /**********************************************************************//**
-  Return width of the default screen
+  Return dimensions of primary monitor, if any
+  (in 'application pixels')
+**************************************************************************/
+static bool monitor_size(GdkRectangle *rect_p)
+{
+  GdkDisplay *display;
+  GdkMonitor *monitor;
+
+  display = gdk_display_get_default();
+  if (!display) {
+    return FALSE;
+  }
+
+  monitor = gdk_display_get_primary_monitor(display);
+  if (!monitor) {
+    return FALSE;
+  }
+
+  gdk_monitor_get_geometry(monitor, rect_p);
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Return width of the primary monitor
 **************************************************************************/
 int screen_width(void)
 {
+  GdkRectangle rect;
+
   if (vmode.width > 0) {
     return vmode.width;
   }
 
-  return 0;
+  if (monitor_size(&rect)) {
+    return rect.width;
+  } else {
+    return 0;
+  }
 }
 
 /**********************************************************************//**
-  Return height of the default screen
+  Return height of the primary monitor
 **************************************************************************/
 int screen_height(void)
 {
+  GdkRectangle rect;
+
   if (vmode.height > 0) {
     return vmode.height;
   }
 
-  return 0;
+  if (monitor_size(&rect)) {
+    return rect.height;
+  } else {
+    return 0;
+  }
 }
 
 /**********************************************************************//**
@@ -2377,7 +2621,7 @@ struct video_mode *resolution_request_get(void)
 /**********************************************************************//**
   Make dynamic adjustments to first-launch default options.
 **************************************************************************/
-void adjust_default_options(void)
+static void adjust_default_options(void)
 {
   int scr_height = screen_height();
 
@@ -2387,10 +2631,30 @@ void adjust_default_options(void)
     if (scr_height <= 480) {
       /* Freeciv is practically unusable outside fullscreen mode in so
        * small display */
+      log_verbose("Changing default to fullscreen due to very small screen");
       GUI_GTK_OPTION(fullscreen) = TRUE;
-    } else if (scr_height >= 1024) {
-      /* This is no small display */
-      GUI_GTK_OPTION(small_display_layout) = FALSE;
+    }
+    if (scr_height < 1024) {
+      /* This is a small display */
+      log_verbose("Defaulting to small widget layout due to small screen");
+      GUI_GTK_OPTION(small_display_layout) = TRUE;
+      log_verbose("Defaulting to merged messages/chat due to small screen");
+      GUI_GTK_OPTION(message_chat_location) = GUI_GTK_MSGCHAT_MERGED;
     }
   }
+}
+
+/**********************************************************************//**
+  Define properties of this gui.
+**************************************************************************/
+void setup_gui_properties(void)
+{
+  gui_properties.animations = FALSE;
+  gui_properties.views.isometric = TRUE;
+  gui_properties.views.overhead = TRUE;
+#ifdef GTK3_3D_ENABLED
+  gui_properties.views.d3 = TRUE;
+#else  /* GTK3_3D_ENABLED */
+  gui_properties.views.d3 = FALSE;
+#endif /* GTK3_3D_ENABLED */
 }

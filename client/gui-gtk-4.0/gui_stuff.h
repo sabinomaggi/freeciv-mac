@@ -22,11 +22,10 @@ GtkWidget *icon_label_button_new(const gchar *icon_name,
                                  const gchar *label_text);
 void gtk_stockbutton_set_label(GtkWidget *button, const gchar *label_text);
 void gtk_expose_now(GtkWidget *w);
-void set_relative_window_position(GtkWindow *ref, GtkWindow *w, int px, int py);
 
 void intl_slist(int n, const char **s, bool *done);
 
-/* the standard GTK+ 2.0 API is braindamaged. this is slightly better! */
+/* The standard GTK+ 2.0 API is braindamaged. this is slightly better! */
 
 typedef struct
 {
@@ -35,7 +34,7 @@ typedef struct
   GtkTreeIter it;
 } ITree;
 
-#define TREE_ITER_PTR(x)	(&(x).it)
+#define TREE_ITER_PTR(x)        (&(x).it)
 
 void itree_begin(GtkTreeModel *model, ITree *it);
 gboolean itree_end(ITree *it);
@@ -55,7 +54,7 @@ void setup_dialog(GtkWidget *shell, GtkWidget *parent);
 GtkTreeViewColumn *add_treeview_column(GtkWidget *view, const char *title,
                                        GType gtype, int model_index);
 
-GtkWidget *gtk_aux_menu_bar_new(void);
+GtkWidget *aux_menu_new(void);
 
 enum gui_dialog_type {
   GUI_DIALOG_WINDOW,
@@ -68,18 +67,21 @@ typedef void (*GUI_DIALOG_RESPONSE_FUN)(struct gui_dialog *, int, gpointer);
 
 struct gui_dialog
 {
-  /* public. */
-  GtkWidget *vbox;
-  GtkWidget *action_area;
+  /* Public. */
+  GtkWidget *grid;
+  GtkWidget *actions;
 
-  /* private. */
-  char* title;
+  /* Private. */
+  char *title;
   enum gui_dialog_type type;
   int id;
   int return_dialog_id;
 
   int default_width;
   int default_height;
+
+  bool vertical_content;
+  int content_counter;
 
   union {
     GtkWidget *window;
@@ -103,17 +105,18 @@ void dlg_tab_provider_prepare(void);
 
 void gui_dialog_new(struct gui_dialog **pdlg, GtkNotebook *notebook,
                     gpointer user_data, bool check_top);
-void gui_dialog_set_default_response(struct gui_dialog *dlg, int response);
 GtkWidget *gui_dialog_add_button(struct gui_dialog *dlg,
                                  const char *icon_name,
                                  const char *text, int response);
-GtkWidget *gui_dialog_add_widget(struct gui_dialog *dlg,
-				 GtkWidget *widget);
+GtkWidget *gui_dialog_add_action_widget(struct gui_dialog *dlg,
+                                        GtkWidget *widget);
+void gui_dialog_add_content_widget(struct gui_dialog *dlg,
+                                   GtkWidget *wdg);
 void gui_dialog_set_default_size(struct gui_dialog *dlg,
-    int width, int height);
+                                 int width, int height);
 void gui_dialog_set_title(struct gui_dialog *dlg, const char *title);
 void gui_dialog_set_response_sensitive(struct gui_dialog *dlg,
-    int response, bool setting);
+                                       int response, bool setting);
 void gui_dialog_show_all(struct gui_dialog *dlg);
 void gui_dialog_present(struct gui_dialog *dlg);
 void gui_dialog_raise(struct gui_dialog *dlg);
@@ -132,4 +135,38 @@ void gui_update_font_full(const char *font_name, const char *font_value,
 void disable_gobject_callback(GObject *obj, GCallback cb);
 void enable_gobject_callback(GObject *obj, GCallback cb);
 
-#endif  /* FC__GUI_STUFF_H */
+gint blocking_dialog(GtkWidget *dlg);
+void widget_destroyed(GtkWidget *wdg, void *data);
+GtkWidget *widget_get_child(GtkWidget *wdg);
+
+#define menu_item_insert_unref(menu, index, item) \
+{                                                 \
+  GMenuItem *_item_var = item;                    \
+  g_menu_insert_item(menu, index, _item_var);     \
+  g_object_unref(_item_var);                      \
+}
+
+#define menu_item_append_unref(menu, item)        \
+{                                                 \
+  GMenuItem *_item_var = item;                    \
+  g_menu_append_item(menu, _item_var);            \
+  g_object_unref(_item_var);                      \
+}
+
+#define submenu_insert_unref(menu, index, name,    \
+                             submenu)              \
+{                                                  \
+  GMenuModel *_submenu_var = submenu;              \
+  g_menu_insert_submenu(menu, index, name,         \
+                        _submenu_var);             \
+  g_object_unref(_submenu_var);                    \
+}
+
+#define submenu_append_unref(menu, name, submenu)  \
+{                                                  \
+  GMenuModel *_submenu_var = submenu;              \
+  g_menu_append_submenu(menu, name, _submenu_var); \
+  g_object_unref(_submenu_var);                    \
+}
+
+#endif /* FC__GUI_STUFF_H */

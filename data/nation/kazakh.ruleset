@@ -1,9 +1,9 @@
 [nation_kazakh]
 
-name=_("Kazakh")
-plural=_("?plural:Kazakhs")
-groups="Early Modern", "Modern", "Asian"
-legend=_("Kazakhs are descendants of Turkic and Mongolian nomadic tribes.\
+name   = _("Kazakh")
+plural = _("?plural:Kazakhs")
+groups = "Early Modern", "Modern", "Asian"
+legend = _("Kazakhs are descendants of Turkic and Mongolian nomadic tribes.\
  Conquered by Russia in the 18th century, Kazakhstan became independent in\
  1991 with the dissolution of the Soviet Union. It is one of the ten largest\
  states in the world by area.")
@@ -26,37 +26,37 @@ ruler_titles = {
  "Communism",       _("First Secretary %s"), _("?female:First Secretary %s")
 }
 
-flag="kazakhstan"
+flag = "kazakhstan"
 flag_alt = "-"
 style = "Asian"
 
-init_techs=""
-init_buildings=""
-init_units=""
+init_techs = ""
+init_buildings = ""
+init_units = ""
 
-civilwar_nations="Uzbek", "Turkmen", "Kyrgyz", "Russian", "Uyghur"
+civilwar_nations = "Uzbek", "Turkmen", "Kyrgyz", "Russian", "Uyghur"
 
 cities =
   "Taraz",
   "Türkistan",
   "Şımkent",
   "Oral",
-  "Pavlodar", 
+  "Pavlodar",
   "Semey",
   "Petropavl",
   "Almatı",
   "Astana",
-  "Kökşetaw", 
+  "Kökşetaw",
   "Qızılorda",
   "Öskemen",
   "Aqtöbe",
   "Qostanay",
-  "Atıraw", 
+  "Atıraw",
   "Qarağandı",
   "Jarkent",
   "Atbasar",
   "Temirtaw",
-  "Balqaş", 
+  "Balqaş",
   "Taldıqorğan",
   "Ayagoz",
   "Aral",
@@ -65,7 +65,7 @@ cities =
   "Rudnıy",
   "Aqtaw",
   "Bayqoñır",
-  "Zaysan", 
+  "Zaysan",
   "Arqalıq",
   "Esil",
   "Aksay",
@@ -84,7 +84,7 @@ cities =
 ; Could not confirm Kazakh spelling of the following cities.
 
 ;  "Qapshaghay",
-;  "Zhangatas", 
+;  "Zhangatas",
 ;  "Embi",
 ;  "Lepsi",
 ;  "Shalqar",

@@ -17,14 +17,15 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/* utility */
 #include "support.h" /* bool */
 
 struct city;
 struct city_list;
 
-/* What to do with previously established traderoutes that are now illegal.
+/* What to do with previously established trade routes that are now illegal.
  * Used in the network protocol. */
-enum traderoute_illegal_cancelling
+enum trade_route_illegal_cancelling
   {
     TRI_ACTIVE                        = 0, /* Keep them active */
     TRI_INACTIVE                      = 1, /* They are inactive */
@@ -32,6 +33,7 @@ enum traderoute_illegal_cancelling
     TRI_LAST                          = 3
   };
 
+/* Values used in the network protocol. */
 enum trade_route_type {
   TRT_NATIONAL                        = 0,
   TRT_NATIONAL_IC                     = 1, /* Intercontinental */
@@ -46,7 +48,8 @@ enum trade_route_type {
   TRT_LAST                            = 10
 };
 
-#define SPECENUM_NAME traderoute_bonus_type
+/* Values used in the network protocol. */
+#define SPECENUM_NAME trade_route_bonus_type
 #define SPECENUM_VALUE0 TBONUS_NONE
 #define SPECENUM_VALUE0NAME "None"
 #define SPECENUM_VALUE1 TBONUS_GOLD
@@ -57,19 +60,22 @@ enum trade_route_type {
 #define SPECENUM_VALUE3NAME "Both"
 #include "specenum_gen.h"
 
+/* Values used in the network protocol. */
 #define SPECENUM_NAME route_direction
-#define SPECENUM_VALUE0 RDIR_FROM
-#define SPECENUM_VALUE0NAME N_("?routedir:From")
-#define SPECENUM_VALUE1 RDIR_TO
-#define SPECENUM_VALUE1NAME N_("?routedir:To")
-#define SPECENUM_VALUE2 RDIR_BIDIRECTIONAL
-#define SPECENUM_VALUE2NAME N_("?routedir:Bidirectional")
+#define SPECENUM_VALUE0 RDIR_NONE
+#define SPECENUM_VALUE0NAME N_("?routedir:None")
+#define SPECENUM_VALUE1 RDIR_FROM
+#define SPECENUM_VALUE1NAME N_("?routedir:From")
+#define SPECENUM_VALUE2 RDIR_TO
+#define SPECENUM_VALUE2NAME N_("?routedir:To")
+#define SPECENUM_VALUE3 RDIR_BIDIRECTIONAL
+#define SPECENUM_VALUE3NAME N_("?routedir:Bidirectional")
 #include "specenum_gen.h"
 
 struct trade_route_settings {
   int trade_pct;
-  enum traderoute_illegal_cancelling cancelling;
-  enum traderoute_bonus_type bonus_type;
+  enum trade_route_illegal_cancelling cancelling;
+  enum trade_route_bonus_type bonus_type;
 };
 
 struct goods_type;
@@ -90,7 +96,7 @@ struct trade_route {
   TYPED_LIST_ITERATE(struct trade_route, trade_route_list, proute)
 #define trade_route_list_iterate_end LIST_ITERATE_END
 
-int max_trade_routes(const struct city *pcity);
+unsigned max_trade_routes(const struct city *pcity);
 enum trade_route_type cities_trade_route_type(const struct city *pcity1,
                                               const struct city *pcity2);
 int trade_route_type_trade_pct(enum trade_route_type type);
@@ -99,24 +105,27 @@ void trade_route_types_init(void);
 const char *trade_route_type_name(enum trade_route_type type);
 enum trade_route_type trade_route_type_by_name(const char *name);
 
-const char *traderoute_cancelling_type_name(enum traderoute_illegal_cancelling type);
-enum traderoute_illegal_cancelling traderoute_cancelling_type_by_name(const char *name);
+const char *trade_route_cancelling_type_name(enum trade_route_illegal_cancelling type);
+enum trade_route_illegal_cancelling trade_route_cancelling_type_by_name(const char *name);
 
 struct trade_route_settings *
 trade_route_settings_by_type(enum trade_route_type type);
 
 bool can_cities_trade(const struct city *pc1, const struct city *pc2);
-bool can_establish_trade_route(const struct city *pc1, const struct city *pc2);
+bool can_establish_trade_route(const struct city *pc1, const struct city *pc2,
+                               int priority);
 bool have_cities_trade_route(const struct city *pc1, const struct city *pc2);
 int trade_base_between_cities(const struct city *pc1, const struct city *pc2);
 int trade_from_route(const struct city *pc1, const struct trade_route *route,
 		     int base);
 int city_num_trade_routes(const struct city *pcity);
+int max_trade_prod(const struct city *pcity);
 int get_caravan_enter_city_trade_bonus(const struct city *pc1,
                                        const struct city *pc2,
+                                       const struct unit_type *ut,
                                        struct goods_type *pgood,
                                        const bool establish_trade);
-int city_trade_removable(const struct city *pcity,
+int city_trade_removable(const struct city *pcity, int priority,
                          struct trade_route_list *would_remove);
 
 #define trade_routes_iterate(c, proute)                     \
@@ -129,12 +138,16 @@ do {                                                        \
 
 #define trade_routes_iterate_safe(c, proute)                \
 {                                                           \
-  int _routes##_size = trade_route_list_size(c->routes);    \
+  struct city *c##_proute = c;                              \
+  int _routes##_size = trade_route_list_size(c##_proute->routes); \
+                                                            \
   if (_routes##_size > 0) {                                 \
     struct trade_route *_routes##_saved[_routes##_size];    \
-    int _routes##_index = 0;                                \
-    trade_routes_iterate(c, _proute) {                      \
-      _routes##_saved[_routes##_index++] = _proute;         \
+    int _routes##_index;                                    \
+                                                            \
+    _routes##_size = 0;                                     \
+    trade_routes_iterate(c##_proute, _proute) {             \
+      _routes##_saved[_routes##_size++] = _proute;          \
     } trade_routes_iterate_end;                             \
     for (_routes##_index = 0;                               \
          _routes##_index < _routes##_size;                  \
@@ -161,21 +174,29 @@ do {                                                        \
 #define SPECENUM_VALUE0NAME "Bidirectional"
 #define SPECENUM_VALUE1 GF_DEPLETES
 #define SPECENUM_VALUE1NAME "Depletes"
+#define SPECENUM_VALUE2 GF_SELF_PROVIDED
+#define SPECENUM_VALUE2NAME "Self-Provided"
 #define SPECENUM_COUNT GF_COUNT
 #define SPECENUM_BITVECTOR bv_goods_flags
 #include "specenum_gen.h"
+
+/* Some places assume this to be bigger than any actual goods priority */
+#define GOODS_HIGH_PRIORITY 100
 
 struct goods_type
 {
   int id;
   struct name_translation name;
-  bool disabled; /* Does not really exist - hole in goods array */
+  bool ruledit_disabled; /* Does not really exist - hole in goods array */
 
   struct requirement_vector reqs;
 
   int from_pct;
   int to_pct;
   int onetime_pct;
+
+  int select_priority;
+  int replace_priority;
 
   bv_goods_flags flags;
 
@@ -197,9 +218,13 @@ struct goods_type *goods_by_translated_name(const char *name);
 
 bool goods_has_flag(const struct goods_type *pgood, enum goods_flag_id flag);
 
-bool goods_can_be_provided(struct city *pcity, struct goods_type *pgood,
-                           struct unit *punit);
-struct goods_type *goods_from_city_to_unit(struct city *src, struct unit *punit);
+bool goods_can_be_provided(const struct city *pcity,
+                           const struct goods_type *pgood,
+                           const struct unit *punit);
+struct goods_type *goods_from_city_to_unit(const struct city *src,
+                                           const struct unit *punit);
+struct goods_type *unit_current_goods(const struct unit *punit,
+                                      const struct city *homecity);
 bool city_receives_goods(const struct city *pcity,
                          const struct goods_type *pgood);
 
@@ -213,11 +238,11 @@ bool city_receives_goods(const struct city *pcity,
   }                                                  \
 }
 
-#define goods_active_type_iterate(_p)                         \
+#define goods_type_re_active_iterate(_p)                      \
   goods_type_iterate(_p) {                                    \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define goods_active_type_iterate_end                         \
+#define goods_type_re_active_iterate_end                      \
     }                                                         \
   } goods_type_iterate_end;
 
@@ -225,4 +250,4 @@ bool city_receives_goods(const struct city *pcity,
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__TRADEROUTES_H */
+#endif /* FC__TRADEROUTES_H */

@@ -2,8 +2,8 @@
 BUGS
 ====
 
-Freeciv 3.1 certainly contains some bugs. Please report all
-you find to https://www.hostedredmine.com/projects/freeciv.
+Freeciv 3.4 certainly contains some bugs. Please report all
+you find to https://redmine.freeciv.org/projects/freeciv
 
 
 REPORTING A BUG:
@@ -14,14 +14,14 @@ Here's what to do:
  - Check that it is not listed as a known bug! For a continuously
    updated list, see:
 
-        http://www.freeciv.org/wiki/Known_Bugs
+        https://www.freeciv.org/wiki/Known_Bugs
 
  - Check the Freeciv website, to ensure you're playing the latest
-   version.  (We may have already fixed the problem.)
+   version. (We may have already fixed the problem.)
 
  - Check the Freeciv Bug Tracking System at:
 
-        https://www.hostedredmine.com/projects/freeciv
+        https://redmine.freeciv.org/projects/freeciv
 
    to see if the bug has already been reported.
 
@@ -29,7 +29,7 @@ Here's what to do:
 
    If you get any GDK/GTK messages, as for example:
 
-     Gtk-CRITICAL **: file gtkobject.c: line 1163 (gtk_object_ref): 
+     Gtk-CRITICAL **: file gtkobject.c: line 1163 (gtk_object_ref):
      assertion object->ref_count > 0' failed.
 
    please restart your client and append "-- --g-fatal-warnings" to
@@ -40,12 +40,11 @@ Here's what to do:
 
    - Describe the problem, including any messages that were displayed.
 
-   - Indicate which client(s) you are using (gtk3, gtk3.22, gtk3x,
-     SDL2, or Qt).
+   - Indicate which client(s) you are using (gtk3.22, gtk4, SDL2, SDL3, or Qt).
 
    - Tell us the name and version of:
 
-       - The Operating System you're using.  You may find the
+       - The Operating System you're using. You may find the
          "uname -a" command useful.
 
        - The version number of Freeciv.
@@ -63,6 +62,10 @@ Here's what to do:
          know them) of the SDL2, SDL2_image, SDL2_gfx, and SDL2_ttf
          libraries.
 
+       - If you are using the SDL3 client, the version numbers (if you
+         know them) of the SDL3, SDL3_image, and SDL3_ttf
+         libraries.
+
        - If you're compiling from source code, the name
          and version number of the compiler.
 
@@ -71,14 +74,14 @@ Here's what to do:
          got it from.
 
    - If Freeciv "dumps core", then we may ask you to use a debugger to
-     give us a "stack trace".  You'll need the "core" file for this as
+     give us a "stack trace". You'll need the "core" file for this as
      well as the binary which you used, so please backup both.
 
    - If it is a bug in a translation, it should be reported to the
-     Primary Contact for the language.  For their names and addresses,
+     Primary Contact for the language. For their names and addresses,
      see:
 
-        http://www.freeciv.org/wiki/Localization
+        https://www.freeciv.org/wiki/Localization
 
 
 FURTHER INFORMATION:
@@ -86,4 +89,4 @@ FURTHER INFORMATION:
 
 For more information, as always, see the Freeciv website:
 
-        http://www.freeciv.org/
+        https://www.freeciv.org/

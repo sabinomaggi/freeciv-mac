@@ -30,10 +30,10 @@
 #include "infracache.h"
 
 /* ai/default */
-#include "aiplayer.h"
 #include "daimilitary.h"
+#include "daiplayer.h"
 
-/* ai/threxpr */
+/* ai/tex */
 #include "texaicity.h"
 #include "texaiworld.h"
 
@@ -93,7 +93,7 @@ static void texai_thread_start(void *arg)
   }
 
   /* Just wait until we are signaled to shutdown */
-  fc_allocate_mutex(&exthrai.msgs_to.mutex);
+  fc_mutex_allocate(&exthrai.msgs_to.mutex);
   while (!finished) {
     fc_thread_cond_wait(&exthrai.msgs_to.thr_cond, &exthrai.msgs_to.mutex);
 
@@ -101,7 +101,7 @@ static void texai_thread_start(void *arg)
       finished = TRUE;
     }
   }
-  fc_release_mutex(&exthrai.msgs_to.mutex);
+  fc_mutex_release(&exthrai.msgs_to.mutex);
 
   texai_world_close();
 
@@ -153,7 +153,7 @@ static void texai_map_free_recv(void)
 /**********************************************************************//**
   Callback that returns unit list from player tex ai data.
 **************************************************************************/
-static struct unit_list *texai_player_units(struct player *pplayer)
+struct unit_list *texai_player_units(struct player *pplayer)
 {
   struct texai_plr *plr_data = player_ai_data(pplayer, texai_get_self());
 
@@ -165,7 +165,7 @@ static struct unit_list *texai_player_units(struct player *pplayer)
 **************************************************************************/
 static enum texai_abort_msg_class texai_check_messages(struct ai_type *ait)
 {
-  enum texai_abort_msg_class ret_abort= TEXAI_ABORT_NONE;
+  enum texai_abort_msg_class ret_abort = TEXAI_ABORT_NONE;
 
   texaimsg_list_allocate_mutex(exthrai.msgs_to.msglist);
   while (texaimsg_list_size(exthrai.msgs_to.msglist) > 0) {
@@ -178,9 +178,9 @@ static enum texai_abort_msg_class texai_check_messages(struct ai_type *ait)
 
     log_debug("Plr thr got %s", texaimsgtype_name(msg->type));
 
-    switch(msg->type) {
+    switch (msg->type) {
     case TEXAI_MSG_FIRST_ACTIVITIES:
-      fc_allocate_mutex(&game.server.mutexes.city_list);
+      fc_mutex_allocate(&game.server.mutexes.city_list);
 
       initialize_infrastructure_cache(msg->plr);
 
@@ -196,8 +196,9 @@ static enum texai_abort_msg_class texai_check_messages(struct ai_type *ait)
         texai_city_worker_wants(ait, msg->plr, pcity);
 
         if (tex_city != NULL) {
-          choice = military_advisor_choose_build(ait, msg->plr, tex_city,
-                                                 texai_map_get(), texai_player_units);
+          choice = military_advisor_choose_build(ait, texai_map_get(),
+                                                 msg->plr, tex_city,
+                                                 texai_player_units);
           choice_req->city_id = tex_city->id;
           adv_choice_copy(&(choice_req->choice), choice);
           adv_free_choice(choice);
@@ -206,16 +207,16 @@ static enum texai_abort_msg_class texai_check_messages(struct ai_type *ait)
 
         /* Release mutex for a second in case main thread
          * wants to do something to city list. */
-        fc_release_mutex(&game.server.mutexes.city_list);
+        fc_mutex_release(&game.server.mutexes.city_list);
 
         /* Recursive message check in case phase is finished. */
         new_abort = texai_check_messages(ait);
-        fc_allocate_mutex(&game.server.mutexes.city_list);
+        fc_mutex_allocate(&game.server.mutexes.city_list);
         if (new_abort < TEXAI_ABORT_NONE) {
           break;
         }
       } city_list_iterate_safe_end;
-      fc_release_mutex(&game.server.mutexes.city_list);
+      fc_mutex_release(&game.server.mutexes.city_list);
 
       texai_send_req(TEXAI_REQ_TURN_DONE, msg->plr, NULL);
 
@@ -227,12 +228,14 @@ static enum texai_abort_msg_class texai_check_messages(struct ai_type *ait)
       texai_unit_moved_recv(msg->data);
       break;
     case TEXAI_MSG_UNIT_CREATED:
+    case TEXAI_MSG_UNIT_CHANGED:
       texai_unit_info_recv(msg->data, msg->type);
       break;
     case TEXAI_MSG_UNIT_DESTROYED:
       texai_unit_destruction_recv(msg->data);
       break;
     case TEXAI_MSG_CITY_CREATED:
+    case TEXAI_MSG_CITY_CHANGED:
       texai_city_info_recv(msg->data, msg->type);
       break;
     case TEXAI_MSG_CITY_DESTROYED:
@@ -251,7 +254,7 @@ static enum texai_abort_msg_class texai_check_messages(struct ai_type *ait)
       texai_map_free_recv();
       break;
     default:
-      log_error("Illegal message type %s (%d) for threaded ai!",
+      log_error("Illegal message type %s (%d) for tex ai!",
                 texaimsgtype_name(msg->type), msg->type);
       break;
     }
@@ -282,6 +285,7 @@ void texai_player_alloc(struct ai_type *ait, struct player *pplayer)
   dai_data_init(ait, pplayer);
 
   player_data->units = unit_list_new();
+  player_data->cities = city_list_new();
 }
 
 /**********************************************************************//**
@@ -297,6 +301,7 @@ void texai_player_free(struct ai_type *ait, struct player *pplayer)
   if (player_data != NULL) {
     player_set_ai_data(pplayer, ait, NULL);
     unit_list_destroy(player_data->units);
+    city_list_destroy(player_data->cities);
     FC_FREE(player_data);
   }
 }
@@ -308,7 +313,7 @@ void texai_control_gained(struct ai_type *ait, struct player *pplayer)
 {
   exthrai.num_players++;
 
-  log_debug("%s now under threxp AI (%d)", pplayer->name,
+  log_debug("%s now under tex AI (%d)", pplayer->name,
             exthrai.num_players);
 
   if (!exthrai.thread_running) {
@@ -316,10 +321,19 @@ void texai_control_gained(struct ai_type *ait, struct player *pplayer)
     exthrai.reqs_from.reqlist = texaireq_list_new();
 
     exthrai.thread_running = TRUE;
- 
+
     fc_thread_cond_init(&exthrai.msgs_to.thr_cond);
-    fc_init_mutex(&exthrai.msgs_to.mutex);
+    fc_mutex_init(&exthrai.msgs_to.mutex);
     fc_thread_start(&exthrai.ait, texai_thread_start, ait);
+
+    players_iterate(oplayer) {
+      city_list_iterate(oplayer->cities, pcity) {
+        texai_city_created(pcity);
+      } city_list_iterate_end;
+      unit_list_iterate(oplayer->units, punit) {
+        texai_unit_created(punit);
+      } unit_list_iterate_end;
+    } players_iterate_end;
   }
 }
 
@@ -330,7 +344,7 @@ void texai_control_lost(struct ai_type *ait, struct player *pplayer)
 {
   exthrai.num_players--;
 
-  log_debug("%s no longer under threaded AI (%d)", pplayer->name,
+  log_debug("%s no longer under tex AI (%d)", pplayer->name,
             exthrai.num_players);
 
   if (exthrai.num_players <= 0) {
@@ -340,7 +354,7 @@ void texai_control_lost(struct ai_type *ait, struct player *pplayer)
     exthrai.thread_running = FALSE;
 
     fc_thread_cond_destroy(&exthrai.msgs_to.thr_cond);
-    fc_destroy_mutex(&exthrai.msgs_to.mutex);
+    fc_mutex_destroy(&exthrai.msgs_to.mutex);
     texaimsg_list_destroy(exthrai.msgs_to.msglist);
     texaireq_list_destroy(exthrai.reqs_from.reqlist);
   }
@@ -363,7 +377,7 @@ void texai_refresh(struct ai_type *ait, struct player *pplayer)
 
        log_debug("Plr thr sent %s", texaireqtype_name(req->type));
 
-       switch(req->type) {
+       switch (req->type) {
        case TEXAI_REQ_WORKER_TASK:
          texai_req_worker_task_rcv(req);
          break;
@@ -399,10 +413,10 @@ void texai_refresh(struct ai_type *ait, struct player *pplayer)
 **************************************************************************/
 void texai_msg_to_thr(struct texai_msg *msg)
 {
-  fc_allocate_mutex(&exthrai.msgs_to.mutex);
+  fc_mutex_allocate(&exthrai.msgs_to.mutex);
   texaimsg_list_append(exthrai.msgs_to.msglist, msg);
   fc_thread_cond_signal(&exthrai.msgs_to.thr_cond);
-  fc_release_mutex(&exthrai.msgs_to.mutex);
+  fc_mutex_release(&exthrai.msgs_to.mutex);
 }
 
 /**********************************************************************//**

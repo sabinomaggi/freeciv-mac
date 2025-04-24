@@ -16,20 +16,24 @@
                              -------------------
     begin                : Mon Jul 1 2002
     copyright            : (C) 2000 by Michael Speck
-			 : (C) 2002 by Rafał Bursig
+                         : (C) 2002 by Rafał Bursig
     email                : Michael Speck <kulkanie@gmx.net>
-			 : Rafał Bursig <bursig@poczta.fm>
+                         : Rafał Bursig <bursig@poczta.fm>
 ***********************************************************************/
 
 #ifndef FC__GRAPHICS_H
 #define FC__GRAPHICS_H
 
 /* SDL */
+#ifdef SDL2_GFX_FROM_TREE
+#include "SDL2_gfx/SDL2_rotozoom.h"
+#else
 #ifdef SDL2_PLAIN_INCLUDE
 #include <SDL2_rotozoom.h>
 #else  /* SDL2_PLAIN_INCLUDE */
 #include <SDL2/SDL2_rotozoom.h>
 #endif /* SDL2_PLAIN_INCLUDE */
+#endif /* SDL2_GFX_FROM_TREE */
 
 /* client */
 #include "graphics_g.h"
@@ -38,7 +42,7 @@
 #include "canvas.h"
 #include "gui_main.h"
 
-#define	RECT_LIMIT  80
+#define RECT_LIMIT  80
 
 /* DUFFS LOOPs come from SDL lib (LGPL) */
 /* DUFFS_LOOP_DOUBLE2 and DUFFS_LOOP_QUATRO2 was created by Rafal Bursig under GPL */
@@ -54,15 +58,22 @@
 
 /* 8-times unrolled loop */
 #define DUFFS_LOOP8(pixel_copy_increment, width)			\
-{ int n = (width+7)/8;							\
+{ int n = (width + 7) / 8;						\
 	switch (width & 7) {						\
 	case 0: do {	pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 7:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 6:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 5:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 4:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 3:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 2:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 1:		pixel_copy_increment;				\
 		} while ( --n > 0 );					\
 	}								\
@@ -70,11 +81,14 @@
 
 /* 4-times unrolled loop */
 #define DUFFS_LOOP4(pixel_copy_increment, width)			\
-{ int n = (width+3)/4;							\
+{ int n = (width + 3) / 4;						\
 	switch (width & 3) {						\
 	case 0: do {	pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 3:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 2:		pixel_copy_increment;				\
+                        fc__fallthrough;                                \
 	case 1:		pixel_copy_increment;				\
 		} while ( --n > 0 );					\
 	}								\
@@ -90,8 +104,9 @@
 	}								\
 	if ( w > 0 ) {							\
 	    n = ( w + 2 ) / 4;						\
-	    switch( w & 2 ) {						\
+	    switch ( w & 2 ) {						\
 	    case 0: do {	double_pixel_copy_increment;		\
+                                fc__fallthrough;                        \
 	    case 2:		double_pixel_copy_increment;		\
 		    } while ( --n > 0 );				\
 	    }								\
@@ -113,7 +128,7 @@
 	}								\
 	if ( w > 0 ) {							\
 	    n = ( w + 7 ) / 8;						\
-	    switch( w & 4 ) {						\
+	    switch ( w & 4 ) {						\
 	    case 0: do {	quatro_pixel_copy_increment;		\
 	    case 4:		quatro_pixel_copy_increment;		\
 		    } while ( --n > 0 );				\
@@ -175,8 +190,8 @@
 
 #endif /* USE_DUFFS_LOOP */
 
-/* shrink surface on 320x240 screen*/
-#ifdef SMALL_SCREEN
+/* Shrink surface on 320x240 screen */
+#ifdef GUI_SDL2_SMALL_SCREEN
 #define DEFAULT_ZOOM 0.5
 #define adj_surf(surf) zoomSurface((surf), DEFAULT_ZOOM, DEFAULT_ZOOM, 0)
 #else
@@ -187,7 +202,7 @@
 
 struct gui_layer;
 
-struct main {
+struct sdl2_data {
   int rects_count;		/* update rect. array counter */
   int guis_count;		/* gui buffers array counter */
   SDL_Rect rects[RECT_LIMIT];	/* update rect. list */
@@ -202,12 +217,15 @@ struct main {
   SDL_Event event;		/* main event struct */
 };
 
-extern struct main Main;
+extern struct sdl2_data main_data;
 
 /* GUI layer */
+/* A gui_layer is a surface with its own origin. Each widget belongs
+ * to a gui_layer. gui_layers are stored in an array main_data.guis
+ * (a "window manager"). */
 
 struct gui_layer {
-  SDL_Rect dest_rect;  /* only x and y are used */
+  SDL_Rect dest_rect;  /* origin: only x and y are used */
   SDL_Surface *surface;
 };
 
@@ -220,6 +238,7 @@ struct gui_layer *add_gui_layer(int width, int height);
 void remove_gui_layer(struct gui_layer *gui_layer);
 
 void screen_rect_to_layer_rect(struct gui_layer *gui_layer, SDL_Rect *dest_rect);
+void layer_rect_to_screen_rect(struct gui_layer *gui_layer, SDL_Rect *dest_rect);
 
 /* ---------- */
 
@@ -229,29 +248,29 @@ int alphablit(SDL_Surface *src, SDL_Rect *srcrect,
 int screen_blit(SDL_Surface *src, SDL_Rect *srcrect, SDL_Rect *dstrect,
                 unsigned char alpha_mod);
 
-SDL_Surface *load_surf(const char *pFname);
+SDL_Surface *load_surf(const char *fname);
 
 SDL_Surface *create_surf_with_format(SDL_PixelFormat *pf,
                                      int width, int height, Uint32 flags);
 SDL_Surface *create_surf(int width, int height, Uint32 flags);
 SDL_Surface *convert_surf(SDL_Surface *surf_in);
 
-SDL_Surface *create_filled_surface(Uint16 w, Uint16 h, Uint32 iFlags,
-                                   SDL_Color *pColor);
+SDL_Surface *create_filled_surface(Uint16 w, Uint16 h, Uint32 flags,
+                                   SDL_Color *pcolor);
 
-SDL_Surface *crop_rect_from_surface(SDL_Surface *pSource,
-                                    SDL_Rect *pRect);
+SDL_Surface *crop_rect_from_surface(SDL_Surface *psource,
+                                    SDL_Rect *prect);
 
-SDL_Surface *mask_surface(SDL_Surface *pSrc, SDL_Surface *pMask,
+SDL_Surface *mask_surface(SDL_Surface *src, SDL_Surface *mask,
                           int mask_offset_x, int mask_offset_y);
 
 SDL_Surface *copy_surface(SDL_Surface *src);
 
-int blit_entire_src(SDL_Surface *pSrc,
-                    SDL_Surface *pDest, Sint16 iDest_x, Sint16 iDest_y);
+int blit_entire_src(SDL_Surface *psrc,
+                    SDL_Surface *pdest, Sint16 dest_x, Sint16 dest_y);
 
-Uint32 getpixel(SDL_Surface *pSurface, Sint16 x, Sint16 y);
-Uint32 get_first_pixel(SDL_Surface *pSurface);
+Uint32 get_pixel(SDL_Surface *surf, Sint16 x, Sint16 y);
+Uint32 get_first_pixel(SDL_Surface *surf);
 
 void create_frame(SDL_Surface *dest, Sint16 left, Sint16 top,
                   Sint16 right, Sint16 bottom,
@@ -263,7 +282,8 @@ void create_line(SDL_Surface *dest, Sint16 x0, Sint16 y0, Sint16 x1, Sint16 y1,
 /* SDL */
 void init_sdl(int f);
 void quit_sdl(void);
-int set_video_mode(int iWidth, int iHeight, int iFlags);
+bool set_video_mode(unsigned width, unsigned height, unsigned flags);
+bool create_surfaces(int width, int height);
 
 void update_main_screen(void);
 
@@ -271,76 +291,77 @@ int main_window_width(void);
 int main_window_height(void);
 
 /* Rect */
-bool correct_rect_region(SDL_Rect *pRect);
-bool is_in_rect_area(int x, int y, SDL_Rect rect);
+bool correct_rect_region(SDL_Rect *prect);
+bool is_in_rect_area(int x, int y, const SDL_Rect *rect);
 
-int fill_rect_alpha(SDL_Surface *pSurface, SDL_Rect *pRect,
-                    SDL_Color *pColor);
+int fill_rect_alpha(SDL_Surface *surf, SDL_Rect *prect,
+                    SDL_Color *pcolor);
 
-int clear_surface(SDL_Surface *pSurf, SDL_Rect *dstrect);
+int clear_surface(SDL_Surface *surf, SDL_Rect *dstrect);
 
 /* ================================================================= */
 
-SDL_Surface *ResizeSurface(const SDL_Surface *pSrc, Uint16 new_width,
-                           Uint16 new_height, int smooth);
+SDL_Surface *resize_surface(const SDL_Surface *psrc, Uint16 new_width,
+                            Uint16 new_height, int smooth);
 
-SDL_Surface *ResizeSurfaceBox(const SDL_Surface *pSrc,
-                              Uint16 new_width, Uint16 new_height, int smooth,
-                              bool scale_up, bool absolute_dimensions);
+SDL_Surface *resize_surface_box(const SDL_Surface *psrc,
+                                Uint16 new_width, Uint16 new_height,
+                                int smooth, bool scale_up,
+                                bool absolute_dimensions);
 
-SDL_Surface *crop_visible_part_from_surface(SDL_Surface *pSrc);
-SDL_Rect get_smaller_surface_rect(SDL_Surface *pSrc);
+SDL_Surface *crop_visible_part_from_surface(SDL_Surface *psrc);
+void get_smaller_surface_rect(SDL_Surface *surf, SDL_Rect *rect);
 
 #define map_rgba(format, color) \
   SDL_MapRGBA(format, (color).r, (color).g, (color).b, (color).a)
 
 #define crop_rect_from_screen(rect) \
-  crop_rect_from_surface(Main.screen, &rect)
+  crop_rect_from_surface(main_data.screen, &rect)
 
-/* free surface with check and clear pointer */
-#define FREESURFACE(ptr)		\
-do {					\
-  if (ptr) {				\
-    SDL_FreeSurface(ptr);		\
-    ptr = NULL;				\
-  }					\
+/* Free surface with check and clear pointer */
+#define FREESURFACE(ptr)                \
+do {                                    \
+  if (ptr) {                            \
+    SDL_FreeSurface(ptr);               \
+    ptr = NULL;                         \
+  }                                     \
 } while (FALSE)
 
 /*
- *  lock surface
+ * Lock surface
  */
-#define lock_surf(pSurf)	\
-do {				\
-  if (SDL_MUSTLOCK(pSurf)) {	\
-    SDL_LockSurface(pSurf);	\
-  }				\
+#define lock_surf(surf)         \
+do {                            \
+  if (SDL_MUSTLOCK(surf)) {     \
+    SDL_LockSurface(surf);      \
+  }                             \
 } while (FALSE)
 
 
 /*
- *   unlock surface
+ * Unlock surface
  */
-#define unlock_surf(pSurf)		\
-do {					\
-    if (SDL_MUSTLOCK(pSurf)) {		\
-	SDL_UnlockSurface(pSurf);	\
-    }                                   \
+#define unlock_surf(surf)               \
+do {                                    \
+  if (SDL_MUSTLOCK(surf)) {             \
+    SDL_UnlockSurface(surf);            \
+  }                                     \
 } while (FALSE)
 
 /*
- *	lock screen surface
+ *  Lock screen surface
  */
-#define lock_screen() lock_surf(Main.screen)
+#define lock_screen() lock_surf(main_data.screen)
 
 /*
- *	unlock screen surface
+ *  Unlock screen surface
  */
-#define unlock_screen()	unlock_surf(Main.screen)
+#define unlock_screen() unlock_surf(main_data.screen)
 
-#define putpixel(pSurface, x, y, pixel)					  \
+#define putpixel(surf, x, y, pixel)					  \
 do {									  \
-    Uint8 *buf_ptr = ((Uint8 *)pSurface->pixels + (y * pSurface->pitch)); \
-    switch(pSurface->format->BytesPerPixel) {				  \
+    Uint8 *buf_ptr = ((Uint8 *)surf->pixels + (y * surf->pitch)); \
+    switch (surf->format->BytesPerPixel) {				  \
 		case 1:							  \
 			buf_ptr += x;					  \
 			*(Uint8 *)buf_ptr = pixel;			  \

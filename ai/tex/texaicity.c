@@ -33,14 +33,15 @@
 /* server/advisors */
 #include "advbuilding.h"
 #include "advdata.h"
-#include "autosettlers.h"
+#include "autoworkers.h"
 #include "infracache.h"
 
 /* ai/default */
-#include "aidata.h"
+#include "daidata.h"
 
-/* ai/threxpr */
+/* ai/tex */
 #include "texaimsg.h"
+#include "texaiplayer.h"
 
 #include "texaicity.h"
 
@@ -159,6 +160,7 @@ static void texai_tile_worker_task_select(struct player *pplayer,
 {
   int orig_value;
   bool potential_worst_worked = FALSE;
+  const struct civ_map *nmap = &(wld.map);
 
   if (!city_can_work_tile(pcity, ptile)) {
     return;
@@ -173,7 +175,7 @@ static void texai_tile_worker_task_select(struct player *pplayer,
     potential_worst_worked = TRUE;
   }
 
-  as_transform_activity_iterate(act) {
+  aw_transform_action_iterate(act) {
     bool consider = TRUE;
     bool possible = FALSE;
     enum extra_cause cause;
@@ -183,8 +185,8 @@ static void texai_tile_worker_task_select(struct player *pplayer,
     /* Do not request activities that already are under way. */
     unit_list_iterate(ptile->units, punit) {
       if (unit_owner(punit) == pplayer
-          && unit_has_type_flag(punit, UTYF_SETTLERS)
-          && punit->activity == act) {
+          && unit_has_type_flag(punit, UTYF_WORKERS)
+          && punit->activity == action_id_get_activity(act)) {
         consider = FALSE;
         break;
       }
@@ -194,8 +196,8 @@ static void texai_tile_worker_task_select(struct player *pplayer,
       continue;
     }
 
-    cause = activity_to_extra_cause(act);
-    rmcause = activity_to_extra_rmcause(act);
+    cause = activity_to_extra_cause(action_id_get_activity(act));
+    rmcause = activity_to_extra_rmcause(action_id_get_activity(act));
 
     unit_list_iterate(units, punit) {
       if (cause != EC_NONE) {
@@ -204,24 +206,34 @@ static void texai_tile_worker_task_select(struct player *pplayer,
         tgt = prev_extra_in_tile(ptile, rmcause, pplayer, punit);
       }
 
-      if (can_unit_do_activity_targeted_at(punit, act, tgt, ptile)) {
+      if (action_prob_possible(
+            action_speculate_unit_on_tile(nmap, act,
+                                          punit, unit_home(punit), ptile,
+                                          TRUE,
+                                          ptile, tgt))) {
         possible = TRUE;
         break;
       }
     } unit_list_iterate_end;
 
     if (possible) {
-      int value = adv_city_worker_act_get(pcity, cindex, act);
+      int value = adv_city_worker_act_get(pcity, cindex,
+                                          action_id_get_activity(act));
 
       if (tile_worked(ptile) == pcity) {
         if ((value - orig_value) * TWMP > worked->want) {
           worked->want       = TWMP * (value - orig_value);
           worked->ptile      = ptile;
-          worked->act        = act;
+          worked->act        = action_id_get_activity(act);
           worked->tgt        = NULL;
           if (limit == TWTL_BUILDABLE_UNITS) {
             unit_list_iterate(units, punit) {
-              if (can_unit_do_activity_targeted_at(punit, act, tgt, ptile)) {
+              if (action_prob_possible(
+                    action_speculate_unit_on_tile(nmap, act,
+                                                  punit, unit_home(punit),
+                                                  ptile,
+                                                  TRUE,
+                                                  ptile, tgt))) {
                 state->wants[utype_index(unit_type_get(punit))] += worked->want;
               }
             } unit_list_iterate_end;
@@ -239,11 +251,16 @@ static void texai_tile_worker_task_select(struct player *pplayer,
           state->uw_max_base   = value;
           unworked->want       = TWMP * (value - orig_value);
           unworked->ptile      = ptile;
-          unworked->act        = act;
+          unworked->act        = action_id_get_activity(act);
           unworked->tgt        = NULL;
           if (limit == TWTL_BUILDABLE_UNITS) {
             unit_list_iterate(units, punit) {
-              if (can_unit_do_activity_targeted_at(punit, act, tgt, ptile)) {
+              if (action_prob_possible(
+                    action_speculate_unit_on_tile(nmap, act,
+                                                  punit, unit_home(punit),
+                                                  ptile,
+                                                  TRUE,
+                                                  ptile, tgt))) {
                 state->wants[utype_index(unit_type_get(punit))] += unworked->want;
               }
             } unit_list_iterate_end;
@@ -251,33 +268,47 @@ static void texai_tile_worker_task_select(struct player *pplayer,
         }
       }
     }
-  } as_transform_activity_iterate_end;
+  } aw_transform_action_iterate_end;
 
   extra_type_iterate(tgt) {
-    enum unit_activity act = ACTIVITY_LAST;
+    struct action *paction = NULL;
     bool removing = tile_has_extra(ptile, tgt);
 
     unit_list_iterate(units, punit) {
       if (removing) {
-        as_rmextra_activity_iterate(try_act) {
-          if (is_extra_removed_by_action(tgt, try_act)
-              && can_unit_do_activity_targeted_at(punit, try_act, tgt, ptile)) {
-            act = try_act;
+        aw_rmextra_action_iterate(try_act) {
+          struct action *taction = action_by_number(try_act);
+
+          if (is_extra_removed_by_action(tgt, taction)
+              && action_prob_possible(
+                action_speculate_unit_on_tile(nmap, try_act,
+                                              punit,
+                                              unit_home(punit), ptile,
+                                              TRUE,
+                                              ptile, tgt))) {
+            paction = taction;
             break;
           }
-        } as_rmextra_activity_iterate_end;
+        } aw_rmextra_action_iterate_end;
       } else {
-        as_extra_activity_iterate(try_act) {
-          if (is_extra_caused_by_action(tgt, try_act)
-              && can_unit_do_activity_targeted_at(punit, try_act, tgt, ptile)) {
-            act = try_act;
+        aw_extra_action_iterate(try_act) {
+          struct action *taction = action_by_number(try_act);
+
+          if (is_extra_caused_by_action(tgt, taction)
+              && action_prob_possible(
+                action_speculate_unit_on_tile(nmap, try_act,
+                                              punit,
+                                              unit_home(punit), ptile,
+                                              TRUE,
+                                              ptile, tgt))) {
+            paction = taction;
             break;
           }
-        } as_extra_activity_iterate_end;
+        } aw_extra_action_iterate_end;
       }
     } unit_list_iterate_end;
 
-    if (act != ACTIVITY_LAST) {
+    if (paction != NULL) {
       adv_want base_value;
       int value;
       adv_want extra;
@@ -287,8 +318,8 @@ static void texai_tile_worker_task_select(struct player *pplayer,
       /* Do not request activities that already are under way. */
       unit_list_iterate(ptile->units, punit) {
         if (unit_owner(punit) == pplayer
-            && unit_has_type_flag(punit, UTYF_SETTLERS)
-            && punit->activity == act) {
+            && unit_has_type_flag(punit, UTYF_WORKERS)
+            && punit->activity == action_get_activity(paction)) {
           consider = FALSE;
           break;
         }
@@ -339,7 +370,8 @@ static void texai_tile_worker_task_select(struct player *pplayer,
           }
         }
 
-        extra = adv_settlers_road_bonus(ptile, proad) * mc_multiplier / mc_divisor;
+        extra = adv_workers_road_bonus(&(wld.map), ptile, proad)
+          * mc_multiplier / mc_divisor;
 
         if (removing) {
           extra = -extra;
@@ -354,11 +386,17 @@ static void texai_tile_worker_task_select(struct player *pplayer,
         if ((value - orig_value) * TWMP > worked->want) {
           worked->want       = TWMP * (value - orig_value);
           worked->ptile      = ptile;
-          worked->act        = act;
+          worked->act        = action_get_activity(paction);
           worked->tgt        = tgt;
           if (limit == TWTL_BUILDABLE_UNITS) {
             unit_list_iterate(units, punit) {
-              if (can_unit_do_activity_targeted_at(punit, act, tgt, ptile)) {
+              fc_assert_action(action_get_target_kind(paction) == ATK_TILE,
+                               break);
+              if (action_prob_possible(action_speculate_unit_on_tile(
+                                           nmap, paction->id,
+                                           punit, unit_home(punit), ptile,
+                                           TRUE,
+                                           ptile, tgt))) {
                 state->wants[utype_index(unit_type_get(punit))] += worked->want;
               }
             } unit_list_iterate_end;
@@ -376,11 +414,17 @@ static void texai_tile_worker_task_select(struct player *pplayer,
           state->uw_max_base   = base_value;
           unworked->want       = TWMP * (value - orig_value);
           unworked->ptile      = ptile;
-          unworked->act        = act;
+          unworked->act        = action_get_activity(paction);
           unworked->tgt        = tgt;
           if (limit == TWTL_BUILDABLE_UNITS) {
             unit_list_iterate(units, punit) {
-              if (can_unit_do_activity_targeted_at(punit, act, tgt, ptile)) {
+              fc_assert_action(action_get_target_kind(paction) == ATK_TILE,
+                               break);
+              if (action_prob_possible(action_speculate_unit_on_tile(
+                                         nmap, paction->id,
+                                         punit, unit_home(punit), ptile,
+                                         TRUE,
+                                         ptile, tgt))) {
                 state->wants[utype_index(unit_type_get(punit))] += unworked->want;
               }
             } unit_list_iterate_end;
@@ -410,16 +454,17 @@ static bool texai_city_worker_task_select(struct ai_type *ait,
   struct texai_tile_state state = { .uw_max = 0, .uw_max_base = 0, .worst_worked = FC_INFINITY,
                                     .orig_worst_worked = 0, .old_worst_worked = FC_INFINITY };
   struct unit_list *units = NULL;
+  const struct civ_map *nmap = &(wld.map);
 
   switch (limit) {
   case TWTL_CURRENT_UNITS:
-    units = pplayer->units;
+    units = texai_player_units(pplayer);
     state.wants = NULL;
     break;
   case TWTL_BUILDABLE_UNITS:
     units = unit_list_new();
     unit_type_iterate(ptype) {
-      if (can_city_build_unit_now(pcity, ptype)) {
+      if (can_city_build_unit_now(nmap, pcity, ptype)) {
         unit_list_append(units, unit_virtual_create(pplayer, pcity, ptype, 0));
       }
     } unit_type_iterate_end;
@@ -427,7 +472,7 @@ static bool texai_city_worker_task_select(struct ai_type *ait,
     break;
   }
 
-  city_tile_iterate_index(city_map_radius_sq_get(pcity), city_tile(pcity),
+  city_tile_iterate_index(nmap, city_map_radius_sq_get(pcity), city_tile(pcity),
                           ptile, cindex) {
     texai_tile_worker_task_select(pplayer, pcity, ptile, cindex, units,
                                   &worked, &unworked, &state, limit);

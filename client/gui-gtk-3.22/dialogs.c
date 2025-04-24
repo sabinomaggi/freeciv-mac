@@ -38,6 +38,7 @@
 #include "map.h"
 #include "packets.h"
 #include "player.h"
+#include "sex.h"
 
 /* client */
 #include "client_main.h"
@@ -63,6 +64,7 @@
 #include "plrdlg.h"
 #include "wldlg.h"
 #include "unitselect.h"
+#include "unitselextradlg.h"
 
 #include "dialogs.h"
 
@@ -94,7 +96,6 @@ static int selected_sex;
 static int selected_style;
 
 static int is_showing_pillage_dialog = FALSE;
-static int unit_to_use_to_pillage;
 
 /**********************************************************************//**
   Popup a generic dialog to display some generic information.
@@ -108,7 +109,7 @@ void popup_notify_dialog(const char *caption, const char *headline,
   gui_dialog_new(&shell, GTK_NOTEBOOK(bottom_notebook), NULL, TRUE);
   gui_dialog_set_title(shell, caption);
 
-  gui_dialog_add_button(shell, "window-close", _("Close"),
+  gui_dialog_add_button(shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
   gui_dialog_set_default_response(shell, GTK_RESPONSE_CLOSE);
 
@@ -200,7 +201,7 @@ void popup_notify_goto_dialog(const char *headline, const char *lines,
 
   if (ptile == NULL) {
     shell = gtk_dialog_new_with_buttons(headline, NULL, 0,
-                                        _("Close"), GTK_RESPONSE_CLOSE,
+                                        _("_Close"), GTK_RESPONSE_CLOSE,
                                         NULL);
   } else {
     struct city *pcity = tile_city(ptile);
@@ -209,12 +210,12 @@ void popup_notify_goto_dialog(const char *headline, const char *lines,
       shell = gtk_dialog_new_with_buttons(headline, NULL, 0,
                                           _("Goto _Location"), 1,
                                           _("I_nspect City"), 2,
-                                          _("Close"), GTK_RESPONSE_CLOSE,
+                                          _("_Close"), GTK_RESPONSE_CLOSE,
                                           NULL);
     } else {
       shell = gtk_dialog_new_with_buttons(headline, NULL, 0,
                                           _("Goto _Location"), 1,
-                                          _("Close"), GTK_RESPONSE_CLOSE,
+                                          _("_Close"), GTK_RESPONSE_CLOSE,
                                           NULL);
     }
   }
@@ -251,7 +252,7 @@ void popup_connect_msg(const char *headline, const char *message)
   gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell))), label);
   gtk_widget_show(label);
 
-  gtk_dialog_add_button(GTK_DIALOG(shell), _("Close"),GTK_RESPONSE_CLOSE);
+  gtk_dialog_add_button(GTK_DIALOG(shell), _("_Close"),GTK_RESPONSE_CLOSE);
 
   g_signal_connect(shell, "response", G_CALLBACK(notify_connect_msg_response),
                    NULL);
@@ -307,28 +308,28 @@ void popup_revolution_dialog(struct government *government)
 }
 
 /**********************************************************************//**
-  NB: 'data' is a value of enum tile_special_type casted to a pointer.
+  Callback for pillage dialog.
 **************************************************************************/
-static void pillage_callback(GtkWidget *w, gpointer data)
-{
-  struct unit *punit;
-  int what = GPOINTER_TO_INT(data);
-
-  punit = game_unit_by_number(unit_to_use_to_pillage);
-  if (punit) {
-    struct extra_type *target = extra_by_number(what);
-
-    request_new_unit_activity_targeted(punit, ACTIVITY_PILLAGE,
-                                       target);
-  }
-}
-
-/**********************************************************************//**
-  Pillage dialog destroyed
-**************************************************************************/
-static void pillage_destroy_callback(GtkWidget *w, gpointer data)
+static void pillage_callback(GtkWidget *dlg, gint arg)
 {
   is_showing_pillage_dialog = FALSE;
+
+  if (arg == GTK_RESPONSE_YES) {
+    int au_id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(dlg),
+                                                  "actor"));
+    struct unit *actor = game_unit_by_number(au_id);
+
+    int tgt_id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(dlg),
+                                                   "target"));
+    struct extra_type *tgt_extra = extra_by_number(tgt_id);
+
+    if (actor && tgt_extra) {
+      request_new_unit_activity_targeted(actor, ACTIVITY_PILLAGE,
+                                         tgt_extra);
+    }
+  }
+
+  gtk_widget_destroy(dlg);
 }
 
 /**********************************************************************//**
@@ -336,36 +337,36 @@ static void pillage_destroy_callback(GtkWidget *w, gpointer data)
 **************************************************************************/
 void popup_pillage_dialog(struct unit *punit, bv_extras extras)
 {
-  GtkWidget *shl;
-
   if (!is_showing_pillage_dialog) {
+    /* Possibly legal target extras. */
+    bv_extras alternative;
+    /* Selected by default. */
+    struct extra_type *preferred_tgt;
+    /* Current target to check. */
     struct extra_type *tgt;
 
     is_showing_pillage_dialog = TRUE;
-    unit_to_use_to_pillage = punit->id;
 
-    shl = choice_dialog_start(GTK_WINDOW(toplevel),
-			       _("What To Pillage"),
-			       _("Select what to pillage:"));
+    BV_CLR_ALL(alternative);
+    preferred_tgt = get_preferred_pillage(extras);
 
     while ((tgt = get_preferred_pillage(extras))) {
       int what;
 
       what = extra_index(tgt);
       BV_CLR(extras, what);
-
-      choice_dialog_add(shl, extra_name_translation(tgt),
-                        G_CALLBACK(pillage_callback),
-                        GINT_TO_POINTER(what),
-                        FALSE, NULL);
+      BV_SET(alternative, what);
     }
 
-    choice_dialog_add(shl, _("Cancel"), 0, 0, FALSE, NULL);
-
-    choice_dialog_end(shl);
-
-    g_signal_connect(shl, "destroy", G_CALLBACK(pillage_destroy_callback),
-		     NULL);   
+    select_tgt_extra(punit, unit_tile(punit), alternative, preferred_tgt,
+                     /* TRANS: Pillage dialog title. */
+                     _("What To Pillage"),
+                     /* TRANS: Pillage dialog actor text. */
+                     _("Looking for target extra:"),
+                     /* TRANS: Pillage dialog target text. */
+                     _("Select what to pillage:"),
+                     /* TRANS: Pillage dialog do button text. */
+                     _("Pillage"), G_CALLBACK(pillage_callback));
   }
 }
 
@@ -382,7 +383,7 @@ void unit_select_dialog_popup(struct tile *ptile)
   Update unit selection dialog. It is a wrapper for the main function; see
   unitselect.c:unit_select_dialog_popup_main().
 **************************************************************************/
-void unit_select_dialog_update_real(void)
+void unit_select_dialog_update_real(void *unused)
 {
   unit_select_dialog_popup_main(NULL, FALSE);
 }
@@ -865,11 +866,11 @@ static void create_races_dialog(struct player *pplayer)
   shell = gtk_dialog_new_with_buttons(title,
                                       NULL,
                                       0,
-                                      _("Cancel"),
+                                      _("_Cancel"),
                                       GTK_RESPONSE_CANCEL,
                                       _("_Random Nation"),
                                       GTK_RESPONSE_NO, /* arbitrary */
-                                      _("Ok"),
+                                      _("_OK"),
                                       GTK_RESPONSE_ACCEPT,
                                       NULL);
   races_shell = shell;
@@ -1077,13 +1078,15 @@ static void create_races_dialog(struct player *pplayer)
   gtk_grid_attach(GTK_GRID(table), label, 0, 0, 1, 2);
   gtk_grid_attach(GTK_GRID(table), combo, 1, 0, 2, 1);
 
-  cmd = gtk_radio_button_new_with_mnemonic(NULL, _("_Female"));
+  cmd = gtk_radio_button_new_with_mnemonic(NULL,
+                                           sex_name_mnemonic(SEX_FEMALE, "_"));
   gtk_widget_set_margin_bottom(cmd, 6);
   races_sex[0] = cmd;
   gtk_grid_attach(GTK_GRID(table), cmd, 1, 1, 1, 1);
 
   cmd = gtk_radio_button_new_with_mnemonic_from_widget(GTK_RADIO_BUTTON(cmd),
-      _("_Male"));
+                                                       sex_name_mnemonic(SEX_MALE,
+                                                                         "_"));
   gtk_widget_set_margin_bottom(cmd, 6);
   races_sex[1] = cmd;
   gtk_grid_attach(GTK_GRID(table), cmd, 2, 1, 1, 1);
@@ -1176,9 +1179,9 @@ static void create_races_dialog(struct player *pplayer)
       G_CALLBACK(races_leader_callback), NULL);
 
   g_signal_connect(races_sex[0], "toggled",
-      G_CALLBACK(races_sex_callback), GINT_TO_POINTER(0));
+      G_CALLBACK(races_sex_callback), GINT_TO_POINTER(SEX_FEMALE));
   g_signal_connect(races_sex[1], "toggled",
-      G_CALLBACK(races_sex_callback), GINT_TO_POINTER(1));
+      G_CALLBACK(races_sex_callback), GINT_TO_POINTER(SEX_MALE));
 
   /* Finish up. */
   gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_CANCEL);
@@ -1419,9 +1422,10 @@ static void races_response(GtkWidget *w, gint response, gpointer data)
 /**********************************************************************//**
   Adjust tax rates from main window
 **************************************************************************/
-gboolean taxrates_callback(GtkWidget * w, GdkEventButton * ev, gpointer data)
+gboolean taxrates_callback(GtkWidget *w, GdkEventButton *ev, gpointer data)
 {
-  common_taxrates_callback((size_t) data);
+  common_taxrates_callback((size_t) data, FALSE);
+
   return TRUE;
 }
 
@@ -1533,15 +1537,27 @@ void show_tech_gained_dialog(Tech_type_id tech)
   Show tileset error dialog. It's blocking as client will
   shutdown as soon as this function returns.
 **************************************************************************/
-void show_tileset_error(const char *msg)
+void show_tileset_error(bool fatal, const char *tset_name, const char *msg)
 {
   if (is_gui_up()) {
     GtkWidget *dialog;
 
-    dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_DESTROY_WITH_PARENT, GTK_MESSAGE_ERROR,
-                                    GTK_BUTTONS_CLOSE,
-                                    _("Tileset problem, it's probably incompatible with the ruleset:\n%s"),
-                                    msg);
+    if (tset_name != NULL) {
+      dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_DESTROY_WITH_PARENT,
+                                      GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+                                      _("Tileset \"%s\" problem, "
+                                        "it's probably incompatible with "
+                                        "the ruleset:\n%s"),
+                                      tset_name, msg);
+    } else {
+      dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_DESTROY_WITH_PARENT,
+                                      GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+                                      _("Tileset problem, "
+                                        "it's probably incompatible with "
+                                        "the ruleset:\n%s"),
+                                      msg);
+    }
+
     setup_dialog(dialog, toplevel);
 
     gtk_dialog_run(GTK_DIALOG(dialog));
@@ -1568,4 +1584,70 @@ void popup_combat_info(int attacker_unit_id, int defender_unit_id,
                        int attacker_hp, int defender_hp,
                        bool make_att_veteran, bool make_def_veteran)
 {
+}
+
+/**********************************************************************//**
+  This is the response callback for the action confirmation dialog.
+**************************************************************************/
+static void act_conf_response(GtkWidget *dialog, gint response,
+                              gpointer data)
+{
+  gtk_widget_destroy(dialog);
+
+  if (response == GTK_RESPONSE_YES) {
+    action_confirmation(data, TRUE);
+  } else {
+    action_confirmation(data, FALSE);
+  }
+}
+
+/**********************************************************************//**
+  Common code wants confirmation for an action.
+**************************************************************************/
+void request_action_confirmation(const char *expl,
+                                 struct act_confirmation_data *data)
+{
+  GtkWidget *dialog;
+  char buf[1024];
+
+  if (expl != NULL) {
+    fc_snprintf(buf, sizeof(buf), _("Are you sure you want to do %s?\n%s"),
+                action_id_name_translation(data->act), expl);
+  } else {
+    fc_snprintf(buf, sizeof(buf), _("Are you sure you want to do %s?"),
+                action_id_name_translation(data->act));
+  }
+
+  dialog = gtk_message_dialog_new(NULL, 0,
+                                  GTK_MESSAGE_WARNING,
+                                  GTK_BUTTONS_YES_NO,
+                                  "%s", buf);
+  setup_dialog(dialog, toplevel);
+
+  g_signal_connect(dialog, "response",
+                   G_CALLBACK(act_conf_response), data);
+
+  gtk_window_present(GTK_WINDOW(dialog));
+}
+
+/**********************************************************************//**
+  Popup image window
+**************************************************************************/
+void popup_image(const char *tag)
+{
+  struct sprite *spr = load_popup_sprite(tag);
+
+  if (spr != NULL) {
+    GdkPixbuf *pix = sprite_get_pixbuf(spr);
+    GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    GtkWidget *img = gtk_image_new_from_pixbuf(pix);
+
+    gtk_container_add(GTK_CONTAINER(win), img);
+    gtk_widget_show(img);
+    gtk_widget_show(win);
+
+    unload_popup_sprite(tag);
+  } else {
+    log_error(_("No image for tag \"%s\", requested by the server."), tag);
+  }
 }

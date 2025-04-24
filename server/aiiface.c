@@ -24,19 +24,13 @@
 
 /* common */
 #include "ai.h"
+#include "game.h"
 #include "player.h"
-
-/* server/advisors */
-#include "autosettlers.h"
 
 /* ai/classic */
 #include "classicai.h"
 
 #include "aiiface.h"
-
-#ifdef AI_MOD_STATIC_THREADED
-bool fc_ai_threaded_setup(struct ai_type *ai);
-#endif
 
 #ifdef AI_MOD_STATIC_TEX
 bool fc_ai_tex_setup(struct ai_type *ai);
@@ -133,7 +127,7 @@ bool load_ai_module(const char *modname)
 void ai_init(void)
 {
   bool failure = FALSE;
-#if !defined(AI_MODULES) || defined(AI_MOD_STATIC_CLASSIC) || defined(AI_MOD_STATIC_THREADED) || defined(AI_MOD_STATIC_TEX) || defined(AI_MOD_STATIC_STUB)
+#if !defined(AI_MODULES) || defined(AI_MOD_STATIC_CLASSIC) || defined(AI_MOD_STATIC_TEX) || defined(AI_MOD_STATIC_STUB)
   /* First !defined(AI_MODULES) case is for default ai support. */
   struct ai_type *ai;
 #endif
@@ -175,17 +169,6 @@ void ai_init(void)
   }
 #endif /* AI_MOD_STATIC_CLASSIC */
 
-#ifdef AI_MOD_STATIC_THREADED
-  ai = ai_type_alloc();
-  if (ai != NULL) {
-    init_ai(ai);
-    if (!fc_ai_threaded_setup(ai)) {
-      log_error(_("Failed to setup \"%s\" AI module"), "threaded");
-      ai_type_dealloc();
-    }
-  }
-#endif /* AI_MOD_STATIC_THREADED */
-
 #ifdef AI_MOD_STATIC_TEX
   ai = ai_type_alloc();
   if (ai != NULL) {
@@ -208,7 +191,7 @@ void ai_init(void)
   }
 #endif /* AI_MOD_STATIC_STUB */
 
-  default_ai = ai_type_by_name(AI_MOD_DEFAULT);
+  set_default_ai_type_name(AI_MOD_DEFAULT);
 #ifdef AI_MODULES
   if (default_ai == NULL) {
     /* Wasn't among statically linked. Try to load dynamic module. */
@@ -216,7 +199,7 @@ void ai_init(void)
       failure = TRUE;
     }
     if (!failure) {
-      default_ai = ai_type_by_name(AI_MOD_DEFAULT);
+      set_default_ai_type_name(AI_MOD_DEFAULT);
     }
   }
 #endif /* AI_MODULES */
@@ -225,15 +208,29 @@ void ai_init(void)
               AI_MOD_DEFAULT);
     exit(EXIT_FAILURE);
   }
+
+  fc_snprintf(game.server.default_ai_type_name,
+              sizeof(game.server.default_ai_type_name),
+              "%s", default_ai_type_name());
 }
 
 /**********************************************************************//**
   Call incident function of victim.
 **************************************************************************/
-void call_incident(enum incident_type type, struct player *violator,
-                   struct player *victim)
+void call_incident(enum incident_type type, enum casus_belli_range scope,
+                   const struct action *paction,
+                   struct player *violator, struct player *victim)
 {
-  CALL_PLR_AI_FUNC(incident, victim, type, violator, victim);
+  if (scope == CBR_VICTIM_ONLY) {
+    CALL_PLR_AI_FUNC(incident, victim,
+                     type, scope, paction, victim, violator, victim);
+  } else {
+    fc_assert(scope == CBR_INTERNATIONAL_OUTRAGE);
+    players_iterate(receiver) {
+      CALL_PLR_AI_FUNC(incident, victim,
+                       type, scope, paction, receiver, violator, victim);
+    } players_iterate_end;
+  }
 }
 
 /**********************************************************************//**
@@ -252,4 +249,21 @@ void call_ai_refresh(void)
 const char *default_ai_type_name(void)
 {
   return default_ai->name;
+}
+
+/**********************************************************************//**
+  Set default ai type. Keeps the existing type if the new one
+  cannot be found.
+**************************************************************************/
+bool set_default_ai_type_name(const char *name)
+{
+  struct ai_type *new_type = ai_type_by_name(name);
+
+  if (new_type != NULL) {
+    default_ai = new_type;
+
+    return TRUE;
+  }
+
+  return FALSE;
 }

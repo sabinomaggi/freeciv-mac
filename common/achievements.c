@@ -43,7 +43,7 @@ void achievements_init(void)
 
   for (i = 0; i < ARRAY_SIZE(achievements); i++) {
     achievements[i].id = i;
-    achievements[i].disabled = FALSE;
+    achievements[i].ruledit_disabled = FALSE;
     achievements[i].first = NULL;
     achievements[i].value = 0;
     achievements[i].culture = 0;
@@ -145,7 +145,7 @@ struct player *achievement_plr(struct achievement *ach,
   players_iterate(pplayer) {
     if (achievement_check(ach, pplayer)) {
       if (!ach->unique) {
-        pplayer->culture += ach->culture;
+        pplayer->history += ach->culture;
         BV_SET(ach->achievers, player_index(pplayer));
       }
       player_list_append(achievers, pplayer);
@@ -163,7 +163,11 @@ struct player *achievement_plr(struct achievement *ach,
     credited = player_list_get(achievers, fc_rand(player_list_size(achievers)));
 
     ach->first = credited;
-    credited->culture += ach->culture;
+
+    if (ach->unique) {
+      /* For !ach->unique achievements culture was already added above. */
+      credited->history += ach->culture;
+    }
 
     /* Mark the selected player as the only one having the achievement */
     BV_SET(ach->achievers, player_index(credited));
@@ -183,7 +187,7 @@ bool achievement_check(struct achievement *ach, struct player *pplayer)
     return FALSE;
   }
 
-  switch(ach->type) {
+  switch (ach->type) {
   case ACHIEVEMENT_SPACESHIP:
     return pplayer->spaceship.state == SSHIP_LAUNCHED;
   case ACHIEVEMENT_MAP:
@@ -308,12 +312,12 @@ bool achievement_check(struct achievement *ach, struct player *pplayer)
         if (this_is_known) {
           /* FIXME: This makes the assumption that fogged tiles belonged
            *        to their current continent when they were last seen. */
-          if (ptile->continent > 0 && !seen[ptile->continent]) {
+          if (ptile->continent > 0 && !seen[ptile->continent - 1]) {
             if (++count >= ach->value) {
               free(seen);
               return TRUE;
             }
-            seen[ptile->continent] = TRUE;
+            seen[ptile->continent - 1] = TRUE;
           }
         }
       } whole_map_iterate_end;
@@ -321,6 +325,10 @@ bool achievement_check(struct achievement *ach, struct player *pplayer)
       free(seen);
       return FALSE;
     }
+  case ACHIEVEMENT_KILLER:
+    return pplayer->score.units_killed >= ach->value;
+  case ACHIEVEMENT_RICH:
+    return pplayer->economic.gold >= ach->value;
   case ACHIEVEMENT_COUNT:
     break;
   }
@@ -377,7 +385,7 @@ bool achievement_claimed(const struct achievement *pach)
 **************************************************************************/
 int get_literacy(const struct player *pplayer)
 {
-  int pop = civ_population(pplayer);
+  int pop = pplayer->score.population;
 
   if (pop <= 0) {
     return 0;

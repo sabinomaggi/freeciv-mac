@@ -39,17 +39,6 @@ const char * const gui_character_encoding = "UTF-8";
 const bool gui_use_transliteration = FALSE;
 
 /**********************************************************************//**
-  Called by the tileset code to set the font size that should be used to
-  draw the city names and productions.
-**************************************************************************/
-void gui_set_city_names_font_sizes(int my_city_names_font_size,
-                                   int my_city_productions_font_size)
-{
-  log_error("Unimplemented set_city_names_font_sizes.");
-  /* PORTME */
-}
-
-/**********************************************************************//**
   Do any necessary pre-initialization of the UI, if necessary.
 **************************************************************************/
 void gui_ui_init(void)
@@ -63,7 +52,7 @@ void gui_ui_init(void)
 int main(int argc, char **argv)
 {
   setup_gui_funcs();
-  return client_main(argc, argv);
+  return client_main(argc, argv, FALSE);
 }
 
 /**********************************************************************//**
@@ -82,16 +71,17 @@ static void print_usage(const char *argv0)
 }
 
 /**********************************************************************//**
-  Parse and enact any client-specific options.
+  Parse and enact any gui-specific command-line options.
 **************************************************************************/
-static void parse_options(int argc, char **argv)
+static bool parse_options(int argc, char **argv)
 {
   int i = 1;
 
   while (i < argc) {
     if (is_option("--help", argv[i])) {
       print_usage(argv[0]);
-      exit(EXIT_SUCCESS);
+
+      return FALSE;
     } else {
       fc_fprintf(stderr, _("Unrecognized option: \"%s\"\n"), argv[i]);
       exit(EXIT_FAILURE);
@@ -99,22 +89,26 @@ static void parse_options(int argc, char **argv)
 
     i++;
   }
+
+  return TRUE;
 }
 
 /**********************************************************************//**
-  The main loop for the UI.  This is called from main(), and when it
+  The main loop for the UI. This is called from main(), and when it
   exits the client will exit.
 **************************************************************************/
-void gui_ui_main(int argc, char *argv[])
+int gui_ui_main(int argc, char *argv[])
 {
-  parse_options(argc, argv);
+  if (parse_options(argc, argv)) {
+    /* PORTME */
+    fc_fprintf(stderr, "Freeciv rules!\n");
 
-  /* PORTME */
-  fc_fprintf(stderr, "Freeciv rules!\n");
+    /* Main loop here */
 
-  /* Main loop here */
+    start_quitting();
+  }
 
-  start_quitting();
+  return EXIT_SUCCESS;
 }
 
 /**********************************************************************//**
@@ -128,7 +122,7 @@ void gui_options_extra_init(void)
 /**********************************************************************//**
   Do any necessary UI-specific cleanup
 **************************************************************************/
-void gui_ui_exit()
+void gui_ui_exit(void)
 {
   /* PORTME */
 }
@@ -144,7 +138,7 @@ enum gui_type gui_get_gui_type(void)
 /**********************************************************************//**
   Update the connected users list at pregame state.
 **************************************************************************/
-void gui_real_conn_list_dialog_update(void)
+void gui_real_conn_list_dialog_update(void *unused)
 {
   /* PORTME */
 }
@@ -162,7 +156,7 @@ void gui_sound_bell(void)
   Wait for data on the given socket.  Call input_from_server() when data
   is ready to be read.
 
-  This function is called after the client succesfully has connected
+  This function is called after the client has successfully connected
   to the server.
 **************************************************************************/
 void gui_add_net_input(int sock)
@@ -184,7 +178,7 @@ void gui_remove_net_input(void)
   Set one of the unit icons (specified by idx) in the information area
   based on punit.
 
-  punit is the unit the information should be taken from. Use NULL to
+  punit is the unit the information should be taken from. Use nullptr to
   clear the icon.
 
   idx specified which icon should be modified. Use idx == -1 to indicate
@@ -286,9 +280,9 @@ void gui_insert_client_build_info(char *outbuf, size_t outlen)
 }
 
 /**********************************************************************//**
-  Make dynamic adjustments to first-launch default options.
+  Define properties of this gui.
 **************************************************************************/
-void gui_adjust_default_options(void)
+void gui_setup_gui_properties(void)
 {
-  /* Nothing in case of this gui */
+  /* PORTME */
 }

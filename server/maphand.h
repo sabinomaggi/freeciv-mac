@@ -13,14 +13,15 @@
 #ifndef FC__MAPHAND_H
 #define FC__MAPHAND_H
 
+/* common */
 #include "fc_types.h"
-
 #include "map.h"
 #include "packets.h"
 #include "terrain.h"
 #include "vision.h"
 
-#include "hand_gen.h"
+/* server */
+#include <hand_gen.h>       /* <> so looked from the build directory first. */
 
 struct section_file;
 struct conn_list;
@@ -32,7 +33,7 @@ struct player_tile {
   struct terrain *terrain;		/* NULL for unknown tiles */
   struct player *owner; 		/* NULL for unowned */
   struct player *extras_owner;
-  bv_extras extras;
+  struct dbv extras;
 
   /* If you build a city with an unknown square within city radius
      the square stays unknown. However, we still have to keep count
@@ -87,12 +88,14 @@ void player_map_free(struct player *pplayer);
 void remove_player_from_maps(struct player *pplayer);
 
 struct vision_site *map_get_player_city(const struct tile *ptile,
-					const struct player *pplayer);
-struct vision_site *map_get_player_site(const struct tile *ptile,
-					const struct player *pplayer);
+                                        const struct player *pplayer);
+#define map_get_playermap_site(_plrtile_) (_plrtile_)->site
+#define map_get_player_site(_ptile_, _pplayer_) \
+  map_get_playermap_site(map_get_player_tile(_ptile_, _pplayer_))
+
 struct player_tile *map_get_player_tile(const struct tile *ptile,
-					const struct player *pplayer);
-bool update_player_tile_knowledge(struct player *pplayer,struct tile *ptile);
+                                        const struct player *pplayer);
+bool update_player_tile_knowledge(struct player *pplayer, struct tile *ptile);
 void update_tile_knowledge(struct tile *ptile);
 void update_player_tile_last_seen(struct player *pplayer, struct tile *ptile);
 
@@ -138,7 +141,10 @@ void create_extra(struct tile *ptile, struct extra_type *pextra,
                   struct player *pplayer);
 void destroy_extra(struct tile *ptile, struct extra_type *pextra);
 
-void give_distorted_map(struct player *pfrom, struct player *pto, int good,
-                        int bad, bool reveal_cities);
+bool give_distorted_map(struct player *pfrom, struct player *pto,
+                        int prob, bool reveal_cities);
 
-#endif  /* FC__MAPHAND_H */
+void tile_change_side_effects(struct tile *ptile, bool refresh_city)
+  fc__attribute((nonnull (1)));
+
+#endif /* FC__MAPHAND_H */

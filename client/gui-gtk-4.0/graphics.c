@@ -45,29 +45,7 @@
 
 #include "graphics.h"
 
-struct sprite *intro_gfx_sprite;
-
 GdkCursor *fc_cursors[CURSOR_LAST][NUM_CURSOR_FRAMES];
-
-/***********************************************************************//**
-  Returns TRUE to indicate that gtk3x-client supports given view type
-***************************************************************************/
-bool is_view_supported(enum ts_type type)
-{
-  switch (type) {
-  case TS_ISOMETRIC:
-  case TS_OVERHEAD:
-    return TRUE;
-  case TS_3D:
-#ifdef GTK3_3D_ENABLED
-    return TRUE;
-#else  /* GTK3_3D_ENABLED */
-    return FALSE;
-#endif /* GTK3_3D_ENABLED */
-  }
-
-  return FALSE;
-}
 
 /***********************************************************************//**
   Loading tileset of the specified type
@@ -86,31 +64,19 @@ void tileset_type_set(enum ts_type type)
 void load_cursors(void)
 {
   enum cursor_type cursor;
-  GdkDisplay *display = gdk_display_get_default();
   int frame;
 
   for (cursor = 0; cursor < CURSOR_LAST; cursor++) {
     for (frame = 0; frame < NUM_CURSOR_FRAMES; frame++) {
       int hot_x, hot_y;
       struct sprite *sprite
-	= get_cursor_sprite(tileset, cursor, &hot_x, &hot_y, frame);
+        = get_cursor_sprite(tileset, cursor, &hot_x, &hot_y, frame);
       GdkPixbuf *pixbuf = sprite_get_pixbuf(sprite);
+      GdkTexture *texture = gdk_texture_new_for_pixbuf(pixbuf);
 
-      fc_cursors[cursor][frame] = gdk_cursor_new_from_pixbuf(display, pixbuf,
-							     hot_x, hot_y);
+      fc_cursors[cursor][frame] = gdk_cursor_new_from_texture(texture, hot_x, hot_y, NULL);
+      g_object_unref(texture);
       g_object_unref(G_OBJECT(pixbuf));
     }
-  }
-}
-
-/***********************************************************************//**
-  This function is so that packhand.c can be gui-independent, and
-  not have to deal with Sprites itself.
-***************************************************************************/
-void free_intro_radar_sprites(void)
-{
-  if (intro_gfx_sprite) {
-    free_sprite(intro_gfx_sprite);
-    intro_gfx_sprite = NULL;
   }
 }

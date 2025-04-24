@@ -1,6 +1,6 @@
 [nation_malaysian]
 
-name = _("Malaysian")
+name   = _("Malaysian")
 plural = _("?plural:Malaysians")
 groups = "Modern", "Asian"
 legend = _("Malaysia was started with the founding of Malacca (Melaka) by\
@@ -39,7 +39,7 @@ cities =
  "Putrajaya",
  "Ipoh",
  "George Town",
- "Butterworth", 
+ "Butterworth",
  "Muar",
  "Melaka",
  "Johor Bahru",
@@ -47,7 +47,7 @@ cities =
  "Kangar",
  "Kuala Terengganu",
  "Sungai Petani",
- "Port Dickson", 
+ "Port Dickson",
  "Klang",
  "Alor Setar",
  "Kota Baharu",

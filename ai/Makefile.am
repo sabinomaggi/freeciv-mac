@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
-module_dirs = 
+module_dirs =
 
 if AI_MOD_DEFAULT_NEEDED
 module_dirs += default
@@ -8,10 +8,6 @@ endif
 
 if AI_MOD_STATIC_CLASSIC
 module_dirs += classic
-endif
-
-if AI_MOD_STATIC_THREADED
-module_dirs += threaded
 endif
 
 if AI_MOD_STATIC_TEX
@@ -22,18 +18,19 @@ if AI_MOD_STATIC_STUB
 module_dirs += stub
 endif
 
-AM_CPPFLAGS = -I$(top_srcdir)/utility -I$(top_srcdir)/common \
- -I$(top_srcdir)/common/networking \
- -I$(top_srcdir)/dependencies/tinycthread
+AM_CPPFLAGS = \
+	-I$(top_srcdir)/utility \
+	-I$(top_srcdir)/common \
+	-I$(top_srcdir)/common/aicore \
+	-I$(top_srcdir)/common/networking \
+	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums
 
 if AI_MODULES
 if !AI_MOD_STATIC_CLASSIC
 module_dirs += classic
 endif
 if EXP_AI_MODULES
-if !AI_MOD_STATIC_THREADED
-module_dirs += threaded
-endif
 if !AI_MOD_STATIC_TEX
 module_dirs += tex
 endif

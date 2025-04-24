@@ -13,36 +13,37 @@ BUILDDIR=`pwd`
 
 FC_USE_NLS=yes
 FC_HELP=no
-FC_RUN_CONFIGURE=no
+FC_RUN_CONFIGURE=yes
 
 # Leave out NLS checks
 for NAME in $@ ; do
-  if [ "x$NAME" = "x--help" ]; then 
+  if [ "${NAME}" = "--help" ]; then
     FC_HELP=yes
   fi
-  if [ "x$NAME" = "x--disable-nls" ]; then 
+  if [ "${NAME}" = "--disable-nls" ]; then
     echo "! nls checks disabled"
     FC_USE_NLS=no
   fi
-  if [ "x$NAME" = "x--no-configure-run" ]; then 
+  if [ "${NAME}" = "--no-configure-run" ]; then
     FC_RUN_CONFIGURE=no
   fi
-  FC_NEWARGLINE="$FC_NEWARGLINE $NAME"
+  FC_NEWARGLINE="${FC_NEWARGLINE} ${NAME}"
 done
 
 debug ()
 # print out a debug message if DEBUG is a defined variable
 {
-  if [ ! -z "$DEBUG" ]; then
-    echo "DEBUG: $1"
+  if [ ! -z "${DEBUG}" ]; then
+    echo "{DEBUG}: $1"
   fi
 }
 
 real_package_name ()
-# solve a real name of suitable package 
+# solve a real name of suitable package
 # first argument : package name (executable)
 # second argument : source download url
-# rest of arguments : major, minor, micro version
+# third-fifth argument : major, minor, micro version
+# sixth argument : "2" - silent
 {
   RPACKAGE=$1
   RURL=$2
@@ -52,25 +53,31 @@ real_package_name ()
 
   new_pkg=$RPACKAGE
 
+  if test "$6" = "" ; then
+    RPN_COMPLAIN=1
+  else
+    RPN_COMPLAIN=$6
+  fi
+
   # check if given package is suitable
   if version_check 2 $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO; then
-    version_check 1 $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO
+    version_check $RPN_COMPLAIN $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO
   else
     # given package was too old or not available
     # search for the newest one
     if version_search $RPACKAGE; then
       if version_check 2 $RPACKAGE $new_pkg $RURL $RMAJOR $RMINOR $RMICRO; then
         # suitable package found
-        version_check 1 $RPACKAGE $new_pkg $RURL $RMAJOR $RMINOR $RMICRO
+        version_check $RPN_COMPLAIN $RPACKAGE $new_pkg $RURL $RMAJOR $RMINOR $RMICRO
       else
         # the newest package is not new enough or it is broken
-        version_check 1 $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO
+        version_check $RPN_COMPLAIN $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO
         return 1
       fi
-    else 
-      # no version of given package with version information 
+    else
+      # no version of given package with version information
       # in its name available
-      version_check 1 $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO
+      version_check $RPN_COMPLAIN $RPACKAGE $RPACKAGE $RURL $RMAJOR $RMINOR $RMICRO
       return 1
     fi
   fi
@@ -79,7 +86,7 @@ real_package_name ()
 }
 
 version_search ()
-# search the newest version of a package 
+# search the newest version of a package
 # first argument : package name (executable)
 {
   SPACKAGE=$1
@@ -87,27 +94,27 @@ version_search ()
   IFS=":"
   set -- $PATH
   IFS=$STOREDIFS
-  
+
   s_pkg_major=0
   s_pkg_minor=0
   new_pkg=
-  
+
   for SEARCHDIR ; do
     for MATCHSTUFF in `ls "$SEARCHDIR/$SPACKAGE-"* 2> /dev/null` ; do
-      for FOUNDPKG in $MATCHSTUFF; do 
+      for FOUNDPKG in $MATCHSTUFF; do
         # parse version information from name
         new_s_pkg_major=`echo $FOUNDPKG | cut -s -d- -f2 | cut -s -d. -f1`
         new_s_pkg_minor=`echo $FOUNDPKG | cut -s -d- -f2 | cut -s -d. -f2`
 
         CORRECT=
         # check if version numbers are integers
-        [ ! "x$new_s_pkg_major" = "x" ] && \
-        [ "x`echo $new_s_pkg_major | sed s/[0-9]*//g`" = "x" ] && \
-        [ ! "x$new_s_pkg_minor" = "x" ] && \
-        [ "x`echo $new_s_pkg_minor | sed s/[0-9]*//g`" = "x" ] && \
+        [ ! "${new_s_pkg_major}" = "" ] && \
+        [ "$(echo ${new_s_pkg_major} | sed s/[0-9]*//g)" = "" ] && \
+        [ ! "${new_s_pkg_minor}" = "" ] && \
+        [ "$(echo ${new_s_pkg_minor} | sed s/[0-9]*//g)" = "" ] && \
         CORRECT=1
 
-        if [ ! -z $CORRECT ]; then        
+        if [ ! -z $CORRECT ]; then
           if [ "$new_s_pkg_major" -gt "$s_pkg_major" ]; then
             s_pkg_major=$new_s_pkg_major
             s_pkg_minor=$new_s_pkg_minor
@@ -123,7 +130,7 @@ version_search ()
       done
     done
   done
-  
+
   if [ -z "$new_pkg"  ]; then
     return 1
   else
@@ -134,7 +141,7 @@ version_search ()
 version_check ()
 # check the version of a package
 # first argument : silent ('2'), complain ('1') or not ('0')
-# second argument : package name 
+# second argument : package name
 # third argument : package name (executable)
 # fourth argument : source download url
 # rest of arguments : major, minor, micro version
@@ -155,7 +162,7 @@ version_check ()
   if [ ! -z "$MICRO" ]; then VERSION=$VERSION.$MICRO; else MICRO=0; fi
 
   debug "version $VERSION"
-  if [ "x$VERSION" != "x" ] ; then
+  if [ "${VERSION}" != "" ] ; then
       if [ "$COMPLAIN" -ne "2" ]; then
           echo "+ checking for $PACKAGEMSG >= $VERSION ... " | tr -d '\n'
       fi
@@ -165,14 +172,16 @@ version_check ()
           echo "+ checking for $PACKAGEMSG ... " | tr -d '\n'
       fi
   fi
-  
-  ($PACKAGE --version) < /dev/null > /dev/null 2>&1 || 
+
+  ($PACKAGE --version) < /dev/null > /dev/null 2>&1 ||
   {
-    if [ "$COMPLAIN" -ne "2" ]; then
+    if [ "$COMPLAIN" -eq "1" ]; then
       echo
       echo "You must have $PACKAGEMSG installed to compile $package."
       echo "Download the appropriate package for your distribution,"
       echo "or get the source tarball at $URL"
+    elif [ "$COMPLAIN" -ne "2" ]; then
+      echo
     fi
     return 1
   }
@@ -181,8 +190,8 @@ version_check ()
   pkg_version=`$PACKAGE --version 2>&1|grep -a -v " line " |head -n 1|sed 's/([^)]*)//g;s/^[a-zA-Z\.\ \-]*//;s/ .*$//'`
   debug "pkg_version $pkg_version"
   pkg_major=`echo $pkg_version | cut -d. -f1`
-  pkg_minor=`echo $pkg_version | sed s/[-,a-z,A-Z].*// | cut -d. -f2`
-  pkg_micro=`echo $pkg_version | sed s/[-,a-z,A-Z].*// | cut -d. -f3`
+  pkg_minor=`echo $pkg_version | sed s/[-,a-z,A-Z+].*// | cut -d. -f2`
+  pkg_micro=`echo $pkg_version | sed s/[-,a-z,A-Z+].*// | cut -d. -f3`
   [ -z "$pkg_major" ] && pkg_major=0
   [ -z "$pkg_minor" ] && pkg_minor=0
   [ -z "$pkg_micro" ] && pkg_micro=0
@@ -227,26 +236,27 @@ cd "$SRCDIR"
 }
 
 # autoconf and autoheader version numbers must be kept in sync
-real_package_name "autoconf" "ftp://ftp.gnu.org/pub/gnu/autoconf/" 2 65 || DIE=1
-AUTOCONF=$REALPKGNAME
-real_package_name "autoheader" "ftp://ftp.gnu.org/pub/gnu/autoconf/" 2 65 || DIE=1
-AUTOHEADER=$REALPKGNAME
+real_package_name "autoconf" "ftp://ftp.gnu.org/pub/gnu/autoconf/" 2 69 || DIE=1
+AUTOCONF="${REALPKGNAME}"
+real_package_name "autoheader" "ftp://ftp.gnu.org/pub/gnu/autoconf/" 2 69 || DIE=1
+AUTOHEADER="${REALPKGNAME}"
 
 # automake and aclocal version numbers must be kept in sync
-real_package_name "automake" "ftp://ftp.gnu.org/pub/gnu/automake/" 1 11 3 || DIE=1
+real_package_name "automake" "ftp://ftp.gnu.org/pub/gnu/automake/" 1 13 || DIE=1
 AUTOMAKE=$REALPKGNAME
-real_package_name "aclocal" "ftp://ftp.gnu.org/pub/gnu/automake/" 1 11 3 || DIE=1
+real_package_name "aclocal" "ftp://ftp.gnu.org/pub/gnu/automake/" 1 13 || DIE=1
 ACLOCAL=$REALPKGNAME
-real_package_name "glibtoolize" "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 || DIE=1
+real_package_name "libtoolize" "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 ||
+real_package_name "glibtoolize" "ftp://ftp.gnu.org/pub/gnu/libtool/" 2 2 "" "0" || DIE=1
 LIBTOOLIZE=$REALPKGNAME
-real_package_name "python" "https://www.python.org/" || DIE=1
+real_package_name "python3" "https://www.python.org/" 3 7 || DIE=1
 
 if [ "$FC_USE_NLS" = "yes" ]; then
   DIE2=0
-  version_check 1 "xgettext" "xgettext" "ftp://ftp.gnu.org/pub/gnu/gettext/" 0 15 || DIE2=1
-  version_check 1 "msgfmt" "msgfmt" "ftp://ftp.gnu.org/pub/gnu/gettext/" 0 15 || DIE2=1
+  version_check 1 "xgettext" "xgettext" "ftp://ftp.gnu.org/pub/gnu/gettext/" 0 16 || DIE2=1
+  version_check 1 "msgfmt" "msgfmt" "ftp://ftp.gnu.org/pub/gnu/gettext/" 0 16 || DIE2=1
   if [ "$DIE2" -eq 1 ]; then
-    echo 
+    echo
     echo "You may want to use --disable-nls to disable NLS."
     echo "This will also remove the dependency for xgettext and msgfmt."
     DIE=1
@@ -282,10 +292,10 @@ $ACLOCAL -I m4 -I dependencies/m4 $ACLOCAL_FLAGS || {
   echo "$ACLOCAL failed on libtool files run"
   exit 1
 }
-echo "+ running $AUTOCONF ... "
-$AUTOCONF || {
+echo "+ running ${AUTOCONF} ... "
+"${AUTOCONF}" || {
   echo
-  echo "$AUTOCONF failed"
+  echo "${AUTOCONF} failed"
   exit 1
 }
 echo "+ running $AUTOMAKE ... "
@@ -308,11 +318,11 @@ if [ "$FC_RUN_CONFIGURE" = "no" ]; then
   echo "Now type 'configure' to configure $package."
   exit 0
 fi
- 
+
 echo "+ running configure ... "
 echo
 if [ -z "$FC_NEWARGLINE" ]; then
-  echo "I am going to run ./configure with no arguments - if you wish "
+  echo "I am going to run $SRCDIR/configure with no arguments - if you wish "
   echo "to pass any to it, please specify them on the $0 command line."
 else
   echo "using: $FC_NEWARGLINE"
@@ -325,12 +335,12 @@ echo
   exit 1
 }
 
-# abort if we did --help
+# Abort if we did --help
 if [ "$FC_HELP" = "yes" ]; then
   exit 1
 fi
 
-echo 
+echo
 echo "Now type 'make' to compile $package."
 
 exit 0

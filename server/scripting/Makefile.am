@@ -7,18 +7,23 @@ noinst_LTLIBRARIES = \
 AM_CPPFLAGS = \
 	-I$(top_srcdir)/utility \
 	-I$(top_srcdir)/common \
+	-I$(top_srcdir)/common/aicore \
 	-I$(top_srcdir)/common/networking \
 	-I$(top_srcdir)/common/scriptcore \
 	-I$(top_srcdir)/server \
 	-I$(top_srcdir)/server/generator \
+	-I$(top_srcdir)/server/savegame \
 	-I$(top_srcdir)/ai \
 	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums \
 	$(FCDB_MYSQL_CFLAGS) $(FCDB_POSTGRES_CFLAGS) $(FCDB_SQLITE_CFLAGS) \
 	$(LUA_CFLAGS) $(LUASQL_CFLAGS) $(TOLUA_CFLAGS)
 
 # tolua_[fcdb|server]_gen.[ch] are now distributed to aid in cross-compiling.
 # See PR#13571.
 dist_libscripting_server_la_SOURCES = \
+	api_server_counters.c	\
+	api_server_counters.h	\
 	api_server_base.c	\
 	api_server_base.h	\
 	api_server_edit.c	\
@@ -39,6 +44,8 @@ dist_libscripting_fcdb_la_SOURCES = \
 	api_fcdb_auth.h		\
 	api_fcdb_base.c		\
 	api_fcdb_base.h		\
+	api_fcdb_specenum.c	\
+	api_fcdb_specenum.h	\
 	script_fcdb.c		\
 	script_fcdb.h		\
 	tolua_fcdb_gen.c	\
@@ -60,11 +67,13 @@ BUILT_SOURCES = \
 # can only rely on them getting included via libfreeciv.so.
 
 tolua_fcdb_gen.c tolua_fcdb_gen.h: tolua_fcdb.pkg
-	$(TOLUA) -n fcdb -o $(srcdir)/tolua_fcdb_gen.c \
+	@if ! $(AM_V_P) ; then echo "  tolua    tolua_fcdb" ; fi
+	$(AM_V_at) $(TOLUA) -n fcdb -o $(srcdir)/tolua_fcdb_gen.c \
 	-H $(srcdir)/tolua_fcdb_gen.h $(srcdir)/tolua_fcdb.pkg
 
 tolua_server_gen.c tolua_server_gen.h: tolua_server.pkg
-	$(TOLUA) -n server -o $(srcdir)/tolua_server_gen.c \
+	@if ! $(AM_V_P) ; then echo "  tolua    tolua_server" ; fi
+	$(AM_V_at) $(TOLUA) -n server -o $(srcdir)/tolua_server_gen.c \
 	-H $(srcdir)/tolua_server_gen.h $(srcdir)/tolua_server.pkg
 
 # These files are not generated to builddir, but to srcdir */

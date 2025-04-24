@@ -68,20 +68,13 @@
 
 #include "mapview.h"
 
-extern SDL_Event *flush_event;
-extern SDL_Rect *pInfo_Area;
+extern SDL_Rect *info_area;
 
 int overview_start_x = 0;
 int overview_start_y = 0;
 
-static enum {
-  NORMAL = 0,
-  BORDERS = 1,
-  TEAMS
-} overview_mode = NORMAL;
-
 static struct canvas *overview_canvas;
-static struct canvas *city_map_canvas;
+static struct canvas *city_map_canvas = NULL;
 static struct canvas *terrain_canvas;
 
 /* ================================================================ */
@@ -96,12 +89,12 @@ static bool is_flush_queued = FALSE;
 /**********************************************************************//**
   Flush the mapcanvas part of the buffer(s) to the screen.
 **************************************************************************/
-void flush_mapcanvas(int canvas_x, int canvas_y,
-                     int pixel_width, int pixel_height)
+static void flush_mapcanvas(int canvas_x, int canvas_y,
+                            int pixel_width, int pixel_height)
 {
   SDL_Rect rect = {canvas_x, canvas_y, pixel_width, pixel_height};
 
-  alphablit(mapview.store->surf, &rect, Main.map, &rect, 255);
+  alphablit(mapview.store->surf, &rect, main_data.map, &rect, 255);
 }
 
 /**********************************************************************//**
@@ -121,20 +114,20 @@ void flush_rect(SDL_Rect *rect, bool force_flush)
       if (C_S_RUNNING == client_state()) {
         flush_mapcanvas(dst.x, dst.y, dst.w, dst.h);
       }
-      screen_blit(Main.map, rect, &dst, 255);
-      if (Main.guis) {
-        while ((i < Main.guis_count) && Main.guis[i]) {
+      screen_blit(main_data.map, rect, &dst, 255);
+      if (main_data.guis) {
+        while ((i < main_data.guis_count) && main_data.guis[i]) {
           src = *rect;
-          screen_rect_to_layer_rect(Main.guis[i], &src);
+          screen_rect_to_layer_rect(main_data.guis[i], &src);
           dst = *rect;
-          screen_blit(Main.guis[i++]->surface, &src, &dst, 255);
+          screen_blit(main_data.guis[i++]->surface, &src, &dst, 255);
         }
       }
       i = 0;
 
       /* flush main buffer to framebuffer */
 #if 0
-      SDL_UpdateRect(Main.screen, rect->x, rect->y, rect->w, rect->h);
+      SDL_UpdateRect(main_data.screen, rect->x, rect->y, rect->w, rect->h);
 #endif /* 0 */
     }
   }
@@ -153,17 +146,17 @@ void unqueue_flush(void)
 
 /**********************************************************************//**
   Called when a region is marked dirty, this function queues a flush event
-  to be handled later by SDL.  The flush may end up being done
+  to be handled later by SDL. The flush may end up being done
   by freeciv before then, in which case it will be a wasted call.
 **************************************************************************/
 void queue_flush(void)
 {
   if (!is_flush_queued) {
-    if (SDL_PushEvent(flush_event) >= 0) {
+    if (flush_event()) {
       is_flush_queued = TRUE;
     } else {
       /* We don't want to set is_flush_queued in this case, since then
-       * the flush code would simply stop working.  But this means the
+       * the flush code would simply stop working. But this means the
        * below message may be repeated many times. */
       bugreport_request(_("Failed to add events to SDL2 event buffer: %s"),
                         SDL_GetError());
@@ -187,8 +180,8 @@ void dirty_rect(int canvas_x, int canvas_y,
 **************************************************************************/
 void dirty_sdl_rect(SDL_Rect *Rect)
 {
-  if ((Main.rects_count < RECT_LIMIT) && correct_rect_region(Rect)) {
-    Main.rects[Main.rects_count++] = *Rect;
+  if ((main_data.rects_count < RECT_LIMIT) && correct_rect_region(Rect)) {
+    main_data.rects[main_data.rects_count++] = *Rect;
     queue_flush();
   }
 }
@@ -198,7 +191,7 @@ void dirty_sdl_rect(SDL_Rect *Rect)
 **************************************************************************/
 void dirty_all(void)
 {
-  Main.rects_count = RECT_LIMIT;
+  main_data.rects_count = RECT_LIMIT;
   queue_flush();
 }
 
@@ -208,7 +201,7 @@ void dirty_all(void)
 void flush_all(void)
 {
   is_flush_queued = FALSE;
-  Main.rects_count = RECT_LIMIT;
+  main_data.rects_count = RECT_LIMIT;
   flush_dirty();
 }
 
@@ -220,23 +213,23 @@ void flush_dirty(void)
 {
   static int j = 0;
 
-  if (!Main.rects_count) {
+  if (!main_data.rects_count) {
     return;
   }
 
-  if (Main.rects_count >= RECT_LIMIT) {
-    
-    if ((C_S_RUNNING == client_state()) &&
-        (get_client_page() == PAGE_GAME)) {
+  if (main_data.rects_count >= RECT_LIMIT) {
+
+    if ((C_S_RUNNING == client_state())
+        && (get_client_page() == PAGE_GAME)) {
       flush_mapcanvas(0, 0, main_window_width(), main_window_height());
       refresh_overview();
     }
-    screen_blit(Main.map, NULL, NULL, 255);
-    if (Main.guis) {
-      while ((j < Main.guis_count) && Main.guis[j]) {
-        SDL_Rect dst = Main.guis[j]->dest_rect;
+    screen_blit(main_data.map, NULL, NULL, 255);
+    if (main_data.guis) {
+      while ((j < main_data.guis_count) && main_data.guis[j]) {
+        SDL_Rect dst = main_data.guis[j]->dest_rect;
 
-        screen_blit(Main.guis[j++]->surface, NULL, &dst, 255);
+        screen_blit(main_data.guis[j++]->surface, NULL, &dst, 255);
       }
     }
     j = 0;
@@ -249,30 +242,30 @@ void flush_dirty(void)
     static int i;
     static SDL_Rect src, dst;
 
-    for (i = 0; i < Main.rects_count; i++) {
+    for (i = 0; i < main_data.rects_count; i++) {
 
-      dst = Main.rects[i];
+      dst = main_data.rects[i];
       if (C_S_RUNNING == client_state()) {
         flush_mapcanvas(dst.x, dst.y, dst.w, dst.h);
       }
-      screen_blit(Main.map, &Main.rects[i], &dst, 255);
+      screen_blit(main_data.map, &main_data.rects[i], &dst, 255);
 
-      if (Main.guis) {
-        while ((j < Main.guis_count) && Main.guis[j]) {
-          src = Main.rects[i];
-          screen_rect_to_layer_rect(Main.guis[j], &src);
-          dst = Main.rects[i];
-          screen_blit(Main.guis[j++]->surface, &src, &dst, 255);
+      if (main_data.guis) {
+        while ((j < main_data.guis_count) && main_data.guis[j]) {
+          src = main_data.rects[i];
+          screen_rect_to_layer_rect(main_data.guis[j], &src);
+          dst = main_data.rects[i];
+          screen_blit(main_data.guis[j++]->surface, &src, &dst, 255);
         }
       }
       j = 0;
 
       /* restore widget info label if it overlaps with this area */
-      dst = Main.rects[i];
-      if (pInfo_Area && !(((dst.x + dst.w) < pInfo_Area->x)
-                          || (dst.x > (pInfo_Area->x + pInfo_Area->w))
-                          || ((dst.y + dst.h) < pInfo_Area->y)
-                          || (dst.y > (pInfo_Area->y + pInfo_Area->h)))) {
+      dst = main_data.rects[i];
+      if (info_area && !(((dst.x + dst.w) < info_area->x)
+                          || (dst.x > (info_area->x + info_area->w))
+                          || ((dst.y + dst.h) < info_area->y)
+                          || (dst.y > (info_area->y + info_area->h)))) {
         redraw_widget_info_label(&dst);
       }
     }
@@ -282,10 +275,10 @@ void flush_dirty(void)
     /* Render to screen */
     update_main_screen();
 #if 0
-    SDL_UpdateRects(Main.screen, Main.rects_count, Main.rects);
+    SDL_UpdateRects(main_data.screen, main_data.rects_count, main_data.rects);
 #endif
   }
-  Main.rects_count = 0;
+  main_data.rects_count = 0;
 }
 
 /**********************************************************************//**
@@ -295,64 +288,68 @@ void gui_flush(void)
 {
   if (C_S_RUNNING == client_state()) {
     refresh_overview();
-  }    
+  }
 }
 
 /* ===================================================================== */
 
 /**********************************************************************//**
   Set information for the indicator icons typically shown in the main
-  client window.  The parameters tell which sprite to use for the
+  client window. The parameters tell which sprite to use for the
   indicator.
 **************************************************************************/
 void set_indicator_icons(struct sprite *bulb, struct sprite *sol,
-			 struct sprite *flake, struct sprite *gov)
+                         struct sprite *flake, struct sprite *gov)
 {
-  struct widget *pBuf = NULL;
-  char cBuf[128];
+  struct widget *buf = NULL;
+  char cbuf[128];
 
-  pBuf = get_widget_pointer_form_main_list(ID_WARMING_ICON);
-  FREESURFACE(pBuf->theme);
-  pBuf->theme = adj_surf(GET_SURF(sol));
-  widget_redraw(pBuf);
+  buf = get_widget_pointer_from_main_list(ID_WARMING_ICON);
+  FREESURFACE(buf->theme);
+  buf->theme = adj_surf(GET_SURF(sol));
+  widget_redraw(buf);
+  widget_mark_dirty(buf);
 
-  pBuf = get_widget_pointer_form_main_list(ID_COOLING_ICON);
-  FREESURFACE(pBuf->theme);
-  pBuf->theme = adj_surf(GET_SURF(flake));
-  widget_redraw(pBuf);
+  buf = get_widget_pointer_from_main_list(ID_COOLING_ICON);
+  FREESURFACE(buf->theme);
+  buf->theme = adj_surf(GET_SURF(flake));
+  widget_redraw(buf);
+  widget_mark_dirty(buf);
 
-  pBuf = get_revolution_widget();
-  set_new_icon2_theme(pBuf, adj_surf(GET_SURF(gov)), TRUE);
+  buf = get_revolution_widget();
+  set_new_icon2_theme(buf, adj_surf(GET_SURF(gov)), TRUE);
 
   if (NULL != client.conn.playing) {
-    fc_snprintf(cBuf, sizeof(cBuf), "%s (%s)\n%s", _("Revolution"), "Ctrl+Shift+R",
-                                    government_name_for_player(client.conn.playing));
+    fc_snprintf(cbuf, sizeof(cbuf), "%s (%s)\n%s",
+                _("Revolution"), "Ctrl+Shift+G",
+                government_name_for_player(client.conn.playing));
   } else {
-    fc_snprintf(cBuf, sizeof(cBuf), "%s (%s)\n%s", _("Revolution"), "Ctrl+Shift+R",
-                                    Q_("?gov:None"));
+    fc_snprintf(cbuf, sizeof(cbuf), "%s (%s)\n%s",
+                _("Revolution"), "Ctrl+Shift+G",
+                Q_("?gov:None"));
   }
-  copy_chars_to_utf8_str(pBuf->info_label, cBuf);
+  copy_chars_to_utf8_str(buf->info_label, cbuf);
 
-  widget_redraw(pBuf);
-  widget_mark_dirty(pBuf);
+  widget_redraw(buf);
+  widget_mark_dirty(buf);
 
-  pBuf = get_tax_rates_widget();
-  if (!pBuf->theme) {
-    set_new_icon2_theme(pBuf, get_tax_surface(O_GOLD), TRUE);
+  buf = get_tax_rates_widget();
+  if (!buf->theme) {
+    set_new_icon2_theme(buf, get_tax_surface(O_GOLD), TRUE);
   }
 
-  pBuf = get_research_widget();
+  buf = get_research_widget();
 
   if (NULL == client.conn.playing) {
     /* TRANS: Research report action */
-    fc_snprintf(cBuf, sizeof(cBuf), "%s (%s)\n%s (%d/%d)", _("Research"), "F6",
+    fc_snprintf(cbuf, sizeof(cbuf), "%s (%s)\n%s (%d/%d)", _("Research"), "F6",
                 Q_("?tech:None"), 0, 0);
   } else {
     const struct research *presearch = research_get(client_player());
 
     if (A_UNSET != presearch->researching) {
       /* TRANS: Research report action */
-      fc_snprintf(cBuf, sizeof(cBuf), "%s (%s)\n%s (%d/%d)",
+      fc_snprintf(cbuf, sizeof(cbuf), "%s (%s)\n%s (%d/%d)",
                   _("Research"), "F6",
                   research_advance_name_translation(presearch,
                                                     presearch->researching),
@@ -360,7 +357,7 @@ void set_indicator_icons(struct sprite *bulb, struct sprite *sol,
                   presearch->client.researching_cost);
     } else {
       /* TRANS: Research report action */
-      fc_snprintf(cBuf, sizeof(cBuf), "%s (%s)\n%s (%d/%d)",
+      fc_snprintf(cbuf, sizeof(cbuf), "%s (%s)\n%s (%d/%d)",
                   _("Research"), "F6",
                   research_advance_name_translation(presearch,
                                                     presearch->researching),
@@ -369,12 +366,12 @@ void set_indicator_icons(struct sprite *bulb, struct sprite *sol,
     }
   }
 
-  copy_chars_to_utf8_str(pBuf->info_label, cBuf);
+  copy_chars_to_utf8_str(buf->info_label, cbuf);
 
-  set_new_icon2_theme(pBuf, adj_surf(GET_SURF(bulb)), TRUE);
+  set_new_icon2_theme(buf, adj_surf(GET_SURF(bulb)), TRUE);
 
-  widget_redraw(pBuf);
-  widget_mark_dirty(pBuf);
+  widget_redraw(buf);
+  widget_mark_dirty(buf);
 }
 
 /**********************************************************************//**
@@ -398,15 +395,15 @@ void overview_size_changed(void)
 
 /**********************************************************************//**
   Typically an info box is provided to tell the player about the state
-  of their civilization.  This function is called when the label is
+  of their civilization. This function is called when the label is
   changed.
 **************************************************************************/
 void update_info_label(void)
 {
   SDL_Color bg_color = {0, 0, 0, 80};
-  SDL_Surface *pTmp = NULL;
+  SDL_Surface *tmp = NULL;
   char buffer[512];
-#ifdef SMALL_SCREEN
+#ifdef GUI_SDL2_SMALL_SCREEN
   SDL_Rect area = {0, 0, 0, 0};
 #else
   SDL_Rect area = {0, 3, 0, 0};
@@ -417,30 +414,31 @@ void update_info_label(void)
     return;
   }
 
-#ifdef SMALL_SCREEN
-  ptext = create_utf8_str(NULL, 0, 8);
-#else
-  ptext = create_utf8_str(NULL, 0, 10);
-#endif
+  ptext = create_utf8_str_fonto(NULL, 0, FONTO_DEFAULT);
 
-  /* set text settings */
+  /* Set text settings */
   ptext->style |= TTF_STYLE_BOLD;
   ptext->fgcol = *get_theme_color(COLOR_THEME_MAPVIEW_INFO_TEXT);
   ptext->bgcol = (SDL_Color) {0, 0, 0, 0};
 
-  if (NULL != client.conn.playing) {
-#ifdef SMALL_SCREEN
+  if (client_player() != NULL) {
+#ifdef GUI_SDL2_SMALL_SCREEN
     fc_snprintf(buffer, sizeof(buffer),
-                _("%s Population: %s  Year: %s  "
+                /* TRANS: "(Obs) Egyptian..." */
+                _("%s%s Population: %s  Year: %s  "
                   "Gold %d "),
+                /* TRANS: Observer */
+                client.conn.observer ? _("(Obs) ") : "",
                 nation_adjective_for_player(client.conn.playing),
                 population_to_text(civ_population(client.conn.playing)),
                 calendar_text(),
                 client.conn.playing->economic.gold);
-#else /* SMALL_SCREEN */
+#else /* GUI_SDL2_SMALL_SCREEN */
     fc_snprintf(buffer, sizeof(buffer),
-                _("%s Population: %s  Year: %s  "
+                /* TRANS: "(Observer) Egyptian..." */
+                _("%s%s Population: %s  Year: %s  "
                   "Gold %d Tax: %d Lux: %d Sci: %d "),
+                client.conn.observer ? _("(Observer) ") : "",
                 nation_adjective_for_player(client.conn.playing),
                 population_to_text(civ_population(client.conn.playing)),
                 calendar_text(),
@@ -448,39 +446,44 @@ void update_info_label(void)
                 client.conn.playing->economic.tax,
                 client.conn.playing->economic.luxury,
                 client.conn.playing->economic.science);
-#endif /* SMALL_SCREEN */
-    /* convert to unistr and create text surface */
+#endif /* GUI_SDL2_SMALL_SCREEN */
+
+    /* Convert to utf8_str and create text surface */
     copy_chars_to_utf8_str(ptext, buffer);
-    pTmp = create_text_surf_from_utf8(ptext);
+    tmp = create_text_surf_from_utf8(ptext);
 
-    area.x = (main_window_width() - pTmp->w) / 2 - adj_size(5);
-    area.w = pTmp->w + adj_size(8);
-    area.h = pTmp->h + adj_size(4);
+    area.x = (main_window_width() - tmp->w) / 2 - adj_size(5);
+    area.w = tmp->w + adj_size(8);
+    area.h = tmp->h + adj_size(4);
 
-    SDL_FillRect(Main.gui->surface, &area , map_rgba(Main.gui->surface->format, bg_color));
+    SDL_FillRect(main_data.gui->surface, &area,
+                 map_rgba(main_data.gui->surface->format, bg_color));
 
     /* Horizontal lines */
-    create_line(Main.gui->surface,
+    create_line(main_data.gui->surface,
                 area.x + 1, area.y, area.x + area.w - 2, area.y,
                 get_theme_color(COLOR_THEME_MAPVIEW_INFO_FRAME));
-    create_line(Main.gui->surface,
-                area.x + 1, area.y + area.h - 1, area.x + area.w - 2, area.y + area.h - 1,
+    create_line(main_data.gui->surface,
+                area.x + 1, area.y + area.h - 1, area.x + area.w - 2,
+                area.y + area.h - 1,
                 get_theme_color(COLOR_THEME_MAPVIEW_INFO_FRAME));
 
-    /* vertical lines */
-    create_line(Main.gui->surface,
-                area.x + area.w - 1, area.y + 1, area.x + area.w - 1, area.y + area.h - 2,
+    /* Vertical lines */
+    create_line(main_data.gui->surface,
+                area.x + area.w - 1, area.y + 1, area.x + area.w - 1,
+                area.y + area.h - 2,
                 get_theme_color(COLOR_THEME_MAPVIEW_INFO_FRAME));
-    create_line(Main.gui->surface,
+    create_line(main_data.gui->surface,
                 area.x, area.y + 1, area.x, area.y + area.h - 2,
                 get_theme_color(COLOR_THEME_MAPVIEW_INFO_FRAME));
 
-    /* blit text to screen */
-    blit_entire_src(pTmp, Main.gui->surface, area.x + adj_size(5), area.y + adj_size(2));
+    /* Blit text to screen */
+    blit_entire_src(tmp, main_data.gui->surface, area.x + adj_size(5),
+                    area.y + adj_size(2));
 
     dirty_sdl_rect(&area);
 
-    FREESURFACE(pTmp);
+    FREESURFACE(tmp);
   }
 
   set_indicator_icons(client_research_sprite(),
@@ -500,7 +503,7 @@ void update_info_label(void)
 **************************************************************************/
 static int focus_units_info_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     struct unit *punit = pwidget->data.unit;
 
     if (punit) {
@@ -518,94 +521,95 @@ static int focus_units_info_callback(struct widget *pwidget)
 **************************************************************************/
 void redraw_unit_info_label(struct unit_list *punitlist)
 {
-  struct widget *pInfo_Window;
+  struct widget *info_window;
   SDL_Rect src, area;
   SDL_Rect dest;
   SDL_Surface *buf_surf;
   utf8_str *pstr;
   struct canvas *destcanvas;
-  struct unit *pUnit;
+  struct unit *punit;
 
   if (punitlist != NULL && unit_list_size(punitlist) > 0) {
-    pUnit = unit_list_get(punitlist, 0);
+    punit = unit_list_get(punitlist, 0);
   } else {
-    pUnit = NULL;
+    punit = NULL;
   }
 
-  if (SDL_Client_Flags & CF_UNITINFO_SHOWN) {
-    pInfo_Window = get_unit_info_window_widget();
+  if (sdl2_client_flags & CF_UNITINFO_SHOWN) {
+    info_window = get_unit_info_window_widget();
 
-    /* blit theme surface */
-    widget_redraw(pInfo_Window);
+    /* Blit theme surface */
+    widget_redraw(info_window);
 
-    if (pUnit) {
-      SDL_Surface *pName, *pVet_Name = NULL, *pInfo, *pInfo_II = NULL;
+    if (punit) {
+      SDL_Surface *name, *vet_name = NULL, *info, *info2 = NULL;
       int sy, y, width, height, n;
       bool right;
       char buffer[512];
-      struct tile *pTile = unit_tile(pUnit);
+      struct tile *ptile = unit_tile(punit);
       const char *vetname;
 
-      /* get and draw unit name (with veteran status) */
-      pstr = create_utf8_from_char(unit_name_translation(pUnit), adj_font(12));
+      /* Get and draw unit name (with veteran status) */
+      pstr = create_utf8_from_char_fonto(unit_name_translation(punit),
+                                         FONTO_ATTENTION);
       pstr->style |= TTF_STYLE_BOLD;
       pstr->bgcol = (SDL_Color) {0, 0, 0, 0};
-      pName = create_text_surf_from_utf8(pstr);
+      name = create_text_surf_from_utf8(pstr);
 
       pstr->style &= ~TTF_STYLE_BOLD;
 
-      if (pInfo_Window->size.w > 1.8 *
-          ((pInfo_Window->size.w - pInfo_Window->area.w) + DEFAULT_UNITS_W)) {
-        width = pInfo_Window->area.w / 2;
+      if (info_window->size.w > 1.8 *
+          ((info_window->size.w - info_window->area.w) + DEFAULT_UNITS_W)) {
+        width = info_window->area.w / 2;
         right = TRUE;
       } else {
-        width = pInfo_Window->area.w;
+        width = info_window->area.w;
         right = FALSE;
       }
 
-      change_ptsize_utf8(pstr, adj_font(10));
-      vetname = utype_veteran_name_translation(unit_type_get(pUnit),
-                                               pUnit->veteran);
+      change_fonto_utf8(pstr, FONTO_DEFAULT);
+      vetname = utype_veteran_name_translation(unit_type_get(punit),
+                                               punit->veteran);
       if (vetname != NULL) {
         copy_chars_to_utf8_str(pstr, vetname);
         pstr->fgcol = *get_theme_color(COLOR_THEME_MAPVIEW_UNITINFO_VETERAN_TEXT);
-        pVet_Name = create_text_surf_from_utf8(pstr);
+        vet_name = create_text_surf_from_utf8(pstr);
         pstr->fgcol = *get_theme_color(COLOR_THEME_MAPVIEW_UNITINFO_TEXT);
       }
 
-      /* get and draw other info (MP, terrain, city, etc.) */
+      /* Get and draw other info (MP, terrain, city, etc.) */
       pstr->style |= SF_CENTER;
 
       copy_chars_to_utf8_str(pstr,
                              get_unit_info_label_text2(punitlist,
                                                        TILE_LB_RESOURCE_POLL));
-      pInfo = create_text_surf_from_utf8(pstr);
+      info = create_text_surf_from_utf8(pstr);
 
-      if (pInfo_Window->size.h >
-          (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h)) || right) {
-        int h = TTF_FontHeight(pInfo_Window->string_utf8->font);
+      if (info_window->size.h >
+          (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h)) || right) {
+        int h = TTF_FontHeight(info_window->string_utf8->font);
 
         fc_snprintf(buffer, sizeof(buffer), "%s",
-                    sdl_get_tile_defense_info_text(pTile));
+                    sdl_get_tile_defense_info_text(ptile));
 
-        if (pInfo_Window->size.h >
-            2 * h + (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h)) || right) {
-          struct city *pCity = tile_city(pTile);
+        if (info_window->size.h >
+            2 * h + (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h)) || right) {
+          struct city *pcity = tile_city(ptile);
 
-          if (BORDERS_DISABLED != game.info.borders && !pCity) {
+          if (BORDERS_DISABLED != game.info.borders && !pcity) {
             const char *diplo_nation_plural_adjectives[DS_LAST] =
               {"" /* unused, DS_ARMISTICE */, Q_("?nation:Hostile"),
                "" /* unused, DS_CEASEFIRE */,
-               Q_("?nation:Peaceful"), Q_("?nation:Friendly"), 
+               Q_("?nation:Peaceful"), Q_("?nation:Friendly"),
                Q_("?nation:Mysterious")};
 
-            if (tile_owner(pTile) == client.conn.playing) {
+            if (tile_owner(ptile) == client.conn.playing) {
               cat_snprintf(buffer, sizeof(buffer), _("\nOur Territory"));
             } else {
-              if (tile_owner(pTile)) {
+              if (tile_owner(ptile)) {
                 struct player_diplstate *ds
                   = player_diplstate_get(client.conn.playing,
-                                         tile_owner(pTile));
+                                         tile_owner(ptile));
 
                 if (DS_CEASEFIRE == ds->type) {
                   int turns = ds->turns_left;
@@ -613,7 +617,7 @@ void redraw_unit_info_label(struct unit_list *punitlist)
                   cat_snprintf(buffer, sizeof(buffer),
                                PL_("\n%s territory (%d turn ceasefire)",
                                    "\n%s territory (%d turn ceasefire)", turns),
-                               nation_adjective_for_player(tile_owner(pTile)),
+                               nation_adjective_for_player(tile_owner(ptile)),
                                turns);
                 } else if (DS_ARMISTICE == ds->type) {
                   int turns = ds->turns_left;
@@ -621,210 +625,216 @@ void redraw_unit_info_label(struct unit_list *punitlist)
                   cat_snprintf(buffer, sizeof(buffer),
                                PL_("\n%s territory (%d turn armistice)",
                                    "\n%s territory (%d turn armistice)", turns),
-                               nation_adjective_for_player(tile_owner(pTile)),
+                               nation_adjective_for_player(tile_owner(ptile)),
                                turns);
                 } else {
                   cat_snprintf(buffer, sizeof(buffer), _("\nTerritory of the %s %s"),
                                diplo_nation_plural_adjectives[ds->type],
-                               nation_plural_for_player(tile_owner(pTile)));
+                               nation_plural_for_player(tile_owner(ptile)));
                 }
-              } else { /* !tile_owner(pTile) */
+              } else { /* !tile_owner(ptile) */
                 cat_snprintf(buffer, sizeof(buffer), _("\nUnclaimed territory"));
               }
-	    }
-          } /* BORDERS_DISABLED != game.info.borders && !pCity */
+            }
+          } /* BORDERS_DISABLED != game.info.borders && !pcity */
 
-          if (pCity) {
+          if (pcity) {
             /* Look at city owner, not tile owner (the two should be the same, if
              * borders are in use). */
-            struct player *pOwner = city_owner(pCity);
-	    const char *diplo_city_adjectives[DS_LAST] =
-    			{Q_("?city:Neutral"), Q_("?city:Hostile"),
+            struct player *owner = city_owner(pcity);
+            const char *diplo_city_adjectives[DS_LAST] =
+                        {Q_("?city:Neutral"), Q_("?city:Hostile"),
                          Q_("?city:Neutral"), Q_("?city:Peaceful"),
                          Q_("?city:Friendly"), Q_("?city:Mysterious")};
 
-	    cat_snprintf(buffer, sizeof(buffer),
+            cat_snprintf(buffer, sizeof(buffer),
                          _("\nCity of %s"),
-                         city_name_get(pCity));
+                         city_name_get(pcity));
 
 #if 0
             /* This has hardcoded assumption that EFT_LAND_REGEN is always
              * provided by *building* named *Barracks*. Similar assumptions for
              * other effects. */
-	    if (pplayers_allied(client.conn.playing, pOwner)) {
-	      barrack = (get_city_bonus(pCity, EFT_LAND_REGEN) > 0);
-	      airport = (get_city_bonus(pCity, EFT_AIR_VETERAN) > 0);
-	      port = (get_city_bonus(pCity, EFT_SEA_VETERAN) > 0);
-	    }
+            if (pplayers_allied(client.conn.playing, owner)) {
+              barrack = (get_city_bonus(pcity, EFT_LAND_REGEN) > 0);
+              airport = (get_city_bonus(pcity, EFT_AIR_VETERAN) > 0);
+              port = (get_city_bonus(pcity, EFT_SEA_VETERAN) > 0);
+            }
 
-	    if (citywall || barrack || airport || port) {
-	      cat_snprintf(buffer, sizeof(buffer), Q_("?blistbegin: with "));
-	      if (barrack) {
+            if (citywall || barrack || airport || port) {
+              cat_snprintf(buffer, sizeof(buffer), Q_("?blistbegin: with "));
+              if (barrack) {
                 cat_snprintf(buffer, sizeof(buffer), _("Barracks"));
-	        if (port || airport || citywall) {
-	          cat_snprintf(buffer, sizeof(buffer), Q_("?blistmore:, "));
-	        }
-	      }
-	      if (port) {
-	        cat_snprintf(buffer, sizeof(buffer), _("Port"));
-	        if (airport || citywall) {
-	          cat_snprintf(buffer, sizeof(buffer), Q_("?blistmore:, "));
-	        }
-	      }
-	      if (airport) {
-	        cat_snprintf(buffer, sizeof(buffer), _("Airport"));
-	        if (citywall) {
-	          cat_snprintf(buffer, sizeof(buffer), Q_("?blistmore:, "));
-	        }
-	      }
-	      if (citywall) {
-	        cat_snprintf(buffer, sizeof(buffer), _("City Walls"));
+                if (port || airport || citywall) {
+                  cat_snprintf(buffer, sizeof(buffer), Q_("?blistmore:, "));
+                }
+              }
+              if (port) {
+                cat_snprintf(buffer, sizeof(buffer), _("Port"));
+                if (airport || citywall) {
+                  cat_snprintf(buffer, sizeof(buffer), Q_("?blistmore:, "));
+                }
+              }
+              if (airport) {
+                cat_snprintf(buffer, sizeof(buffer), _("Airport"));
+                if (citywall) {
+                  cat_snprintf(buffer, sizeof(buffer), Q_("?blistmore:, "));
+                }
+              }
+              if (citywall) {
+                cat_snprintf(buffer, sizeof(buffer), _("City Walls"));
               }
 
               cat_snprintf(buffer, sizeof(buffer), Q_("?blistend:"));
-	    }
+            }
 #endif /* 0 */
 
-            if (pOwner && pOwner != client.conn.playing) {
+            if (owner && owner != client.conn.playing) {
               struct player_diplstate *ds
-                = player_diplstate_get(client.conn.playing, pOwner);
+                = player_diplstate_get(client.conn.playing, owner);
+
               /* TRANS: (<nation>,<diplomatic_state>)" */
               cat_snprintf(buffer, sizeof(buffer), _("\n(%s,%s)"),
-                           nation_adjective_for_player(pOwner),
+                           nation_adjective_for_player(owner),
                            diplo_city_adjectives[ds->type]);
             }
           }
         }
 
-        if (pInfo_Window->size.h >
-            4 * h + (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h)) || right) {
+        if (info_window->size.h >
+            4 * h + (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h)) || right) {
           cat_snprintf(buffer, sizeof(buffer), _("\nFood/Prod/Trade: %s"),
-                       get_tile_output_text(unit_tile(pUnit)));
+                       get_tile_output_text(unit_tile(punit)));
         }
 
         copy_chars_to_utf8_str(pstr, buffer);
 
-        pInfo_II = create_text_surf_smaller_than_w(pstr, width - BLOCKU_W - adj_size(4));
+        info2 = create_text_surf_smaller_than_w(pstr, width - BLOCKU_W - adj_size(4));
       }
 
       FREEUTF8STR(pstr);
 
       /* ------------------------------------------- */
 
-      n = unit_list_size(pTile->units);
+      n = unit_list_size(ptile->units);
       y = 0;
 
-      if (n > 1 && ((!right && pInfo_II
-                     && (pInfo_Window->size.h - (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h)) -
-                         pInfo_II->h > 52))
-                    || (right && pInfo_Window->size.h - (DEFAULT_UNITS_H + (pInfo_Window->size.h -
-                                                                            pInfo_Window->area.h)) > 52))) {
-        height = (pInfo_Window->size.h - pInfo_Window->area.h) + DEFAULT_UNITS_H;
+      if (n > 1 && ((!right && info2
+                     && (info_window->size.h - (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h)) -
+                         info2->h > 52))
+                    || (right && info_window->size.h - (DEFAULT_UNITS_H + (info_window->size.h -
+                                                                            info_window->area.h)) > 52))) {
+        height = (info_window->size.h - info_window->area.h) + DEFAULT_UNITS_H;
       } else {
-        height = pInfo_Window->size.h;
-        if (pInfo_Window->size.h > (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h))) {
-          y = (pInfo_Window->size.h - (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h)) -
-               (!right && pInfo_II ? pInfo_II->h : 0)) / 2;
+        height = info_window->size.h;
+        if (info_window->size.h > (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h))) {
+          y = (info_window->size.h - (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h)) -
+               (!right && info2 ? info2->h : 0)) / 2;
         }
       }
 
       sy = y + adj_size(3);
-      area.y = pInfo_Window->area.y + sy;
-      area.x = pInfo_Window->area.x + BLOCKU_W + (width - pName->w - BLOCKU_W) / 2;
+      area.y = info_window->area.y + sy;
+      area.x = info_window->area.x + BLOCKU_W + (width - name->w - BLOCKU_W) / 2;
       dest = area;
-      alphablit(pName, NULL, pInfo_Window->dst->surface, &dest, 255);
-      sy += pName->h;
-      if (pVet_Name) {
-        area.y += pName->h - adj_size(3);
-        area.x = pInfo_Window->area.x + BLOCKU_W + (width - pVet_Name->w - BLOCKU_W) / 2;
-        alphablit(pVet_Name, NULL, pInfo_Window->dst->surface, &area, 255);
-        sy += pVet_Name->h - adj_size(3);
-        FREESURFACE(pVet_Name);
+      alphablit(name, NULL, info_window->dst->surface, &dest, 255);
+      sy += name->h;
+      if (vet_name) {
+        area.y += name->h - adj_size(3);
+        area.x = info_window->area.x + BLOCKU_W + (width - vet_name->w - BLOCKU_W) / 2;
+        alphablit(vet_name, NULL, info_window->dst->surface, &area, 255);
+        sy += vet_name->h - adj_size(3);
+        FREESURFACE(vet_name);
       }
-      FREESURFACE(pName);
+      FREESURFACE(name);
 
       /* draw unit sprite */
-      buf_surf = ResizeSurfaceBox(get_unittype_surface(unit_type_get(pUnit),
-                                                       pUnit->facing),
+      buf_surf = resize_surface_box(get_unittype_surface(unit_type_get(punit),
+                                                         punit->facing),
                                   adj_size(80), adj_size(80), 1, TRUE, TRUE);
 
       src = (SDL_Rect){0, 0, buf_surf->w, buf_surf->h};
 
-      area.x = pInfo_Window->area.x + BLOCKU_W - adj_size(4) +
+      area.x = info_window->area.x + BLOCKU_W - adj_size(4) +
                ((width - BLOCKU_W + adj_size(3) - src.w) / 2);
-      area.y = pInfo_Window->size.y + sy + (DEFAULT_UNITS_H - sy - src.h) / 2;
-      alphablit(buf_surf, &src, pInfo_Window->dst->surface, &area, 32);
+      area.y = info_window->size.y + sy + (DEFAULT_UNITS_H - sy - src.h) / 2;
+      alphablit(buf_surf, &src, info_window->dst->surface, &area, 32);
       FREESURFACE(buf_surf);
 
       /* blit unit info text */
-      area.x = pInfo_Window->area.x + BLOCKU_W - adj_size(4) +
-                 ((width - BLOCKU_W + adj_size(4) - pInfo->w) / 2);
-      area.y = pInfo_Window->size.y + sy + (DEFAULT_UNITS_H - sy - pInfo->h) / 2;
+      area.x = info_window->area.x + BLOCKU_W - adj_size(4) +
+                 ((width - BLOCKU_W + adj_size(4) - info->w) / 2);
+      area.y = info_window->size.y + sy + (DEFAULT_UNITS_H - sy - info->h) / 2;
 
-      alphablit(pInfo, NULL, pInfo_Window->dst->surface, &area, 255);
-      FREESURFACE(pInfo);
+      alphablit(info, NULL, info_window->dst->surface, &area, 255);
+      FREESURFACE(info);
 
-      if (pInfo_II) {
+      if (info2) {
         if (right) {
-	  area.x = pInfo_Window->area.x + width + (width - pInfo_II->w) / 2;
-	  area.y = pInfo_Window->area.y + (height - pInfo_II->h) / 2;
+          area.x = info_window->area.x + width + (width - info2->w) / 2;
+          area.y = info_window->area.y + (height - info2->h) / 2;
         } else {
-	  area.y = pInfo_Window->area.y + DEFAULT_UNITS_H + y;
-          area.x = pInfo_Window->area.x + BLOCKU_W + 
-                   (width - BLOCKU_W - pInfo_II->w) / 2;
+          area.y = info_window->area.y + DEFAULT_UNITS_H + y;
+          area.x = info_window->area.x + BLOCKU_W +
+                  (width - BLOCKU_W - info2->w) / 2;
         }
 
         /* blit unit info text */
-        alphablit(pInfo_II, NULL, pInfo_Window->dst->surface, &area, 255);
+        alphablit(info2, NULL, info_window->dst->surface, &area, 255);
 
         if (right) {
-          sy = (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h));
+          sy = (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h));
         } else {
-          sy = area.y - pInfo_Window->size.y + pInfo_II->h;
+          sy = area.y - info_window->size.y + info2->h;
         }
-        FREESURFACE(pInfo_II);
+        FREESURFACE(info2);
       } else {
-        sy = (DEFAULT_UNITS_H + (pInfo_Window->size.h - pInfo_Window->area.h));
+        sy = (DEFAULT_UNITS_H + (info_window->size.h - info_window->area.h));
       }
 
-      if (n > 1 && (pInfo_Window->size.h - sy > 52)) {
-        struct ADVANCED_DLG *pDlg = pInfo_Window->private_data.adv_dlg;
-        struct widget *pBuf = NULL, *pEnd = NULL, *pDock;
-        struct city *pHome_City;
-        struct unit_type *pUType;
+      if (n > 1 && (info_window->size.h - sy > 52)) {
+        struct advanced_dialog *dlg = info_window->private_data.adv_dlg;
+        struct widget *buf = NULL, *end = NULL, *dock;
+        struct city *home_city;
+        const struct unit_type *putype;
         int num_w, num_h;
 
-        if (pDlg->pEndActiveWidgetList && pDlg->pBeginActiveWidgetList) {
-          del_group(pDlg->pBeginActiveWidgetList, pDlg->pEndActiveWidgetList);
+        if (dlg->end_active_widget_list && dlg->begin_active_widget_list) {
+          del_group(dlg->begin_active_widget_list, dlg->end_active_widget_list);
         }
-        num_w = (pInfo_Window->area.w - BLOCKU_W) / 68;
-        num_h = (pInfo_Window->area.h - sy) / 52;
-        pDock = pInfo_Window;
+        num_w = (info_window->area.w - BLOCKU_W) / 68;
+        num_h = (info_window->area.h - sy) / 52;
+        dock = info_window;
         n = 0;
 
-        unit_list_iterate(pTile->units, aunit) {
+        unit_list_iterate(ptile->units, aunit) {
           SDL_Surface *tmp_surf;
+          struct astring addition = ASTRING_INIT;
 
-          if (aunit == pUnit) {
+          if (aunit == punit) {
             continue;
-	  }
+          }
 
-          pUType = unit_type_get(aunit);
-          vetname = utype_veteran_name_translation(pUType, aunit->veteran);
-          pHome_City = game_city_by_number(aunit->homecity);
-          fc_snprintf(buffer, sizeof(buffer), "%s (%d,%d,%s)%s%s\n%s\n(%d/%d)\n%s",
-                      utype_name_translation(pUType),
-                      pUType->attack_strength,
-                      pUType->defense_strength,
-                      move_points_text(pUType->move_rate, FALSE),
+          putype = unit_type_get(aunit);
+          vetname = utype_veteran_name_translation(putype, aunit->veteran);
+          home_city = game_city_by_number(aunit->homecity);
+          unit_activity_astr(aunit, &addition);
+          fc_snprintf(buffer, sizeof(buffer),
+                      "%s (%d,%d,%s)%s%s\n%s\n(%d/%d)\n%s",
+                      utype_name_translation(putype),
+                      putype->attack_strength,
+                      putype->defense_strength,
+                      move_points_text(putype->move_rate, FALSE),
                       (vetname != NULL ? "\n" : ""),
                       (vetname != NULL ? vetname : ""),
-                      unit_activity_text(aunit),
-                      aunit->hp, pUType->hp,
-                      pHome_City ? city_name_get(pHome_City) : Q_("?homecity:None"));
+                      astr_str(&addition),
+                      aunit->hp, putype->hp,
+                      home_city ? city_name_get(home_city) : Q_("?homecity:None"));
+          astr_free(&addition);
 
           buf_surf = create_surf(tileset_full_tile_width(tileset),
-                                 tileset_full_tile_height(tileset), SDL_SWSURFACE);
+                                 tileset_full_tile_height(tileset),
+                                 SDL_SWSURFACE);
 
           destcanvas = canvas_create(tileset_full_tile_width(tileset),
                                      tileset_full_tile_height(tileset));
@@ -846,91 +856,91 @@ void redraw_unit_info_label(struct unit_list *punitlist)
             buf_surf = zoomed;
           }
 
-	  pstr = create_utf8_from_char(buffer, 10);
+          pstr = create_utf8_from_char(buffer, 10);
           pstr->style |= SF_CENTER;
 
-          pBuf = create_icon2(buf_surf, pInfo_Window->dst,
+          buf = create_icon2(buf_surf, info_window->dst,
                               WF_FREE_THEME | WF_RESTORE_BACKGROUND
                               | WF_WIDGET_HAS_INFO_LABEL);
-          pBuf->info_label = pstr;
-          pBuf->data.unit = aunit;
-	  pBuf->ID = ID_ICON;
-	  DownAdd(pBuf, pDock);
-          pDock = pBuf;
+          buf->info_label = pstr;
+          buf->data.unit = aunit;
+          buf->id = ID_ICON;
+          widget_add_as_prev(buf, dock);
+          dock = buf;
 
-          if (!pEnd) {
-            pEnd = pBuf;
+          if (!end) {
+            end = buf;
           }
 
           if (++n > num_w * num_h) {
-            set_wflag(pBuf, WF_HIDDEN);
+            set_wflag(buf, WF_HIDDEN);
           }
 
           if (unit_owner(aunit) == client.conn.playing) {
-            set_wstate(pBuf, FC_WS_NORMAL);
+            set_wstate(buf, FC_WS_NORMAL);
           }
 
-          pBuf->action = focus_units_info_callback;
+          buf->action = focus_units_info_callback;
 
-	} unit_list_iterate_end;
+        } unit_list_iterate_end;
 
-        pDlg->pBeginActiveWidgetList = pBuf;
-        pDlg->pEndActiveWidgetList = pEnd;
-        pDlg->pActiveWidgetList = pDlg->pEndActiveWidgetList;
+        dlg->begin_active_widget_list = buf;
+        dlg->end_active_widget_list = end;
+        dlg->active_widget_list = dlg->end_active_widget_list;
 
         if (n > num_w * num_h) {
-          if (!pDlg->pScroll) {
-            create_vertical_scrollbar(pDlg, num_w, num_h, FALSE, TRUE);
+          if (!dlg->scroll) {
+            create_vertical_scrollbar(dlg, num_w, num_h, FALSE, TRUE);
           } else {
-            pDlg->pScroll->active = num_h;
-            pDlg->pScroll->step = num_w;
-            pDlg->pScroll->count = n;
-            show_scrollbar(pDlg->pScroll);
-	 }
+            dlg->scroll->active = num_h;
+            dlg->scroll->step = num_w;
+            dlg->scroll->count = n;
+            show_scrollbar(dlg->scroll);
+          }
 
           /* create up button */
-          pBuf = pDlg->pScroll->pUp_Left_Button;
-          pBuf->size.x = pInfo_Window->area.x + pInfo_Window->area.w - pBuf->size.w;
-          pBuf->size.y = pInfo_Window->area.y + sy +
-            (pInfo_Window->size.h - sy - num_h * 52) / 2;
-          pBuf->size.h = (num_h * 52) / 2;
+          buf = dlg->scroll->up_left_button;
+          buf->size.x = info_window->area.x + info_window->area.w - buf->size.w;
+          buf->size.y = info_window->area.y + sy +
+            (info_window->size.h - sy - num_h * 52) / 2;
+          buf->size.h = (num_h * 52) / 2;
 
           /* create down button */
-          pBuf = pDlg->pScroll->pDown_Right_Button;
-          pBuf->size.x = pDlg->pScroll->pUp_Left_Button->size.x;
-          pBuf->size.y = pDlg->pScroll->pUp_Left_Button->size.y +
-            pDlg->pScroll->pUp_Left_Button->size.h;
-          pBuf->size.h = pDlg->pScroll->pUp_Left_Button->size.h;
+          buf = dlg->scroll->down_right_button;
+          buf->size.x = dlg->scroll->up_left_button->size.x;
+          buf->size.y = dlg->scroll->up_left_button->size.y +
+            dlg->scroll->up_left_button->size.h;
+          buf->size.h = dlg->scroll->up_left_button->size.h;
         } else {
-          if (pDlg->pScroll) {
-            hide_scrollbar(pDlg->pScroll);
+          if (dlg->scroll) {
+            hide_scrollbar(dlg->scroll);
           }
           num_h = (n + num_w - 1) / num_w;
         }
 
         setup_vertical_widgets_position(num_w,
-                                        pInfo_Window->area.x + BLOCKU_W + adj_size(2),
-                                        pInfo_Window->size.y + sy +
-                                        (pInfo_Window->size.h - sy - num_h * 52) / 2,
-                                        0, 0, pDlg->pBeginActiveWidgetList,
-                                        pDlg->pEndActiveWidgetList);
+                                        info_window->area.x + BLOCKU_W + adj_size(2),
+                                        info_window->size.y + sy +
+                                        (info_window->size.h - sy - num_h * 52) / 2,
+                                        0, 0, dlg->begin_active_widget_list,
+                                        dlg->end_active_widget_list);
       } else {
-        if (pInfo_Window->private_data.adv_dlg->pEndActiveWidgetList) {
-          del_group(pInfo_Window->private_data.adv_dlg->pBeginActiveWidgetList,
-                    pInfo_Window->private_data.adv_dlg->pEndActiveWidgetList);
+        if (info_window->private_data.adv_dlg->end_active_widget_list) {
+          del_group(info_window->private_data.adv_dlg->begin_active_widget_list,
+                    info_window->private_data.adv_dlg->end_active_widget_list);
         }
-        if (pInfo_Window->private_data.adv_dlg->pScroll) {
-          hide_scrollbar(pInfo_Window->private_data.adv_dlg->pScroll);
+        if (info_window->private_data.adv_dlg->scroll) {
+          hide_scrollbar(info_window->private_data.adv_dlg->scroll);
         }
       }
-    } else { /* pUnit */
+    } else { /* punit */
 
-      if (pInfo_Window->private_data.adv_dlg->pEndActiveWidgetList) {
-	del_group(pInfo_Window->private_data.adv_dlg->pBeginActiveWidgetList,
-                  pInfo_Window->private_data.adv_dlg->pEndActiveWidgetList);
+      if (info_window->private_data.adv_dlg->end_active_widget_list) {
+        del_group(info_window->private_data.adv_dlg->begin_active_widget_list,
+                  info_window->private_data.adv_dlg->end_active_widget_list);
       }
-      if (pInfo_Window->private_data.adv_dlg->pScroll) {
-	hide_scrollbar(pInfo_Window->private_data.adv_dlg->pScroll);
+      if (info_window->private_data.adv_dlg->scroll) {
+        hide_scrollbar(info_window->private_data.adv_dlg->scroll);
       }
 
       if (!client_is_observer() && !client.conn.playing->phase_done
@@ -940,24 +950,26 @@ void redraw_unit_info_label(struct unit_list *punitlist)
 
         fc_snprintf(buf, sizeof(buf), "%s\n%s\n%s",
                     _("End of Turn"), _("Press"), _("Shift+Return"));
-        pstr = create_utf8_from_char(buf, adj_font(14));
+        pstr = create_utf8_from_char_fonto(buf, FONTO_HEADING);
         pstr->style = SF_CENTER;
         pstr->bgcol = (SDL_Color) {0, 0, 0, 0};
         buf_surf = create_text_surf_from_utf8(pstr);
-        area.x = pInfo_Window->size.x + BLOCKU_W +
-          (pInfo_Window->size.w - BLOCKU_W - buf_surf->w) / 2;
-        area.y = pInfo_Window->size.y + (pInfo_Window->size.h - buf_surf->h) / 2;
-        alphablit(buf_surf, NULL, pInfo_Window->dst->surface, &area, 255);
+        area.x = info_window->size.x + BLOCKU_W +
+          (info_window->size.w - BLOCKU_W - buf_surf->w) / 2;
+        area.y = info_window->size.y + (info_window->size.h - buf_surf->h) / 2;
+        alphablit(buf_surf, NULL, info_window->dst->surface, &area, 255);
         FREESURFACE(buf_surf);
         FREEUTF8STR(pstr);
+        /* Fix the bug of child dialogs not showing up when player's turn ends */
+        flush_all();
       }
     }
 
-    /* draw buttons */
-    redraw_group(pInfo_Window->private_data.adv_dlg->pBeginWidgetList,
-                 pInfo_Window->private_data.adv_dlg->pEndWidgetList->prev, 0);
+    /* Draw buttons */
+    redraw_group(info_window->private_data.adv_dlg->begin_widget_list,
+                 info_window->private_data.adv_dlg->end_widget_list->prev, 0);
 
-    widget_mark_dirty(pInfo_Window);
+    widget_mark_dirty(info_window);
   }
 }
 
@@ -966,7 +978,7 @@ void redraw_unit_info_label(struct unit_list *punitlist)
 **************************************************************************/
 static bool is_focus_anim_enabled(void)
 {
-  return (SDL_Client_Flags & CF_FOCUS_ANIMATION) == CF_FOCUS_ANIMATION;
+  return (sdl2_client_flags & CF_FOCUS_ANIMATION) == CF_FOCUS_ANIMATION;
 }
 
 /**********************************************************************//**
@@ -1066,24 +1078,11 @@ void update_city_descriptions(void)
 /* ===================================================================== */
 
 /**********************************************************************//**
-  Toggle between overview modes.
-**************************************************************************/
-void toggle_overview_mode(void)
-{
-  /* FIXME: has no effect anymore */
-  if (overview_mode == BORDERS) {
-    overview_mode = NORMAL;
-  } else {
-    overview_mode = BORDERS;
-  }
-}
-
-/**********************************************************************//**
   Return a canvas that is the overview window.
 **************************************************************************/
 struct canvas *get_overview_window(void)
 {
-  return overview_canvas;  
+  return overview_canvas;
 }
 
 /**********************************************************************//**
@@ -1092,28 +1091,28 @@ struct canvas *get_overview_window(void)
 **************************************************************************/
 void get_overview_area_dimensions(int *width, int *height)
 {
-  /* calculate the dimensions in a way to always get a resulting
+  /* Calculate the dimensions in a way to always get a resulting
      overview with a height bigger than or equal to DEFAULT_OVERVIEW_H.
      First, the default dimensions are fed to the same formula that
      is used in overview_common.c. If the resulting height is
      smaller than DEFAULT_OVERVIEW_H, increase OVERVIEW_TILE_SIZE
      by 1 until the height condition is met.
   */
-  int overview_tile_size_bak = OVERVIEW_TILE_SIZE;  
+  int overview_tile_size_bak = OVERVIEW_TILE_SIZE;
   int xfact = MAP_IS_ISOMETRIC ? 2 : 1;
-  int shift = (MAP_IS_ISOMETRIC && !current_topo_has_flag(TF_WRAPX)) ? -1 : 0;
+  int shift = (MAP_IS_ISOMETRIC && !current_wrap_has_flag(WRAP_X)) ? -1 : 0;
 
-  OVERVIEW_TILE_SIZE = MIN((DEFAULT_OVERVIEW_W - 1) / (wld.map.xsize * xfact),
-                           (DEFAULT_OVERVIEW_H - 1) / wld.map.ysize) + 1;
+  OVERVIEW_TILE_SIZE = MIN((DEFAULT_OVERVIEW_W - 1) / (MAP_NATIVE_WIDTH * xfact),
+                           (DEFAULT_OVERVIEW_H - 1) / MAP_NATIVE_HEIGHT) + 1;
 
   do {
-    *height = OVERVIEW_TILE_HEIGHT * wld.map.ysize;
+    *height = OVERVIEW_TILE_HEIGHT * MAP_NATIVE_HEIGHT;
     if (*height < DEFAULT_OVERVIEW_H) {
       OVERVIEW_TILE_SIZE++;
     }
   } while (*height < DEFAULT_OVERVIEW_H);
 
-  *width = OVERVIEW_TILE_WIDTH * wld.map.xsize + shift * OVERVIEW_TILE_SIZE;
+  *width = OVERVIEW_TILE_WIDTH * MAP_NATIVE_WIDTH + shift * OVERVIEW_TILE_SIZE;
 
   OVERVIEW_TILE_SIZE = overview_tile_size_bak;
 }
@@ -1124,21 +1123,21 @@ void get_overview_area_dimensions(int *width, int *height)
 **************************************************************************/
 void refresh_overview(void)
 {
-  struct widget *pMMap;
+  struct widget *minimap;
   SDL_Rect overview_area;
 
-  if (SDL_Client_Flags & CF_OVERVIEW_SHOWN) {
-    pMMap = get_minimap_window_widget();
+  if (sdl2_client_flags & CF_OVERVIEW_SHOWN) {
+    minimap = get_minimap_window_widget();
 
     overview_area = (SDL_Rect) {
-      pMMap->area.x + overview_start_x, pMMap->area.x + overview_start_y,
+      minimap->area.x + overview_start_x, minimap->area.x + overview_start_y,
       overview_canvas->surf->w, overview_canvas->surf->h
     };
 
-    alphablit(overview_canvas->surf, NULL, pMMap->dst->surface, &overview_area,
-              255);
+    alphablit(overview_canvas->surf, NULL, minimap->dst->surface,
+              &overview_area, 255);
 
-    widget_mark_dirty(pMMap);
+    widget_mark_dirty(minimap);
   }
 }
 
@@ -1165,7 +1164,7 @@ void put_cross_overlay_tile(struct tile *ptile)
 void draw_selection_rectangle(int canvas_x, int canvas_y, int w, int h)
 {
   /* PORTME */
-  create_frame(Main.map,
+  create_frame(main_data.map,
                canvas_x, canvas_y, w, h,
                get_theme_color(COLOR_THEME_SELECTIONRECTANGLE));
 }
@@ -1182,24 +1181,32 @@ void tileset_changed(void)
 }
 
 /* =====================================================================
-				City MAP
+                                City MAP
    ===================================================================== */
+
+/**********************************************************************//**
+  Free memory allocated for the city map canvas
+**************************************************************************/
+void city_map_canvas_free(void)
+{
+  if (city_map_canvas != NULL) {
+    canvas_free(city_map_canvas);
+    city_map_canvas = NULL;
+  }
+}
 
 /**********************************************************************//**
   Create new city map surface.
 **************************************************************************/
 SDL_Surface *create_city_map(struct city *pcity)
 {
-  /* city map dimensions might have changed, so create a new canvas each time */
+  /* City map dimensions might have changed, so create a new canvas each time */
+  city_map_canvas_free();
 
-  if (city_map_canvas) {
-    canvas_free(city_map_canvas);
-  }
-
-  city_map_canvas = canvas_create(get_citydlg_canvas_width(), 
+  city_map_canvas = canvas_create(get_citydlg_canvas_width(),
                                   get_citydlg_canvas_height());
 
-  city_dialog_redraw_map(pcity, city_map_canvas);  
+  city_dialog_redraw_map(pcity, city_map_canvas);
 
   return city_map_canvas->surf;
 }
@@ -1209,7 +1216,7 @@ SDL_Surface *create_city_map(struct city *pcity)
 **************************************************************************/
 SDL_Surface *get_terrain_surface(struct tile *ptile)
 {
-  /* tileset dimensions might have changed, so create a new canvas each time */
+  /* Tileset dimensions might have changed, so create a new canvas each time */
 
   if (terrain_canvas) {
     canvas_free(terrain_canvas);
@@ -1229,4 +1236,20 @@ SDL_Surface *get_terrain_surface(struct tile *ptile)
 void update_overview_scroll_window_pos(int x, int y)
 {
   /* TODO: PORTME. */
+}
+
+/**********************************************************************//**
+  New turn callback
+**************************************************************************/
+void start_turn(void)
+{}
+
+/**********************************************************************//**
+  Refresh map canvas size information
+**************************************************************************/
+void map_canvas_size_refresh(void)
+{
+  /* Needed only with full screen zoom mode.
+   * Not needed, nor implemented, in this client. */
+  fc_assert(FALSE);
 }

@@ -19,6 +19,9 @@
 #include "game.h"
 #include "government.h"
 
+/* client */
+#include "control.h"
+
 /* gui main header */
 #include "gui_stub.h"
 
@@ -81,7 +84,7 @@ void unit_select_dialog_popup(struct tile *ptile)
 /**********************************************************************//**
   Update the dialog window to select units on a particular tile.
 **************************************************************************/
-void unit_select_dialog_update_real(void)
+void unit_select_dialog_update_real(void *unused)
 {
   /* PORTME */
 }
@@ -116,10 +119,11 @@ void popup_revolution_dialog(void)
   should take.
 **************************************************************************/
 void popup_action_selection(struct unit *actor_unit,
-                                   struct city *target_city,
-                                   struct unit *target_unit,
-                                   struct tile *target_tile,
-                                   const struct act_prob *act_probs)
+                            struct city *target_city,
+                            struct unit *target_unit,
+                            struct tile *target_tile,
+                            struct extra_type *target_extra,
+                            const struct act_prob *act_probs)
 {
   /* PORTME */
 }
@@ -138,8 +142,18 @@ void popup_incite_dialog(struct unit *actor, struct city *pcity, int cost,
   Popup a dialog asking a diplomatic unit if it wishes to bribe the
   given enemy unit.
 **************************************************************************/
-void popup_bribe_dialog(struct unit *actor, struct unit *punit, int cost,
-                        const struct action *paction)
+void popup_bribe_unit_dialog(struct unit *actor, struct unit *punit, int cost,
+                             const struct action *paction)
+{
+  /* PORTME */
+}
+
+/**********************************************************************//**
+  Popup a dialog asking a diplomatic unit if it wishes to bribe the
+  given enemy unit stack.
+**************************************************************************/
+void popup_bribe_stack_dialog(struct unit *actor, struct tile *ptile, int cost,
+                              const struct action *paction)
 {
   /* PORTME */
 }
@@ -232,7 +246,7 @@ void popdown_all_game_dialogs(void)
 **************************************************************************/
 int action_selection_actor_unit(void)
 {
-  /* PORTME */    
+  /* PORTME */
   return IDENTITY_NUMBER_ZERO;
 }
 
@@ -261,12 +275,37 @@ int action_selection_target_unit(void)
 }
 
 /**********************************************************************//**
+  Returns id of the target tile of the actions currently handled in action
+  selection dialog when the action selection dialog is open and it has a
+  tile target. Returns TILE_INDEX_NONE if no action selection dialog is
+  open.
+**************************************************************************/
+int action_selection_target_tile(void)
+{
+  /* PORTME */
+  return TILE_INDEX_NONE;
+}
+
+/**********************************************************************//**
+  Returns id of the target extra of the actions currently handled in action
+  selection dialog when the action selection dialog is open and it has an
+  extra target. Returns EXTRA_NONE if no action selection dialog is open
+  or no extra target is present in the action selection dialog.
+**************************************************************************/
+int action_selection_target_extra(void)
+{
+  /* PORTME */
+  return EXTRA_NONE;
+}
+
+/**********************************************************************//**
   Updates the action selection dialog with new information.
 **************************************************************************/
 void action_selection_refresh(struct unit *actor_unit,
                               struct city *target_city,
                               struct unit *target_unit,
                               struct tile *target_tile,
+                              struct extra_type *target_extra,
                               const struct act_prob *act_probs)
 {
   /* TODO: port me. */
@@ -276,6 +315,17 @@ void action_selection_refresh(struct unit *actor_unit,
   Closes the action selection dialog
 **************************************************************************/
 void action_selection_close(void)
+{
+  /* PORTME */
+}
+
+/**********************************************************************//**
+  Let the non shared client code know that the action selection process
+  no longer is in progress for the specified unit.
+
+  This allows the client to clean up any client specific assumptions.
+**************************************************************************/
+void action_selection_no_longer_in_progress_gui_specific(int actor_id)
 {
   /* PORTME */
 }
@@ -291,7 +341,7 @@ void show_tech_gained_dialog(Tech_type_id tech)
 /**********************************************************************//**
   Show tileset error dialog.
 **************************************************************************/
-void show_tileset_error(const char *msg)
+void show_tileset_error(bool fatal, const char *tset_name, const char *msg)
 {
   /* PORTME */
 }
@@ -321,5 +371,22 @@ bool gui_request_transport(struct unit *pcargo, struct tile *ptile)
 void gui_popup_combat_info(int attacker_unit_id, int defender_unit_id,
                            int attacker_hp, int defender_hp,
                            bool make_att_veteran, bool make_def_veteran)
+{
+}
+
+/**********************************************************************//**
+  Common code wants confirmation for an action.
+**************************************************************************/
+void gui_request_action_confirmation(const char *expl,
+                                     struct act_confirmation_data *data)
+{
+  /* Just confirm */
+  action_confirmation(data, TRUE);
+}
+
+/**********************************************************************//**
+  Popup image window
+**************************************************************************/
+void gui_popup_image(const char *tag)
 {
 }

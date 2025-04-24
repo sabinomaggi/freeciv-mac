@@ -174,6 +174,27 @@ struct road_type *road_by_compat_special(enum road_compat compat)
 }
 
 /************************************************************************//**
+  Return road type represented by given gui_type, or NULL if
+  it does not represent road type at all.
+****************************************************************************/
+struct road_type *road_by_gui_type(enum road_gui_type gui_type)
+{
+  if (gui_type == ROAD_GUI_OTHER) {
+    return NULL;
+  }
+
+  extra_type_by_cause_iterate(EC_ROAD, pextra) {
+    struct road_type *proad = extra_road_get(pextra);
+
+    if (proad->gui_type == gui_type) {
+      return proad;
+    }
+  } extra_type_by_cause_iterate_end;
+
+  return NULL;
+}
+
+/************************************************************************//**
   Tells if road can build to tile if all other requirements are met.
 ****************************************************************************/
 bool road_can_be_built(const struct road_type *proad, const struct tile *ptile)
@@ -200,19 +221,19 @@ bool road_can_be_built(const struct road_type *proad, const struct tile *ptile)
   Tells if player and optionally unit have road building requirements
   fulfilled.
 ****************************************************************************/
-static bool are_road_reqs_fulfilled(const struct road_type *proad,
+static bool are_road_reqs_fulfilled(const struct civ_map *nmap,
+                                    const struct road_type *proad,
                                     const struct player *pplayer,
                                     const struct unit *punit,
                                     const struct tile *ptile)
 {
   struct extra_type *pextra = road_extra_get(proad);
-  const struct unit_type *utype;
-
-  if (punit == NULL) {
-    utype = NULL;
-  } else {
-    utype = unit_type_get(punit);
-  }
+  const struct req_context context = {
+    .player = pplayer,
+    .tile = ptile,
+    .unit = punit,
+    .unittype = punit ? unit_type_get(punit) : NULL,
+  };
 
   if (requirement_vector_size(&proad->first_reqs) > 0) {
     bool beginning = TRUE;
@@ -221,14 +242,14 @@ static bool are_road_reqs_fulfilled(const struct road_type *proad,
       /* FIXME: mixing cardinal and non-cardinal roads as integrators is
        * probably not a good idea. */
       if (is_cardinal_only_road(iroad)) {
-        cardinal_adjc_iterate(&(wld.map), ptile, adjc_tile) {
+        cardinal_adjc_iterate(nmap, ptile, adjc_tile) {
           if (tile_has_extra(adjc_tile, iroad)) {
             beginning = FALSE;
             break;
           }
         } cardinal_adjc_iterate_end;
       } else {
-        adjc_iterate(&(wld.map), ptile, adjc_tile) {
+        adjc_iterate(nmap, ptile, adjc_tile) {
           if (tile_has_extra(adjc_tile, iroad)) {
             beginning = FALSE;
             break;
@@ -242,23 +263,28 @@ static bool are_road_reqs_fulfilled(const struct road_type *proad,
     } extra_type_list_iterate_end;
 
     if (beginning) {
-      if (!are_reqs_active(pplayer, tile_owner(ptile), NULL, NULL, ptile,
-                           punit, utype, NULL, NULL, NULL,
+      if (!are_reqs_active(&context,
+                           &(const struct req_context) {
+                             .player = tile_owner(ptile),
+                           },
                            &proad->first_reqs, RPT_POSSIBLE)) {
         return FALSE;
       }
     }
   }
 
-  return are_reqs_active(pplayer, tile_owner(ptile), NULL, NULL, ptile,
-                         punit, utype, NULL, NULL, NULL,
+  return are_reqs_active(&context,
+                         &(const struct req_context) {
+                           .player = tile_owner(ptile),
+                         },
                          &pextra->reqs, RPT_POSSIBLE);
 }
 
 /************************************************************************//**
   Tells if player can build road to tile with suitable unit.
 ****************************************************************************/
-bool player_can_build_road(const struct road_type *proad,
+bool player_can_build_road(const struct civ_map *nmap,
+                           const struct road_type *proad,
                            const struct player *pplayer,
                            const struct tile *ptile)
 {
@@ -266,13 +292,14 @@ bool player_can_build_road(const struct road_type *proad,
     return FALSE;
   }
 
-  return are_road_reqs_fulfilled(proad, pplayer, NULL, ptile);
+  return are_road_reqs_fulfilled(nmap, proad, pplayer, NULL, ptile);
 }
 
 /************************************************************************//**
   Tells if unit can build road on tile.
 ****************************************************************************/
-bool can_build_road(struct road_type *proad,
+bool can_build_road(const struct civ_map *nmap,
+                    struct road_type *proad,
                     const struct unit *punit,
                     const struct tile *ptile)
 {
@@ -282,14 +309,15 @@ bool can_build_road(struct road_type *proad,
     return FALSE;
   }
 
-  return are_road_reqs_fulfilled(proad, pplayer, punit, ptile);
+  return are_road_reqs_fulfilled(nmap, proad, pplayer, punit, ptile);
 }
 
 /************************************************************************//**
   Count tiles with specified road near the tile. Can be called with NULL
   road.
 ****************************************************************************/
-int count_road_near_tile(const struct tile *ptile, const struct road_type *proad)
+int count_road_near_tile(struct civ_map *nmap, const struct tile *ptile,
+                         const struct road_type *proad)
 {
   int count = 0;
 
@@ -297,7 +325,7 @@ int count_road_near_tile(const struct tile *ptile, const struct road_type *proad
     return 0;
   }
 
-  adjc_iterate(&(wld.map), ptile, adjc_tile) {
+  adjc_iterate(nmap, ptile, adjc_tile) {
     if (tile_has_road(adjc_tile, proad)) {
       count++;
     }
@@ -309,12 +337,13 @@ int count_road_near_tile(const struct tile *ptile, const struct road_type *proad
 /************************************************************************//**
   Count tiles with any river near the tile.
 ****************************************************************************/
-int count_river_near_tile(const struct tile *ptile,
+int count_river_near_tile(struct civ_map *nmap,
+                          const struct tile *ptile,
                           const struct extra_type *priver)
 {
   int count = 0;
 
-  cardinal_adjc_iterate(&(wld.map), ptile, adjc_tile) {
+  cardinal_adjc_iterate(nmap, ptile, adjc_tile) {
     if (priver == NULL && tile_has_river(adjc_tile)) {
       /* Some river */
       count++;
@@ -330,7 +359,8 @@ int count_river_near_tile(const struct tile *ptile,
 /************************************************************************//**
   Count tiles with river of specific type cardinally adjacent to the tile.
 ****************************************************************************/
-int count_river_type_tile_card(const struct tile *ptile,
+int count_river_type_tile_card(struct civ_map *nmap,
+                               const struct tile *ptile,
                                const struct extra_type *priver,
                                bool percentage)
 {
@@ -339,23 +369,25 @@ int count_river_type_tile_card(const struct tile *ptile,
 
   fc_assert(priver != NULL);
 
-  cardinal_adjc_iterate(&(wld.map), ptile, adjc_tile) {
+  cardinal_adjc_iterate(nmap, ptile, adjc_tile) {
     if (tile_has_extra(adjc_tile, priver)) {
       count++;
     }
     total++;
   } cardinal_adjc_iterate_end;
 
-  if (percentage) {
+  if (percentage && count > 0) { /* Latter condition avoids div by zero */
     count = count * 100 / total;
   }
+
   return count;
 }
 
 /************************************************************************//**
   Count tiles with river of specific type near the tile.
 ****************************************************************************/
-int count_river_type_near_tile(const struct tile *ptile,
+int count_river_type_near_tile(struct civ_map *nmap,
+                               const struct tile *ptile,
                                const struct extra_type *priver,
                                bool percentage)
 {
@@ -364,16 +396,17 @@ int count_river_type_near_tile(const struct tile *ptile,
 
   fc_assert(priver != NULL);
 
-  adjc_iterate(&(wld.map), ptile, adjc_tile) {
+  adjc_iterate(nmap, ptile, adjc_tile) {
     if (tile_has_extra(adjc_tile, priver)) {
       count++;
     }
     total++;
   } adjc_iterate_end;
 
-  if (percentage) {
+  if (percentage && count > 0) { /* Latter condition avoids div by zero */
     count = count * 100 / total;
   }
+
   return count;
 }
 
@@ -389,11 +422,13 @@ bool road_has_flag(const struct road_type *proad, enum road_flag_id flag)
   Returns TRUE iff any cardinally adjacent tile contains a road with
   the given flag (does not check ptile itself).
 ****************************************************************************/
-bool is_road_flag_card_near(const struct tile *ptile, enum road_flag_id flag)
+bool is_road_flag_card_near(const struct civ_map *nmap,
+                            const struct tile *ptile,
+                            enum road_flag_id flag)
 {
   extra_type_by_cause_iterate(EC_ROAD, pextra) {
     if (road_has_flag(extra_road_get(pextra), flag)) {
-      cardinal_adjc_iterate(&(wld.map), ptile, adjc_tile) {
+      cardinal_adjc_iterate(nmap, ptile, adjc_tile) {
         if (tile_has_extra(adjc_tile, pextra)) {
           return TRUE;
         }
@@ -408,11 +443,13 @@ bool is_road_flag_card_near(const struct tile *ptile, enum road_flag_id flag)
   Returns TRUE iff any adjacent tile contains a road with the given flag
   (does not check ptile itself).
 ****************************************************************************/
-bool is_road_flag_near_tile(const struct tile *ptile, enum road_flag_id flag)
+bool is_road_flag_near_tile(const struct civ_map *nmap,
+                            const struct tile *ptile,
+                            enum road_flag_id flag)
 {
   extra_type_by_cause_iterate(EC_ROAD, pextra) {
     if (road_has_flag(extra_road_get(pextra), flag)) {
-      adjc_iterate(&(wld.map), ptile, adjc_tile) {
+      adjc_iterate(nmap, ptile, adjc_tile) {
         if (tile_has_extra(adjc_tile, pextra)) {
           return TRUE;
         }
@@ -441,8 +478,8 @@ bool is_native_tile_to_road(const struct road_type *proad,
 
   pextra = road_extra_get(proad);
 
-  return are_reqs_active(NULL, NULL, NULL, NULL, ptile,
-                         NULL, NULL, NULL, NULL, NULL,
+  return are_reqs_active(&(const struct req_context) { .tile = ptile },
+                         NULL,
                          &pextra->reqs, RPT_POSSIBLE);
 }
 

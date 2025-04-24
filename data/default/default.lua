@@ -19,9 +19,10 @@
 function _deflua_hut_get_gold(unit, gold)
   local owner = unit.owner
 
-  notify.event(owner, unit.tile, E.HUT_GOLD, PL_("You found %d gold.",
-                                                 "You found %d gold.", gold),
-               gold)
+  notify.event(owner, unit.tile, E.HUT_GOLD,
+               -- TRANS: Begins with a unit name
+               PL_("%s found %d gold.", "%s found %d gold.", gold),
+               unit:link_text(), gold)
   owner:change_gold(gold)
 end
 
@@ -40,13 +41,13 @@ function _deflua_hut_get_tech(unit)
                  _("You found %s in ancient scrolls of wisdom."),
                  tech:name_translation())
     notify.research(owner, false, E.TECH_GAIN,
-                 -- /* TRANS: One player got tech for the whole team. */
-                 _("The %s found %s in ancient scrolls of wisdom for you."),
-                 owner.nation:plural_translation(),
-                 tech:name_translation())
+                    -- /* TRANS: One player got tech for the whole team. */
+                    _("The %s found %s in ancient scrolls of wisdom for you."),
+                    owner.nation:plural_translation(),
+                    tech:name_translation())
     notify.research_embassies(owner, E.TECH_EMBASSY,
-                 -- /* TRANS: first %s is leader or team name */
-                 _("%s has acquired %s from ancient scrolls of wisdom."),
+                 -- /* TRANS: first %s is nation plural or team name */
+                 _("The %s have acquired %s from ancient scrolls of wisdom."),
                  owner:research_name_translation(),
                  tech:name_translation())
     return true
@@ -58,19 +59,19 @@ end
 -- Get a mercenary unit from entering a hut.
 function _deflua_hut_get_mercenaries(unit)
   local owner = unit.owner
-  local type = find.role_unit_type('HutTech', owner)
+  local utype = find.role_unit_type('HutTech', owner)
 
-  if not type or not type:can_exist_at_tile(unit.tile) then
-    type = find.role_unit_type('Hut', nil)
-    if not type or not type:can_exist_at_tile(unit.tile) then
-      type = nil
+  if not utype or not utype:can_exist_at_tile(unit.tile) then
+    utype = find.role_unit_type('Hut', nil)
+    if not utype or not utype:can_exist_at_tile(unit.tile) then
+      utype = nil
     end
   end
 
-  if type then
+  if utype then
     notify.event(owner, unit.tile, E.HUT_MERC,
                  _("A band of friendly mercenaries joins your cause."))
-    owner:create_unit(unit.tile, type, 0, unit:get_homecity(), -1)
+    owner:create_unit(unit.tile, utype, 0, unit:get_homecity(), -1)
     return true
   else
     return false
@@ -83,7 +84,7 @@ function _deflua_hut_get_city(unit)
   local settlers = find.role_unit_type('Cities', owner)
 
   if unit:is_on_possible_city_tile() then
-    owner:create_city(unit.tile, "")
+    owner:city_create(unit.tile, "")
     notify.event(owner, unit.tile, E.HUT_CITY,
                  _("You found a friendly city."))
     return true
@@ -104,32 +105,45 @@ end
 -- Unit may die: returns true if unit is alive
 function _deflua_hut_get_barbarians(unit)
   local tile = unit.tile
-  local type = unit.utype
+  local utype = unit.utype
   local owner = unit.owner
 
   if server.setting.get("barbarians") == "DISABLED"
     or unit.tile:city_exists_within_max_city_map(true)
-    or type:has_flag('Gameloss') then
+    or utype:has_flag('Gameloss') then
       notify.event(owner, unit.tile, E.HUT_BARB_CITY_NEAR,
                    _("An abandoned village is here."))
     return true
   end
-  
+
+  local dead_link = unit:tile_link_text()
   local alive = tile:unleash_barbarians()
   if alive then
     notify.event(owner, tile, E.HUT_BARB,
-                  _("You have unleashed a horde of barbarians!"));
+                 _("You have unleashed a horde of barbarians!"));
   else
     notify.event(owner, tile, E.HUT_BARB_KILLED,
-                  _("Your %s has been killed by barbarians!"),
-                  type:name_translation());
+                 _("Your %s has been killed by barbarians!"),
+                 dead_link);
   end
   return alive
 end
 
+-- Reveal map around the hut
+function _deflua_hut_reveal_map(unit)
+  local owner = unit.owner
+
+  notify.event(owner, unit.tile, E.HUT_MAP,
+               _("%s finds a map of the surrounding terrain."),
+               unit:link_text())
+  for revealtile in unit.tile:circle_iterate(30) do
+    revealtile:show(owner)
+  end
+end
+
 -- Randomly choose a hut event
 function _deflua_hut_enter_callback(unit)
-  local chance = random(0, 11)
+  local chance = random(0, 13)
   local alive = true
 
   if chance == 0 then
@@ -150,6 +164,8 @@ function _deflua_hut_enter_callback(unit)
     if not _deflua_hut_get_city(unit) then
       _deflua_hut_consolation_prize(unit)
     end
+  elseif chance == 12 or chance == 13 then
+    _deflua_hut_reveal_map(unit)
   end
 
   -- continue processing if unit is alive
@@ -158,27 +174,40 @@ end
 
 signal.connect("hut_enter", "_deflua_hut_enter_callback")
 
+-- Informs that the tribe has run away seeing your plane
+function _deflua_hut_frighten_callback(unit, extra)
+  local owner = unit.owner
+  notify.event(owner, unit.tile, E.HUT_BARB,
+               _("Your overflight frightens the tribe;"
+                 .. " they scatter in terror."))
+  return true
+end
+signal.connect("hut_frighten", "_deflua_hut_frighten_callback")
 
 --[[
   Make partisans around conquered city
 
-  if requirements to make partisans when a city is conquered is fulfilled
+  If requirements to make partisans are fulfilled when a city is conquered,
   this routine makes a lot of partisans based on the city`s size.
-  To be candidate for partisans the following things must be satisfied:
-  1) The loser of the city is the original owner.
-  2) The Inspire_Partisans effect must be larger than zero.
+  To be candidate for partisans, the following things must be satisfied:
+  1) The loser of the city must have local support:
+  1a) If citizen nationality is enabled:
+      Big enough percentage of the city citizens must be of their nationality
+  1b) If citizen nationality is disabled:
+      They must be the original owner (founder) of the city
+  2) The Inspire_Partisans effect value must be bigger than zero
 
   If these conditions are ever satisfied, the ruleset must have a unit
   with the Partisan role.
 
   In the default ruleset, the requirements for inspiring partisans are:
-  a) Guerilla warfare must be known by atleast 1 player
+  a) Guerilla warfare must be known at least by one player
   b) The player must know about Communism and Gunpowder
-  c) The player must run either a democracy or a communist society.
+  c) The player must run either a democracy or a communist government
 ]]--
 
 function _deflua_make_partisans_callback(city, loser, winner, reason)
-  if not reason == 'conquest' or city:inspire_partisans(loser) <= 0 then
+  if reason ~= 'conquest' or city:inspire_partisans(loser) <= 0 then
     return
   end
 
@@ -188,9 +217,9 @@ function _deflua_make_partisans_callback(city, loser, winner, reason)
   end
   city.tile:place_partisans(loser, partisans, city:map_sq_radius())
   notify.event(loser, city.tile, E.CITY_LOST,
-      _("The loss of %s has inspired partisans!"), city.name)
+      _("The loss of %s has inspired partisans!"), city:link_text())
   notify.event(winner, city.tile, E.UNIT_WIN_ATT,
-      _("The loss of %s has inspired partisans!"), city.name)
+      _("The loss of %s has inspired partisans!"), city:link_text())
 end
 
 signal.connect("city_transferred", "_deflua_make_partisans_callback")
@@ -206,3 +235,19 @@ function _deflua_harmless_disaster_message(disaster, city, had_internal_effect)
 end
 
 signal.connect("disaster_occurred", "_deflua_harmless_disaster_message")
+
+function _deflua_unit_loss_messages(unit, player, reason)
+  if reason == "fuel" then
+    if unit.utype:has_flag('Coast') then
+      notify.event(player, unit.tile, E.UNIT_LOST_MISC,
+                   _("Your %s has run out of supplies."),
+                   unit:tile_link_text())
+    else
+      notify.event(player, unit.tile, E.UNIT_LOST_MISC,
+                   _("Your %s has run out of fuel."),
+                   unit:tile_link_text())
+    end
+  end
+end
+
+signal.connect("unit_lost", "_deflua_unit_loss_messages")

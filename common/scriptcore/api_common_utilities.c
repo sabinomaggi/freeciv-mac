@@ -17,6 +17,9 @@
 
 #include <math.h>
 
+/* dependencies/cvercmp */
+#include "cvercmp.h"
+
 /* utilities */
 #include "deprecations.h"
 #include "log.h"
@@ -46,11 +49,78 @@ int api_utilities_random(lua_State *L, int min, int max)
 }
 
 /********************************************************************//**
-  Return the version of freeciv lua script
+  Name and version of freeciv.
+  Deprecated because of the confusing function name.
 ************************************************************************/
 const char *api_utilities_fc_version(lua_State *L)
 {
+  LUASCRIPT_CHECK_STATE(L, 0);
+
+  log_deprecation("Deprecated: lua construct \"fc_version\", "
+                  "deprecated since \"3.2\", used. "
+                  "Use \"name_version\" instead.");
+
   return freeciv_name_version();
+}
+
+/********************************************************************//**
+  Return the name and version of freeciv
+************************************************************************/
+const char *api_utilities_name_version(lua_State *L)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+
+  return freeciv_name_version();
+}
+
+/********************************************************************//**
+  Comparable freeciv version
+************************************************************************/
+const char *api_utilities_comparable_version(lua_State *L)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+
+  return fc_comparable_version();
+}
+
+/********************************************************************//**
+  Version string with no name
+************************************************************************/
+const char *api_utilities_version_string(lua_State *L)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+
+  return freeciv_datafile_version();
+}
+
+/********************************************************************//**
+  Compare two version strings. Return which one is bigger, or zero
+  if they are equal.
+************************************************************************/
+int api_utilities_versions_compare(lua_State *L,
+                                   const char *ver1, const char *ver2)
+{
+  enum cvercmp_type result;
+
+  LUASCRIPT_CHECK_STATE(L, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, ver1, 2, string, 0);
+  LUASCRIPT_CHECK_ARG_NIL(L, ver2, 3, string, 0);
+
+  result = cvercmp_cmp(ver1, ver2);
+
+  switch (result) {
+  case CVERCMP_EQUAL:
+    return 0;
+  case CVERCMP_GREATER:
+    return 1;
+  case CVERCMP_LESSER:
+    return -1;
+  default:
+    fc_assert(result == CVERCMP_EQUAL
+              || result == CVERCMP_GREATER
+              || result == CVERCMP_LESSER);
+    return 0;
+  }
 }
 
 /********************************************************************//**
@@ -70,58 +140,89 @@ void api_utilities_log_base(lua_State *L, int level, const char *message)
   luascript_log(fcl, level, "%s", message);
 }
 
+/*********************************************************************//***
+  Just return the direction as number
+**************************************************************************/
+int api_utilities_direction_id(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, 0);
+
+  return (int) dir;
+}
+
+/**********************************************************************//***
+  Get direction name
+***************************************************************************/
+const char *api_utilities_dir2str(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK(L, is_valid_dir(dir), "Direction is invalid", NULL);
+
+  return direction8_name(dir);
+}
+
 /********************************************************************//**
   Convert text describing direction into direction
 ************************************************************************/
-Direction api_utilities_str2dir(lua_State *L, const char *dir)
+const Direction *api_utilities_str2dir(lua_State *L, const char *dir)
 {
-  LUASCRIPT_CHECK_STATE(L, direction8_invalid());
-  LUASCRIPT_CHECK_ARG_NIL(L, dir, 2, string, direction8_invalid());
+  LUASCRIPT_CHECK_STATE(L, NULL);
+  LUASCRIPT_CHECK_ARG_NIL(L, dir, 2, string, NULL);
 
-  return direction8_by_name(dir, fc_strcasecmp);
+  return luascript_dir(direction8_by_name(dir, fc_strcasecmp));
 }
 
 /********************************************************************//**
   Previous (counter-clockwise) valid direction
 ************************************************************************/
-Direction api_utilities_dir_ccw(lua_State *L, Direction dir)
+const Direction *api_utilities_dir_ccw(lua_State *L, Direction dir)
 {
   Direction new_dir = dir;
 
-  LUASCRIPT_CHECK_STATE(L, direction8_invalid());
+  LUASCRIPT_CHECK_STATE(L, NULL);
 
   do {
     new_dir = dir_ccw(new_dir);
   } while (!is_valid_dir(new_dir));
 
-  return new_dir;
+  return luascript_dir(new_dir);
 }
 
 /********************************************************************//**
   Next (clockwise) valid direction
 ************************************************************************/
-Direction api_utilities_dir_cw(lua_State *L, Direction dir)
+const Direction *api_utilities_dir_cw(lua_State *L, Direction dir)
 {
   Direction new_dir = dir;
 
-  LUASCRIPT_CHECK_STATE(L, direction8_invalid());
+  LUASCRIPT_CHECK_STATE(L, NULL);
 
   do {
     new_dir = dir_cw(new_dir);
   } while (!is_valid_dir(new_dir));
 
-  return new_dir;
+  return luascript_dir(new_dir);
 }
 
 /********************************************************************//**
   Opposite direction - validity not checked, but it's valid iff
   original direction is.
 ************************************************************************/
-Direction api_utilities_opposite_dir(lua_State *L, Direction dir)
+const Direction *api_utilities_opposite_dir(lua_State *L, Direction dir)
 {
-  LUASCRIPT_CHECK_STATE(L, direction8_invalid());
+  LUASCRIPT_CHECK_STATE(L, NULL);
 
-  return opposite_direction(dir);
+  return luascript_dir(opposite_direction(dir));
+}
+
+/********************************************************************//**
+  Is a direction cardinal one?
+************************************************************************/
+bool api_utilities_direction_is_cardinal(lua_State *L, Direction dir)
+{
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+
+  return is_cardinal_dir(dir);
 }
 
 /********************************************************************//**

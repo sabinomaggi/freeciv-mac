@@ -28,6 +28,7 @@
 
 // common
 #include "effects.h"
+#include "multipliers.h"
 
 // ruledit
 #include "ruledit.h"
@@ -35,6 +36,8 @@
 #include "validity.h"
 
 #include "effect_edit.h"
+
+#define NO_MULTIPLIER_NAME "No Multiplier"
 
 /**********************************************************************//**
   Setup effect_edit object
@@ -47,10 +50,11 @@ effect_edit::effect_edit(ruledit_gui *ui_in, QString target,
   QGridLayout *effect_edit_layout = new QGridLayout();
   QHBoxLayout *active_layout = new QHBoxLayout();
   QPushButton *close_button;
-  QPushButton *reqs_button;
+  QPushButton *button;
   QMenu *menu;
   QLabel *lbl;
   enum effect_type eff;
+  int row;
 
   ui = ui_in;
   selected = nullptr;
@@ -72,7 +76,7 @@ effect_edit::effect_edit(ruledit_gui *ui_in, QString target,
   main_layout->addWidget(list_widget);
 
   lbl = new QLabel(R__("Type:"));
-  active_layout->addWidget(lbl, 0, 0);
+  active_layout->addWidget(lbl, 0);
   edit_type_button = new QToolButton(this);
   menu = new QMenu();
   edit_type_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
@@ -83,23 +87,52 @@ effect_edit::effect_edit(ruledit_gui *ui_in, QString target,
        eff = (enum effect_type)(eff + 1)) {
     menu->addAction(effect_type_name(eff));
   }
-  active_layout->addWidget(edit_type_button, 1, 0);
+  active_layout->addWidget(edit_type_button, 1);
 
   lbl = new QLabel(R__("Value:"));
-  active_layout->addWidget(lbl, 2, 0);
+  active_layout->addWidget(lbl, 2);
   value_box = new QSpinBox(this);
-  active_layout->addWidget(value_box, 3, 0);
+  value_box->setRange(-1000, 1000);
+  active_layout->addWidget(value_box, 3);
   connect(value_box, SIGNAL(valueChanged(int)), this, SLOT(set_value(int)));
 
   main_layout->addLayout(active_layout);
+  row = 0;
 
-  reqs_button = new QPushButton(QString::fromUtf8(R__("Requirements")), this);
-  connect(reqs_button, SIGNAL(pressed()), this, SLOT(edit_reqs()));
-  effect_edit_layout->addWidget(reqs_button, 0, 0);
+  mp_button = new QToolButton();
+  mp_button->setParent(this);
+  mp_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+  mp_button->setPopupMode(QToolButton::MenuButtonPopup);
+  menu = new QMenu();
+  connect(menu, SIGNAL(triggered(QAction *)), this, SLOT(multiplier_menu(QAction *)));
+  mp_button->setMenu(menu);
+  menu->addAction(NO_MULTIPLIER_NAME); // FIXME: Can't translate, as we compare to "rule_name"
+  multipliers_re_active_iterate(pmul) {
+    menu->addAction(multiplier_rule_name(pmul));
+  } multipliers_re_active_iterate_end;
+  effect_edit_layout->addWidget(mp_button, row++, 0, 1, 2);
+
+  lbl = new QLabel(QString::fromUtf8(R__("Comment")));
+  effect_edit_layout->addWidget(lbl, row, 0);
+  comment = new QLineEdit(this);
+  connect(comment, SIGNAL(returnPressed()), this, SLOT(comment_given()));
+  effect_edit_layout->addWidget(comment, row++, 1);
+
+  button = new QPushButton(QString::fromUtf8(R__("Requirements")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(edit_reqs()));
+  effect_edit_layout->addWidget(button, row++, 0, 1, 2);
+
+  button = new QPushButton(QString::fromUtf8(R__("Add Effect")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(add_now()));
+  effect_edit_layout->addWidget(button, row++, 0, 1, 2);
+
+  button = new QPushButton(QString::fromUtf8(R__("Delete Effect")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(delete_now()));
+  effect_edit_layout->addWidget(button, row++, 0, 1, 2);
 
   close_button = new QPushButton(QString::fromUtf8(R__("Close")), this);
   connect(close_button, SIGNAL(pressed()), this, SLOT(close_now()));
-  effect_edit_layout->addWidget(close_button, 1, 0);
+  effect_edit_layout->addWidget(close_button, row++, 0, 1, 2);
 
   refresh();
 
@@ -134,7 +167,8 @@ static bool effect_list_fill_cb(struct effect *peffect, void *data)
       fc_assert(cbdata->efmc == EFMC_ALL);
       cbdata->edit->add_effect_to_list(peffect, cbdata);
     }
-  } else if (universal_in_req_vec(cbdata->filter, &peffect->reqs)) {
+  } else if (universal_is_mentioned_by_requirements(&peffect->reqs,
+                                                    cbdata->filter)) {
     cbdata->edit->add_effect_to_list(peffect, cbdata);
   }
 
@@ -164,16 +198,16 @@ void effect_edit::refresh()
   Add entry to effect list.
 **************************************************************************/
 void effect_edit::add_effect_to_list(struct effect *peffect,
-                                     struct effect_list_fill_data *data)
+                                     struct effect_list_fill_data *fill_data)
 {
   char buf[512];
   QListWidgetItem *item;
 
-  fc_snprintf(buf, sizeof(buf), _("Effect #%d: %s"),
-              data->num + 1, effect_type_name(peffect->type));
+  fc_snprintf(buf, sizeof(buf), R__("Effect #%d: %s"),
+              fill_data->num + 1, effect_type_name(peffect->type));
 
   item = new QListWidgetItem(QString::fromUtf8(buf));
-  list_widget->insertItem(data->num++, item);
+  list_widget->insertItem(fill_data->num++, item);
   effect_list_append(effects, peffect);
   if (selected == peffect) {
     item->setSelected(true);
@@ -224,6 +258,19 @@ void effect_edit::fill_active()
   if (selected != nullptr) {
     edit_type_button->setText(effect_type_name(selected->type));
     value_box->setValue(selected->value);
+    if (selected->multiplier != nullptr) {
+      mp_button->setText(multiplier_rule_name(selected->multiplier));
+    } else {
+      mp_button->setText(NO_MULTIPLIER_NAME);
+    }
+
+    if (selected->rulesave.comment == nullptr) {
+      comment->setText("");
+    } else {
+      comment->setText(selected->rulesave.comment);
+    }
+  } else {
+    mp_button->setText(NO_MULTIPLIER_NAME);
   }
 }
 
@@ -232,7 +279,8 @@ void effect_edit::fill_active()
 **************************************************************************/
 void effect_edit::effect_type_menu(QAction *action)
 {
-  enum effect_type type = effect_type_by_name(action->text().toUtf8().data(),
+  QByteArray en_bytes = action->text().toUtf8();
+  enum effect_type type = effect_type_by_name(en_bytes.data(),
                                               fc_strcasecmp);
 
   if (selected != nullptr) {
@@ -261,8 +309,10 @@ void effect_edit::edit_reqs()
 {
   if (selected != nullptr) {
     char buf[128];
+    QByteArray en_bytes;
 
-    fc_snprintf(buf, sizeof(buf), R__("%s effect #%d"), name.toUtf8().data(),
+    en_bytes = name.toUtf8();
+    fc_snprintf(buf, sizeof(buf), R__("%s effect #%d"), en_bytes.data(),
                 selected_nbr);
 
     ui->open_req_edit(QString::fromUtf8(buf), &selected->reqs);
@@ -275,4 +325,77 @@ void effect_edit::edit_reqs()
 void effect_edit::closeEvent(QCloseEvent *event)
 {
   ui->unregister_effect_edit(this);
+}
+
+/**********************************************************************//**
+  User requested new effect
+**************************************************************************/
+void effect_edit::add_now()
+{
+  struct effect *peffect = effect_new((enum effect_type)0, 0, nullptr);
+
+  if (filter.kind != VUT_NONE) {
+    struct requirement req;
+
+    req = req_from_str(universal_type_rule_name(&filter),
+                       nullptr, false, true, false,
+                       universal_rule_name(&filter));
+    effect_req_append(peffect, req);
+  }
+
+  refresh();
+}
+
+/**********************************************************************//**
+  User requested effect deletion
+**************************************************************************/
+void effect_edit::delete_now()
+{
+  if (selected != nullptr) {
+    effect_remove(selected);
+
+    selected = nullptr;
+
+    refresh();
+  }
+}
+
+/**********************************************************************//**
+  User selected multiplier for the effect
+**************************************************************************/
+void effect_edit::multiplier_menu(QAction *action)
+{
+  QByteArray an_bytes = action->text().toUtf8();
+
+  if (selected == nullptr) {
+    return;
+  }
+
+  if (!fc_strcasecmp(NO_MULTIPLIER_NAME, an_bytes)) {
+    selected->multiplier = nullptr;
+  } else {
+    selected->multiplier = multiplier_by_rule_name(an_bytes);
+  }
+
+  refresh();
+}
+
+/**********************************************************************//**
+  User entered comment for the effect
+**************************************************************************/
+void effect_edit::comment_given()
+{
+  if (selected != nullptr) {
+    if (selected->rulesave.comment != nullptr) {
+      free(selected->rulesave.comment);
+    }
+
+    if (!comment->text().isEmpty()) {
+      selected->rulesave.comment = fc_strdup(comment->text().toUtf8());
+    } else {
+      selected->rulesave.comment = nullptr;
+    }
+
+    fill_active();
+  }
 }

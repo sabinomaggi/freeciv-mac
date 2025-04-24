@@ -24,6 +24,7 @@
 
 // Qt
 #include <QMainWindow>
+#include <QPixmapCache>
 #include <QStackedWidget>
 
 // common
@@ -89,10 +90,10 @@ class fc_icons
 
 private:
   explicit fc_icons();
-  static fc_icons* m_instance;
+  static fc_icons *m_instance;
 
 public:
-  static fc_icons* instance();
+  static fc_icons *instance();
   static void drop();
   QIcon get_icon(const QString& id);
   QPixmap *get_pixmap(const QString& id);
@@ -133,12 +134,17 @@ struct fc_settings
   QByteArray city_splitter1;
   QByteArray city_splitter2;
   QByteArray city_splitter3;
+  QByteArray help_geometry;
+  QByteArray help_splitter1;
+  QByteArray options_client_geometry;
+  QByteArray options_server_geometry;
   float unit_info_pos_fx;
   float unit_info_pos_fy;
   float minimap_x;
   float minimap_y;
   float minimap_width;
   float minimap_height;
+  float battlelog_scale;
   float battlelog_x;
   float battlelog_y;
 };
@@ -171,7 +177,6 @@ class fc_client : public QMainWindow,
 
   QGridLayout *pages_layout[PAGE_GAME + 2];
   QStackedLayout *central_layout;
-  QGridLayout *game_layout;
 
   QTextEdit *output_window;
   QTextEdit *scenarios_view;
@@ -191,25 +196,24 @@ class fc_client : public QMainWindow,
   QPushButton *start_button;
   QPushButton *nation_button;
 
-  QDialogButtonBox* button_box;
+  QDialogButtonBox *button_box;
 
   QSocketNotifier *server_notifier;
 
   chat_input *chat_line;
 
-  QTableWidget* lan_widget;
-  QTableWidget* wan_widget;
-  QTableWidget* info_widget;
-  QTableWidget* saves_load;
-  QTableWidget* scenarios_load;
-  QTreeWidget* start_players_tree;
+  QTableWidget *lan_widget;
+  QTableWidget *wan_widget;
+  QTableWidget *info_widget;
+  QTableWidget *saves_load;
+  QTableWidget *scenarios_load;
+  QTreeWidget *start_players_tree;
 
-  QTimer* meta_scan_timer;
-  QTimer* lan_scan_timer;
+  QTimer *meta_scan_timer;
+  QTimer *lan_scan_timer;
   QTimer *update_info_timer;
 
   QStatusBar *status_bar;
-  QSignalMapper *switch_page_mapper;
   QLabel *status_bar_label;
   info_tile *info_tile_wdg;
   choice_dialog *opened_dialog;
@@ -222,7 +226,7 @@ public:
   fc_client();
   ~fc_client();
 
-  void fc_main(QApplication *);
+  void fc_main(QApplication *qapp);
   map_view *mapview_wdg;
   fc_sidebar *sidebar_wdg;
   minimap_view *minimapview_wdg;
@@ -234,7 +238,7 @@ public:
 
   void set_status_bar(QString str, int timeout = 2000);
   int add_game_tab(QWidget *widget);
-  void rm_game_tab(int index); /* doesn't delete widget */
+  void rm_game_tab(int index); // Doesn't delete widget
   void update_start_page();
   void toggle_unit_sel_widget(struct tile *ptile);
   void update_unit_sel();
@@ -246,6 +250,7 @@ public:
                                  const char *message);
   choice_dialog *get_diplo_dialog();
   void update_sidebar_position();
+  void apply_fullscreen();
 
   mr_idle mr_idler;
   QWidget *central_wdg;
@@ -272,7 +277,11 @@ public:
   fc_sidewidget *sw_indicators;
   fc_sidewidget *sw_diplo;
   float map_scale;
-  void gimme_place(QWidget* widget, QString str);
+  bool map_font_scale;
+  QMenu *page_submenu_AI;
+  QMenu *page_submenu_team;
+
+  void gimme_place(QWidget *widget, QString str);
   int gimme_index_of(QString str);
   void remove_repo_dlg(QString str);
   bool is_repo_dlg_open(QString str);
@@ -280,6 +289,7 @@ public:
   bool is_closing();
   void update_sidebar_tooltips();
   void reload_sidebar_icons();
+  void update_fonts();
 
 private slots:
   void send_fake_chat_message(const QString &message);
@@ -300,7 +310,8 @@ private slots:
   void browse_saves();
   void browse_scenarios();
   void clear_status_bar();
-  void state_preview(int);
+  void state_preview(Qt::CheckState state);
+  void state_preview_depr(int state);
 
 public slots:
   void switch_page(int i);
@@ -329,6 +340,7 @@ private:
   bool check_server_scan(server_scan *scan_data);
   void update_load_page(void);
   void create_cursors(void);
+  void delete_cursors(void);
   void update_scenarios_page(void);
   void set_connection_state(enum connection_state state);
   void update_buttons();
@@ -336,7 +348,7 @@ private:
   void read_settings();
 
   enum client_pages page;
-  QMap<QString, QWidget*> opened_repo_dlgs;
+  QMap<QString, QWidget *> opened_repo_dlgs;
   QStringList status_bar_queue;
   QString current_file;
   bool send_new_aifill_to_server;
@@ -368,6 +380,7 @@ public:
 
   void set_rulesets(int num_rulesets, char **rulesets);
   void set_aifill(int aifill);
+  void update_ai_level();
   void update_buttons();
 private slots:
   void max_players_change(int i);
@@ -381,6 +394,4 @@ public slots:
 // Return fc_client instance. Implementation in gui_main.cpp
 class fc_client *gui();
 
-#endif /* FC__FC_CLIENT_H */
-
-
+#endif // FC__FC_CLIENT_H

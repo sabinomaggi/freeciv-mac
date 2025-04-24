@@ -19,19 +19,21 @@
 #include "luascript.h"
 
 /* server */
-#include "savegame.h"
 #include "score.h"
 #include "settings.h"
 #include "srv_main.h"
+
+/* server/sqavegame */
+#include "savemain.h"
 
 /* server/scripting */
 #include "script_server.h"
 
 #include "api_server_base.h"
 
-/*************************************************************************//**
+/**********************************************************************//**
   Return the civilization score (total) for player
-*****************************************************************************/
+**************************************************************************/
 int api_server_player_civilization_score(lua_State *L, Player *pplayer)
 {
   LUASCRIPT_CHECK_STATE(L, 0);
@@ -40,9 +42,9 @@ int api_server_player_civilization_score(lua_State *L, Player *pplayer)
   return get_civ_score(pplayer);
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Returns TRUE if the game was started.
-*****************************************************************************/
+**************************************************************************/
 bool api_server_was_started(lua_State *L)
 {
   LUASCRIPT_CHECK_STATE(L, FALSE);
@@ -50,9 +52,9 @@ bool api_server_was_started(lua_State *L)
   return game_was_started();
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Save the game (a manual save is triggered).
-*****************************************************************************/
+**************************************************************************/
 bool api_server_save(lua_State *L, const char *filename)
 {
   LUASCRIPT_CHECK_STATE(L, FALSE);
@@ -67,9 +69,9 @@ bool api_server_save(lua_State *L, const char *filename)
   return TRUE;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Play music track for player
-*****************************************************************************/
+**************************************************************************/
 bool api_play_music(lua_State *L, Player *pplayer, const char *tag)
 {
   struct packet_play_music p;
@@ -85,9 +87,28 @@ bool api_play_music(lua_State *L, Player *pplayer, const char *tag)
   return TRUE;
 }
 
-/*************************************************************************//**
-  Return the formated value of the setting or NULL if no such setting exists,
-*****************************************************************************/
+/**********************************************************************//**
+  Popup image to player
+**************************************************************************/
+bool api_popup_image(lua_State *L, Player *pplayer, const char *tag)
+{
+  struct packet_popup_image p;
+
+  LUASCRIPT_CHECK_STATE(L, FALSE);
+  LUASCRIPT_CHECK_SELF(L, pplayer, FALSE);
+  LUASCRIPT_CHECK_ARG_NIL(L, tag, 3, API_TYPE_STRING, FALSE);
+
+  sz_strlcpy(p.tag, tag);
+
+  lsend_packet_popup_image(pplayer->connections, &p);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Return the formatted value of the setting or NULL if no such setting
+  exists.
+**************************************************************************/
 const char *api_server_setting_get(lua_State *L, const char *sett_name)
 {
   struct setting *pset;

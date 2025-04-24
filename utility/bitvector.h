@@ -40,18 +40,31 @@ void dbv_free(struct dbv *pdbv);
 
 int dbv_bits(struct dbv *pdbv);
 
-bool dbv_isset(const struct dbv *pdbv, int bit);
-bool dbv_isset_any(const struct dbv *pdbv);
+bool dbv_isset(const struct dbv *pdbv, int bit)
+  fc__attribute((nonnull (1)));
+bool dbv_isset_any(const struct dbv *pdbv)
+  fc__attribute((nonnull (1)));
 
-void dbv_set(struct dbv *pdbv, int bit);
-void dbv_set_all(struct dbv *pdbv);
+void dbv_set(struct dbv *pdbv, int bit)
+  fc__attribute((nonnull (1)));
+void dbv_set_all(struct dbv *pdbv)
+  fc__attribute((nonnull (1)));
 
-void dbv_clr(struct dbv *pdbv, int bit);
-void dbv_clr_all(struct dbv *pdbv);
+void dbv_clr(struct dbv *pdbv, int bit)
+  fc__attribute((nonnull (1)));
+void dbv_clr_all(struct dbv *pdbv)
+  fc__attribute((nonnull (1)));
 
-bool dbv_are_equal(const struct dbv *pdbv1, const struct dbv *pdbv2);
+bool dbv_are_equal(const struct dbv *pdbv1, const struct dbv *pdbv2)
+  fc__attribute((nonnull (1, 2)));
+bool bv_match_dbv(const struct dbv *match, const unsigned char *src);
+void dbv_copy(struct dbv *dest, const struct dbv *src);
 
-void dbv_debug(struct dbv *pdbv);
+void dbv_to_bv(unsigned char *dest, const struct dbv *src);
+void bv_to_dbv(struct dbv *dest, const unsigned char *src);
+
+void dbv_debug(struct dbv *pdbv)
+  fc__attribute((nonnull (1)));
 
 /* Maximal size of a dynamic bitvector.
    Use a large value to be on the safe side (4Mbits = 512kbytes). */
@@ -61,12 +74,15 @@ void dbv_debug(struct dbv *pdbv);
 #define _BV_BYTES(bits)        ((((bits) - 1) / 8) + 1)
 #define _BV_BYTE_INDEX(bits)   ((bits) / 8)
 #define _BV_BITMASK(bit)       (1u << ((bit) & 0x7))
+
 #ifdef FREECIV_DEBUG
-#  define _BV_ASSERT(bv, bit)  fc_assert((bit) >= 0                         \
-                                         && (bit) < (signed int) sizeof((bv).vec) * 8)
+#define _BV_ASSERT(bv, bit)                                                 \
+  fc_assert((signed int)(bit) >= 0                                          \
+            && (signed int)(bit) < (signed int) sizeof((bv).vec) * 8)
 #else
-#  define _BV_ASSERT(bv, bit)  (void)0
+#define _BV_ASSERT(bv, bit) (void)0
 #endif
+
 #define BV_ISSET(bv, bit)                                                   \
   (_BV_ASSERT(bv, bit),                                                     \
    ((bv).vec[_BV_BYTE_INDEX(bit)] & _BV_BITMASK(bit)) != 0)
@@ -86,7 +102,7 @@ void dbv_debug(struct dbv *pdbv);
   } while (FALSE);
 #define BV_CLR_ALL(bv)                                                      \
   do {                                                                      \
-     memset((bv).vec, 0, sizeof((bv).vec));                                 \
+    memset((bv).vec, 0, sizeof((bv).vec));                                  \
   } while (FALSE)
 #define BV_SET_ALL(bv)                                                      \
   do {                                                                      \
@@ -113,6 +129,13 @@ void bv_set_all_from(unsigned char *vec_to,
   bv_set_all_from((vec_to).vec, (vec_from).vec,                           \
                   sizeof((vec_to).vec), sizeof((vec_from).vec))
 
+void bv_clr_all_from(unsigned char *vec_to,
+                     const unsigned char *vec_from,
+                     size_t size_to, size_t size_from);
+#define BV_CLR_ALL_FROM(vec_to, vec_from)                                 \
+  bv_clr_all_from((vec_to).vec, (vec_from).vec,                           \
+                  sizeof((vec_to).vec), sizeof((vec_from).vec))
+
 /* Used to make a BV typedef. Such types are usually called "bv_foo". */
 #define BV_DEFINE(name, bits)                                               \
   typedef struct { unsigned char vec[_BV_BYTES(bits)]; } name
@@ -121,4 +144,4 @@ void bv_set_all_from(unsigned char *vec_to,
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__BITVECTOR_H */
+#endif /* FC__BITVECTOR_H */

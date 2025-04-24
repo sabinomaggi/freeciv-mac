@@ -30,6 +30,9 @@
 #ifdef HAVE_FCDB_MYSQL
 #include "ls_mysql.h"
 #endif
+#ifdef HAVE_FCDB_ODBC
+#include "ls_odbc.h"
+#endif
 #ifdef HAVE_FCDB_POSTGRES
 #include "ls_postgres.h"
 #endif
@@ -38,6 +41,7 @@
 #endif
 
 /* utility */
+#include "capability.h"
 #include "log.h"
 #include "md5.h"
 #include "registry.h"
@@ -48,14 +52,18 @@
 #include "luascript_types.h"
 #include "tolua_common_a_gen.h"
 #include "tolua_common_z_gen.h"
+#include "tolua_game_gen.h"
 
 /* server */
 #include "console.h"
+#include "srv_main.h"
 #include "stdinhand.h"
 
 /* server/scripting */
+#include "api_fcdb_specenum.h"
+
 #ifdef HAVE_FCDB
-#include "tolua_fcdb_gen.h"
+#include <tolua_fcdb_gen.h> /* <> so looked from the build directory first. */
 #endif /* HAVE_FCDB */
 
 #include "script_fcdb.h"
@@ -64,6 +72,8 @@
 
 #define SCRIPT_FCDB_LUA_FILE "database.lua"
 
+#define FCDB_CAPS "+fcdb"
+
 static void script_fcdb_functions_define(void);
 static bool script_fcdb_functions_check(const char *fcdb_luafile);
 
@@ -71,47 +81,72 @@ static void script_fcdb_cmd_reply(struct fc_lua *lfcl, enum log_level level,
                                   const char *format, ...)
             fc__attribute((__format__ (__printf__, 3, 4)));
 
-/*************************************************************************//**
+/**********************************************************************//**
   Lua virtual machine state.
-*****************************************************************************/
+**************************************************************************/
 static struct fc_lua *fcl = NULL;
 
-/*************************************************************************//**
+/**********************************************************************//**
   Add fcdb callback functions; these must be defined in the lua script
   'database.lua':
 
-  database_init:
+  database_init():
     - test and initialise the database.
-  database_free:
+  database_capstr():
+    - get database capstr
+  database_free():
     - free the database.
 
-  user_load(Connection pconn):
-    - check if the user data was successful loaded from the database.
-  user_save(Connection pconn):
-    - check if the user data was successful saved in the database.
+  user_exists(Connection pconn):
+    - Check if the user exists.
+  user_save(Connection pconn, String password):
+    - Save a new user.
+  user_verify(Connection pconn, String plaintext):
+    - Check the credentials of the user.
   user_log(Connection pconn, Bool success):
     - check if the login attempt was successful logged.
+  user_delegate_to(Connection pconn, Player pplayer, String delegate):
+    - returns Bool, whether pconn is allowed to delegate player to delegate.
+  user_take(Connection requester, Connection taker, Player pplayer,
+            Bool observer):
+    - returns Bool, whether requester is allowed to attach taker to pplayer.
 
-  If a database error did occur, the functions return FCDB_SUCCESS_ERROR.
-  If the request was successful, FCDB_SUCCESS_TRUE is returned.
-  If the request was not successful, FCDB_SUCCESS_FALSE is returned.
-*****************************************************************************/
+  conn_established(Connection pconn)
+    - called when connection has been fully established
+  game_start(int oldid)
+    - called when game starts. Should return game db id to use now on.
+
+  If an error occurred, the functions return a non-NULL string error
+  message as the last return value.
+**************************************************************************/
 static void script_fcdb_functions_define(void)
 {
-  luascript_func_add(fcl, "database_init", TRUE, 0);
-  luascript_func_add(fcl, "database_free", TRUE, 0);
+  luascript_func_add(fcl, "database_init", TRUE, 0, 0);
+  luascript_func_add(fcl, "database_capstr", TRUE, 0, 1, API_TYPE_STRING);
+  luascript_func_add(fcl, "database_free", TRUE, 0, 0);
 
-  luascript_func_add(fcl, "user_load", TRUE, 1,
-                     API_TYPE_CONNECTION);
-  luascript_func_add(fcl, "user_save", TRUE, 1,
-                     API_TYPE_CONNECTION);
-  luascript_func_add(fcl, "user_log", TRUE, 2,
-                     API_TYPE_CONNECTION, API_TYPE_BOOL);
+  luascript_func_add(fcl, "user_exists", TRUE, 1, 1, API_TYPE_CONNECTION,
+                     API_TYPE_BOOL);
+  luascript_func_add(fcl, "user_verify", TRUE, 2, 1, API_TYPE_CONNECTION,
+                     API_TYPE_STRING, API_TYPE_BOOL);
+  luascript_func_add(fcl, "user_save", FALSE, 2, 0, API_TYPE_CONNECTION,
+                     API_TYPE_STRING);
+  luascript_func_add(fcl, "user_log", TRUE, 2, 0, API_TYPE_CONNECTION,
+                     API_TYPE_BOOL);
+  luascript_func_add(fcl, "user_delegate_to", FALSE, 3, 1,
+                     API_TYPE_CONNECTION, API_TYPE_PLAYER, API_TYPE_STRING,
+                     API_TYPE_BOOL);
+  luascript_func_add(fcl, "user_take", FALSE, 4, 1, API_TYPE_CONNECTION,
+                     API_TYPE_CONNECTION, API_TYPE_PLAYER, API_TYPE_BOOL,
+                     API_TYPE_BOOL);
+  luascript_func_add(fcl, "conn_established", FALSE, 1, 0, API_TYPE_CONNECTION);
+  luascript_func_add(fcl, "game_start", FALSE, 1, 1,
+                     API_TYPE_INT, API_TYPE_INT);
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Check the existence of all needed functions.
-*****************************************************************************/
+**************************************************************************/
 static bool script_fcdb_functions_check(const char *fcdb_luafile)
 {
   bool ret = TRUE;
@@ -137,9 +172,9 @@ static bool script_fcdb_functions_check(const char *fcdb_luafile)
   return ret;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Send the message via cmd_reply().
-*****************************************************************************/
+**************************************************************************/
 static void script_fcdb_cmd_reply(struct fc_lua *lfcl, enum log_level level,
                                   const char *format, ...)
 {
@@ -173,12 +208,34 @@ static void script_fcdb_cmd_reply(struct fc_lua *lfcl, enum log_level level,
 
   cmd_reply(CMD_FCDB, lfcl->caller, rfc_status, "%s", buf);
 }
+
+/**********************************************************************//**
+  MD5 checksum function for lua environment.
+**************************************************************************/
+static int md5sum(lua_State *L)
+{
+   int n = lua_gettop(L);
+   char sum[MD5_HEX_BYTES + 1];
+   const char *plaintext;
+   size_t len;
+
+   if (n != 1 || lua_type(L, -1) != LUA_TSTRING) {
+     lua_pushliteral(L, "invalid argument");
+     lua_error(L);
+   }
+
+  plaintext = lua_tolstring(L, -1, &len);
+  create_md5sum((unsigned char*)plaintext, len, sum);
+
+  lua_pushstring(L, sum);
+  return 1;
+}
 #endif /* HAVE_FCDB */
 
-/*************************************************************************//**
-  Initialize the scripting state. Returns the status of the freeciv database
-  lua state.
-*****************************************************************************/
+/**********************************************************************//**
+  Initialize the scripting state. Returns the status of the freeciv
+  database lua state.
+**************************************************************************/
 bool script_fcdb_init(const char *fcdb_luafile)
 {
 #ifdef HAVE_FCDB
@@ -200,9 +257,24 @@ bool script_fcdb_init(const char *fcdb_luafile)
   }
 
   tolua_common_a_open(fcl->state);
+  api_fcdb_specenum_open(fcl->state);
+  tolua_game_open(fcl->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_fcdb_open(fcl->state);
+#else  /* MESON_BUILD */
   tolua_fcdb_open(fcl->state);
+#endif /* MESON_BUILD */
+  lua_register(fcl->state, "md5sum", md5sum);
 #ifdef HAVE_FCDB_MYSQL
   luaL_requiref(fcl->state, "ls_mysql", luaopen_luasql_mysql, 1);
+  lua_pop(fcl->state, 1);
+#endif
+#ifdef HAVE_FCDB_ODBC
+  luaL_requiref(fcl->state, "ls_odbc", luaopen_luasql_odbc, 1);
   lua_pop(fcl->state, 1);
 #endif
 #ifdef HAVE_FCDB_POSTGRES
@@ -228,52 +300,85 @@ bool script_fcdb_init(const char *fcdb_luafile)
     return FALSE;
   }
 
-  if (script_fcdb_call("database_init", 0) != FCDB_SUCCESS_TRUE) {
-    log_error("Error connecting to the database");
-    script_fcdb_free();
-    return FALSE;
+  if (srvarg.fcdb_enabled) {
+    if (!script_fcdb_call("database_init")) {
+      log_error("Error connecting to the database");
+      script_fcdb_free();
+      return FALSE;
+    }
+
+    if (!script_fcdb_capstr()) {
+      log_error(_("Database capabilities not compatible with server"));
+      return FALSE;
+    }
   }
+
 #endif /* HAVE_FCDB */
 
   return TRUE;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
+  Check database capabilities for compatibility
+**************************************************************************/
+bool script_fcdb_capstr(void)
+{
+#ifdef HAVE_FCDB
+  static int checked = 0;
+  const char *fcdb_caps;
+
+  if (checked) {
+    return checked > 0;
+  }
+
+  script_fcdb_call("database_capstr", &fcdb_caps);
+
+  log_verbose("Server caps: %s", FCDB_CAPS);
+  log_verbose("DB caps: %s", fcdb_caps);
+
+  if (!has_capabilities(FCDB_CAPS, fcdb_caps)
+      || !has_capabilities(fcdb_caps, FCDB_CAPS)) {
+    log_error(_("Database not compatible. Freeciv caps: %s, DB caps: %s"),
+              FCDB_CAPS, fcdb_caps);
+    checked = -1; /* Negative */
+    return FALSE;
+  }
+
+  checked = 1;    /* Positive */
+#endif /* HAVE_FCDB */
+
+  return TRUE;
+}
+
+/**********************************************************************//**
   Call a lua function.
 
   Example call to the lua function 'user_load()':
-    script_fcdb_call("user_load", 1, API_TYPE_CONNECTION, pconn);
-*****************************************************************************/
-enum fcdb_status script_fcdb_call(const char *func_name, int nargs, ...)
+    success = script_fcdb_call("user_load", pconn);
+**************************************************************************/
+bool script_fcdb_call(const char *func_name, ...)
 {
+  bool success = TRUE;
 #ifdef HAVE_FCDB
-  enum fcdb_status status = FCDB_ERROR; /* Default return value. */
-  bool success;
-  int ret;
 
   va_list args;
-  va_start(args, nargs);
-  success = luascript_func_call_valist(fcl, func_name, &ret, nargs, args);
+  va_start(args, func_name);
+
+  success = luascript_func_call_valist(fcl, func_name, args);
   va_end(args);
-
-  if (success && fcdb_status_is_valid(ret)) {
-    status = (enum fcdb_status) ret;
-  }
-
-  return status;
-#else
-  return FCDB_SUCCESS_TRUE;
 #endif /* HAVE_FCDB */
+
+  return success;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Free the scripting data.
-*****************************************************************************/
+**************************************************************************/
 void script_fcdb_free(void)
 {
 #ifdef HAVE_FCDB
-  if (script_fcdb_call("database_free", 0) != FCDB_SUCCESS_TRUE) {
-    log_error("Error closing the database connection. Continuing anyway ...");
+  if (!script_fcdb_call("database_free", 0)) {
+    log_error("Error closing the database connection. Continuing anyway...");
   }
 
   if (fcl) {
@@ -284,10 +389,10 @@ void script_fcdb_free(void)
 #endif /* HAVE_FCDB */
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Parse and execute the script in str in the lua instance for the freeciv
   database.
-*****************************************************************************/
+**************************************************************************/
 bool script_fcdb_do_string(struct connection *caller, const char *str)
 {
 #ifdef HAVE_FCDB

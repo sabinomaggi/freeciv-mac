@@ -92,7 +92,7 @@ static inline bool base_fc_utf8_char_validate(const char *utf8_char,
   if (1 < size) {
     do {
       utf8_char++;
-      if (0x80 != (0xC0 & *(unsigned char *) utf8_char)) {
+      if (0x80 != (0xC0 & *(const unsigned char *)utf8_char)) {
         /* Not a valid byte of the sequence. */
         return FALSE;
       }
@@ -132,7 +132,7 @@ static inline size_t base_fc_utf8_strlcpy_rep(char *dest, const char *src,
   const char *end;
   size_t src_len, len;
 
-  fc_assert_ret_val(NULL != src, 0);
+  fc_assert_ret_val(src != nullptr, 0);
 
   src_len = strlen(src);
   while (TRUE) {
@@ -175,7 +175,7 @@ static inline size_t base_fc_utf8_strlcpy_rep(char *dest, const char *src,
 
       /* Jump to next character in src. */
       src = fc_utf8_find_next_char(end);
-      if (src == NULL || *src == '\0') {
+      if (src == nullptr || *src == '\0') {
         *dest = '\0';
         return src_len; /* End of 'src' reached. */
       }
@@ -192,8 +192,6 @@ static inline size_t base_fc_utf8_strlcpy_rep(char *dest, const char *src,
 ****************************************************************************/
 bool fc_utf8_char_validate(const char *utf8_char)
 {
-  fc_assert_ret_val(NULL != utf8_char, FALSE);
-
   return base_fc_utf8_char_validate(utf8_char, FC_UTF8_CHAR_SIZE(utf8_char));
 }
 
@@ -201,16 +199,15 @@ bool fc_utf8_char_validate(const char *utf8_char)
   Jump to next UTF-8 character start.
 
   NB: This function can return a invalid UTF-8 character. Check with
-  fc_utf8_char_validate() to unsure.
+  fc_utf8_char_validate() to ensure.
 ****************************************************************************/
-char *fc_utf8_find_next_char(const char *utf8_char)
+const char *fc_utf8_find_next_char(const char *utf8_char)
 {
-  fc_assert_ret_val(NULL != utf8_char, NULL);
-
   do {
     utf8_char++;
   } while (0 == FC_UTF8_CHAR_SIZE(utf8_char));
-  return (char *) utf8_char;
+
+  return utf8_char;
 }
 
 /************************************************************************//**
@@ -218,24 +215,23 @@ char *fc_utf8_find_next_char(const char *utf8_char)
   pointer. If no character is found, returns 'utf8_string'.
 
   NB: This function can return a invalid UTF-8 character. Check with
-  fc_utf8_char_validate() to unsure.
+  fc_utf8_char_validate() to ensure.
 ****************************************************************************/
-char *fc_utf8_find_prev_char(const char *utf8_char, const char *utf8_string)
+const char *fc_utf8_find_prev_char(const char *utf8_char,
+                                   const char *utf8_string)
 {
-  fc_assert_ret_val(NULL != utf8_char, NULL);
-
   for (utf8_char--; utf8_char > utf8_string; utf8_char--) {
     if (0 != FC_UTF8_CHAR_SIZE(utf8_char)) {
-      return (char *) utf8_char;
+      return utf8_char;
     }
   }
-  return (char *) utf8_string;
-}
 
+  return utf8_string;
+}
 
 /************************************************************************//**
   Returns TRUE if the string 'utf8_string' contains only valid UTF-8
-  characters. If 'end' is not NULL, the end of the valid string will be
+  characters. If 'end' is not nullptr, the end of the valid string will be
   stored there, even if it returns TRUE.
 
   See also fc_utf8_validate_len().
@@ -244,28 +240,28 @@ bool fc_utf8_validate(const char *utf8_string, const char **end)
 {
   char size;
 
-  fc_assert_ret_val(NULL != utf8_string, FALSE);
-
   while ('\0' != *utf8_string) {
     size = FC_UTF8_CHAR_SIZE(utf8_string);
     if (!base_fc_utf8_char_validate(utf8_string, size)) {
-      if (NULL != end) {
+      if (end != nullptr) {
         *end = utf8_string;
       }
       return FALSE;
     }
     utf8_string += size;
   }
-  if (NULL != end) {
+
+  if (end != nullptr) {
     *end = utf8_string;
   }
+
   return TRUE;
 }
 
 /************************************************************************//**
   Returns TRUE if the string 'utf8_string' contains only valid UTF-8
   characters in the limit of the length (in bytes) 'byte_len'. If 'end' is
-  not NULL, the end of the valid string will be stored there, even if it
+  not nullptr, the end of the valid string will be stored there, even if it
   returns TRUE.
 
   See also fc_utf8_validate().
@@ -273,22 +269,20 @@ bool fc_utf8_validate(const char *utf8_string, const char **end)
 bool fc_utf8_validate_len(const char *utf8_string, size_t byte_len,
                           const char **end)
 {
-  char size;
-
-  fc_assert_ret_val(NULL != utf8_string, FALSE);
+  unsigned char size;
 
   while ('\0' != *utf8_string) {
     size = FC_UTF8_CHAR_SIZE(utf8_string);
 
     if (!base_fc_utf8_char_validate(utf8_string, size)) {
-      if (NULL != end) {
+      if (end != nullptr) {
         *end = utf8_string;
       }
       return FALSE;
     }
 
     if (size > byte_len) {
-      if (NULL != end) {
+      if (end != nullptr) {
         *end = utf8_string;
       }
       return FALSE;
@@ -298,9 +292,11 @@ bool fc_utf8_validate_len(const char *utf8_string, size_t byte_len,
 
     utf8_string += size;
   }
-  if (NULL != end) {
+
+  if (end != nullptr) {
     *end = utf8_string;
   }
+
   return TRUE;
 }
 
@@ -315,11 +311,10 @@ char *fc_utf8_validate_trunc(char *utf8_string)
 {
   char *end;
 
-  fc_assert_ret_val(NULL != utf8_string, NULL);
-
   if (!fc_utf8_validate(utf8_string, (const char **) &end)) {
     *end = '\0';
   }
+
   return utf8_string;
 }
 
@@ -334,11 +329,10 @@ char *fc_utf8_validate_trunc_len(char *utf8_string, size_t byte_len)
 {
   char *end;
 
-  fc_assert_ret_val(NULL != utf8_string, NULL);
-
   if (!fc_utf8_validate_len(utf8_string, byte_len, (const char **) &end)) {
     *end = '\0';
   }
+
   return utf8_string;
 }
 
@@ -354,8 +348,6 @@ char *fc_utf8_validate_trunc_dup(const char *utf8_string)
   const char *end;
   size_t size;
   char *ret;
-
-  fc_assert_ret_val(NULL != utf8_string, NULL);
 
   (void) fc_utf8_validate(utf8_string, &end);
   size = end - utf8_string;
@@ -376,14 +368,13 @@ char *fc_utf8_validate_trunc_dup(const char *utf8_string)
 ****************************************************************************/
 char *fc_utf8_validate_rep_len(char *utf8_string, size_t byte_len)
 {
-  fc_assert_ret_val(NULL != utf8_string, NULL);
-
   if (0 < byte_len) {
     char copy[byte_len];
 
     fc_strlcpy(copy, utf8_string, byte_len);
     base_fc_utf8_strlcpy_rep(utf8_string, copy, byte_len);
   }
+
   return utf8_string;
 }
 
@@ -399,8 +390,6 @@ char *fc_utf8_validate_rep_dup(const char *utf8_string)
   const char *utf8_char;
   size_t size = 1;      /* '\0'. */
   char char_size;
-
-  fc_assert_ret_val(NULL != utf8_string, NULL);
 
   /* Check needed size. */
   utf8_char = utf8_string;
@@ -438,17 +427,15 @@ size_t fc_utf8_strlen(const char *utf8_string)
 {
   size_t len;
 
-  fc_assert_ret_val(NULL != utf8_string, 0);
-
   for (len = 0; '\0' != *utf8_string; len++) {
     utf8_string = fc_ut8_next_char(utf8_string);
   }
+
   return len;
 }
 
-
 /************************************************************************//**
-  This is a variant of fc_strlcpy() to unsure the result will be a valid
+  This is a variant of fc_strlcpy() to ensure the result will be a valid
   UTF-8 string. It truncates the string at the first UTF-8 invalid
   character.
 
@@ -456,15 +443,13 @@ size_t fc_utf8_strlen(const char *utf8_string)
 ****************************************************************************/
 size_t fc_utf8_strlcpy_trunc(char *dest, const char *src, size_t n)
 {
-  fc_assert_ret_val(NULL != dest, -1);
-  fc_assert_ret_val(NULL != src, -1);
   fc_assert_ret_val(0 < n, -1);
 
   return base_fc_utf8_strlcpy_trunc(dest, src, n);
 }
 
 /************************************************************************//**
-  This is a variant of fc_strlcpy() to unsure the result will be a valid
+  This is a variant of fc_strlcpy() to ensure the result will be a valid
   UTF-8 string. Unlike fc_utf8_strlcpy_trunc(), it replaces the invalid
   characters by the replacement character, instead of truncating the string.
 
@@ -472,15 +457,13 @@ size_t fc_utf8_strlcpy_trunc(char *dest, const char *src, size_t n)
 ****************************************************************************/
 size_t fc_utf8_strlcpy_rep(char *dest, const char *src, size_t n)
 {
-  fc_assert_ret_val(NULL != dest, -1);
-  fc_assert_ret_val(NULL != src, -1);
   fc_assert_ret_val(0 < n, -1);
 
   return base_fc_utf8_strlcpy_rep(dest, src, n);
 }
 
 /************************************************************************//**
-  This is a variant of fc_strlcat() to unsure the result will be a valid
+  This is a variant of fc_strlcat() to ensure the result will be a valid
   UTF-8 string. It truncates the string at the first UTF-8 invalid
   character.
 
@@ -493,17 +476,16 @@ size_t fc_utf8_strlcat_trunc(char *dest, const char *src, size_t n)
 {
   size_t len;
 
-  fc_assert_ret_val(NULL != dest, -1);
-  fc_assert_ret_val(NULL != src, -1);
   fc_assert_ret_val(0 < n, -1);
 
   len = strlen(dest);
   fc_assert_ret_val(len < n, -1);
+
   return len + base_fc_utf8_strlcpy_trunc(dest + len, src, n - len);
 }
 
 /************************************************************************//**
-  This is a variant of fc_strlcat() to unsure the result will be a valid
+  This is a variant of fc_strlcat() to ensure the result will be a valid
   UTF-8 string. Unlike fc_utf8_strlcat_trunc(), it replaces the invalid
   characters by the replacement character, instead of truncating the string.
 
@@ -516,17 +498,16 @@ size_t fc_utf8_strlcat_rep(char *dest, const char *src, size_t n)
 {
   size_t len;
 
-  fc_assert_ret_val(NULL != dest, -1);
-  fc_assert_ret_val(NULL != src, -1);
   fc_assert_ret_val(0 < n, -1);
 
   len = strlen(dest);
   fc_assert_ret_val(len < n, -1);
+
   return len + base_fc_utf8_strlcpy_rep(dest + len, src, n - len);
 }
 
 /************************************************************************//**
-  This is a variant of fc_snprintf() to unsure the result will be a valid
+  This is a variant of fc_snprintf() to ensure the result will be a valid
   UTF-8 string. It truncates the string at the first UTF-8 invalid
   character.
 
@@ -540,11 +521,12 @@ int fc_utf8_snprintf_trunc(char *str, size_t n, const char *format, ...)
   va_start(args, format);
   ret = fc_utf8_vsnprintf_trunc(str, n, format, args);
   va_end(args);
+
   return ret;
 }
 
 /************************************************************************//**
-  This is a variant of fc_snprintf() to unsure the result will be a valid
+  This is a variant of fc_snprintf() to ensure the result will be a valid
   UTF-8 string. Unlike fc_utf8_snprintf_trunc(), it replaces the invalid
   characters by the replacement character, instead of truncating the string.
 
@@ -558,11 +540,12 @@ int fc_utf8_snprintf_rep(char *str, size_t n, const char *format, ...)
   va_start(args, format);
   ret = fc_utf8_vsnprintf_rep(str, n, format, args);
   va_end(args);
+
   return ret;
 }
 
 /************************************************************************//**
-  This is a variant of fc_vsnprintf() to unsure the result will be a valid
+  This is a variant of fc_vsnprintf() to ensure the result will be a valid
   UTF-8 string. It truncates the string at the first UTF-8 invalid
   character.
 
@@ -574,9 +557,7 @@ int fc_utf8_vsnprintf_trunc(char *str, size_t n, const char *format,
   char *end;
   int ret;
 
-  fc_assert_ret_val(NULL != str, -1);
   fc_assert_ret_val(0 < n, -1);
-  fc_assert_ret_val(NULL != format, -1);
 
   ret = fc_vsnprintf(str, n, format, args);
   if (fc_utf8_validate(str, (const char **) &end)) {
@@ -590,7 +571,7 @@ int fc_utf8_vsnprintf_trunc(char *str, size_t n, const char *format,
 }
 
 /************************************************************************//**
-  This is a variant of fc_vsnprintf() to unsure the result will be a valid
+  This is a variant of fc_vsnprintf() to ensure the result will be a valid
   UTF-8 string. Unlike fc_utf8_vsnprintf_trunc(), it replaces the invalid
   characters by the replacement character, instead of truncating the string.
 
@@ -602,9 +583,7 @@ int fc_utf8_vsnprintf_rep(char *str, size_t n, const char *format,
   char *end;
   int ret;
 
-  fc_assert_ret_val(NULL != str, -1);
   fc_assert_ret_val(0 < n, -1);
-  fc_assert_ret_val(NULL != format, -1);
 
   ret = fc_vsnprintf(str, n, format, args);
   if (fc_utf8_validate(str, (const char **) &end)) {
@@ -612,12 +591,12 @@ int fc_utf8_vsnprintf_rep(char *str, size_t n, const char *format,
     return ret;
   } else {
     (void) fc_utf8_validate_rep_len(end, n - (end - str));
-    return (-1 == ret ? -1 : strlen(str));
+    return ((-1 == ret) ? -1 : (int)strlen(str));
   }
 }
 
 /************************************************************************//**
-  This is a variant of cat_snprintf() to unsure the result will be a valid
+  This is a variant of cat_snprintf() to ensure the result will be a valid
   UTF-8 string. It truncates the string at the first UTF-8 invalid
   character.
 
@@ -632,8 +611,6 @@ int cat_utf8_snprintf_trunc(char *str, size_t n, const char *format, ...)
   int ret;
   va_list args;
 
-  fc_assert_ret_val(NULL != format, -1);
-  fc_assert_ret_val(NULL != str, -1);
   fc_assert_ret_val(0 < n, -1);
 
   len = strlen(str);
@@ -642,11 +619,12 @@ int cat_utf8_snprintf_trunc(char *str, size_t n, const char *format, ...)
   va_start(args, format);
   ret = fc_utf8_vsnprintf_trunc(str + len, n - len, format, args);
   va_end(args);
-  return (-1 == ret ? -1 : ret + len);
+
+  return ((-1 == ret) ? -1 : (int)(ret + len));
 }
 
 /************************************************************************//**
-  This is a variant of cat_snprintf() to unsure the result will be a valid
+  This is a variant of cat_snprintf() to ensure the result will be a valid
   UTF-8 string. Unlike cat_utf8_snprintf_trunc(), it replaces the invalid
   characters by the replacement character, instead of truncating the string.
 
@@ -661,8 +639,6 @@ int cat_utf8_snprintf_rep(char *str, size_t n, const char *format, ...)
   int ret;
   va_list args;
 
-  fc_assert_ret_val(NULL != format, -1);
-  fc_assert_ret_val(NULL != str, -1);
   fc_assert_ret_val(0 < n, -1);
 
   len = strlen(str);
@@ -671,5 +647,6 @@ int cat_utf8_snprintf_rep(char *str, size_t n, const char *format, ...)
   va_start(args, format);
   ret = fc_utf8_vsnprintf_rep(str + len, n - len, format, args);
   va_end(args);
-  return (-1 == ret ? -1 : ret + len);
+
+  return ((-1 == ret) ? -1 : (int)(ret + len));
 }

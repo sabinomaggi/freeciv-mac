@@ -22,38 +22,9 @@
 #include "graphics.h"
 #include "qtg_cxxside.h"
 
-static struct sprite *intro_gfx_sprite = NULL;
-
-/************************************************************************//**
-  Return whether the client supports given view type.
-****************************************************************************/
-bool qtg_is_view_supported(enum ts_type type)
-{
-  switch (type) {
-  case TS_ISOMETRIC:
-  case TS_OVERHEAD:
-    return true;
-  case TS_3D:
-    return false;
-  }
-
-  return false;
-}
-
 /************************************************************************//**
   Loading tileset of the specified type
 ****************************************************************************/
 void qtg_tileset_type_set(enum ts_type type)
 {
-}
-
-/************************************************************************//**
-  Frees the introductory sprites.
-****************************************************************************/
-void qtg_free_intro_radar_sprites()
-{
-  if (intro_gfx_sprite) {
-    free_sprite(intro_gfx_sprite);
-    intro_gfx_sprite = NULL;
-  }
 }

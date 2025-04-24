@@ -11,10 +11,14 @@ pkgdata_DATA =          \
 	earth.spec	\
 	explosions.png	\
 	explosions.spec	\
+	extra_units.png	\
+	extra_units.spec \
 	fog.png		\
 	fog.spec	\
 	grid.png	\
 	grid.spec	\
+	highways.png	\
+	highways.spec	\
 	roads.png	\
 	roads.spec	\
 	select.png	\

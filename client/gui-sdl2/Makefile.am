@@ -11,6 +11,7 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/common/networking \
 	-I$(srcdir)/../agents \
 	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums \
         $(gui_sdl2_cflags)
 
 libgui_sdl2_la_SOURCES = \
@@ -39,8 +40,6 @@ libgui_sdl2_la_SOURCES = \
 	gotodlg.h	\
 	graphics.c	\
 	graphics.h	\
-	gui_iconv.c	\
-	gui_iconv.h	\
 	gui_id.h	\
 	gui_main.c	\
 	gui_main.h	\
@@ -52,6 +51,7 @@ libgui_sdl2_la_SOURCES = \
 	gui_tilespec.h  \
 	helpdlg.c	\
 	helpdlg.h	\
+	infradlg.c	\
 	inteldlg.c	\
 	inteldlg.h	\
 	luaconsole.c	\
@@ -62,21 +62,16 @@ libgui_sdl2_la_SOURCES = \
 	mapview.h	\
 	menu.c		\
 	menu.h		\
-	messagedlg.c	\
-	messagedlg.h	\
 	messagewin.c	\
 	messagewin.h	\
 	optiondlg.h	\
 	optiondlg.c	\
 	pages.c		\
-	pages.h		\
 	plrdlg.c	\
 	plrdlg.h	\
-	ratesdlg.h	\
 	repodlgs.c	\
 	repodlgs.h	\
 	spaceshipdlg.c	\
-	spaceshipdlg.h  \
 	sprite.c	\
 	sprite.h	\
 	themebackgrounds.c \
@@ -86,12 +81,9 @@ libgui_sdl2_la_SOURCES = \
 	themes.c	\
 	themespec.c	\
 	themespec.h	\
-	unistring.c	\
-	unistring.h	\
 	utf8string.c	\
 	utf8string.h	\
 	voteinfo_bar.c	\
-	voteinfo_bar.h	\
 	widget.c	\
 	widget.h	\
 	widget_button.c \

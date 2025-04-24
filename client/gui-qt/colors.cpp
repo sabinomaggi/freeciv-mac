@@ -15,12 +15,16 @@
 #include <fc_config.h>
 #endif
 
-/* utility */
+// utility
 #include "mem.h"
 
+// common
+#include "rgbcolor.h"
+
 // gui-qt
-#include "colors.h"
 #include "qtg_cxxside.h"
+
+#include "colors.h"
 
 /************************************************************************//**
   Allocate a color (adjusting it for our colormap if necessary on paletted

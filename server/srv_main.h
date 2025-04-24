@@ -68,6 +68,9 @@ struct server_arguments {
 #define SPECENUM_VALUE2 S_S_OVER
 #include "specenum_gen.h"
 
+#define IDENTITY_NUMBER_SIZE 250000
+BV_DEFINE(bv_id, IDENTITY_NUMBER_SIZE);
+
 /* Structure for holding global server data.
  *
  * TODO: Lots more variables could be added here. */
@@ -76,11 +79,11 @@ extern struct civserver {
   int nbarbarians;
 
   /* this counter creates all the city and unit numbers used.
-   * arbitrarily starts at 101, but at 65K wraps to 1.
+   * arbitrarily starts at 101, but wraps to 1.
    * use identity_number()
    */
 #define IDENTITY_NUMBER_SKIP (100)
-  unsigned short identity_number;
+  unsigned identity_number;
 
   char game_identifier[MAX_LEN_GAME_IDENTIFIER];
 } server;
@@ -88,8 +91,8 @@ extern struct civserver {
 
 void init_game_seed(void);
 void srv_init(void);
-void srv_main(void);
-void server_quit(void);
+void fc__noreturn srv_main(void);
+void fc__noreturn server_quit(void);
 void save_game_auto(const char *save_reason, enum autosave_type type);
 
 enum server_states server_state(void);
@@ -103,6 +106,8 @@ server_setting_id server_ss_by_name(const char *name);
 const char *server_ss_name_get(server_setting_id id);
 enum sset_type server_ss_type_get(server_setting_id id);
 bool server_ss_val_bool_get(server_setting_id id);
+int server_ss_val_int_get(server_setting_id id);
+unsigned int server_ss_val_bitwise_get(server_setting_id id);
 
 bool server_packet_input(struct connection *pconn, void *packet, int type);
 void start_game(void);

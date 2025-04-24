@@ -55,19 +55,23 @@ bool adv_follow_path(struct unit *punit, struct pf_path *path,
   if (punit->moves_left <= 0) {
     return TRUE;
   }
+
   punit->goto_tile = ptile;
-  unit_activity_handling(punit, ACTIVITY_GOTO);
+  unit_activity_handling(punit, ACTIVITY_GOTO, ACTION_NONE);
   alive = adv_unit_execute_path(punit, path);
+
   if (alive) {
     if (activity != ACTIVITY_GOTO) {
       /* Only go via ACTIVITY_IDLE if we are actually changing the activity */
-      unit_activity_handling(punit, ACTIVITY_IDLE);
+      unit_activity_handling(punit, ACTIVITY_IDLE, ACTION_NONE);
       send_unit_info(NULL, punit); /* FIXME: probably duplicate */
-      unit_activity_handling_targeted(punit, activity, &tgt);
+      unit_activity_handling_targeted(punit, activity, &tgt,
+                                      activity_default_action(activity));
     }
     punit->goto_tile = old_tile; /* May be NULL. */
     send_unit_info(NULL, punit);
   }
+
   return alive;
 }
 
@@ -90,6 +94,26 @@ bool adv_unit_execute_path(struct unit *punit, struct pf_path *path)
     int id = punit->id;
 
     if (same_pos(unit_tile(punit), ptile)) {
+#ifdef PF_WAIT_DEBUG
+      fc_assert_msg(
+#if PF_WAIT_DEBUG & 1
+                    punit->moves_left < unit_move_rate(punit)
+#if PF_WAIT_DEBUG & (2 | 4)
+                   ||
+#endif
+#endif
+#if PF_WAIT_DEBUG & 2
+                   punit->fuel < utype_fuel(unit_type_get(punit))
+#if PF_WAIT_DEBUG & 4
+                   ||
+#endif
+#endif
+#if PF_WAIT_DEBUG & 4
+                   punit->hp < unit_type_get(punit)->hp
+#endif
+                    , "%s waits at %d,%d for no visible profit",
+                    unit_rule_name(punit), TILE_XY(ptile));
+#endif
       UNIT_LOG(LOG_DEBUG, punit, "execute_path: waiting this turn");
       return TRUE;
     }
@@ -131,10 +155,12 @@ bool adv_unit_execute_path(struct unit *punit, struct pf_path *path)
 **************************************************************************/
 static bool adv_unit_move(struct unit *punit, struct tile *ptile)
 {
+  struct action *paction;
   struct player *pplayer = unit_owner(punit);
-  int mcost;
+  struct unit *ptrans = NULL;
+  const struct civ_map *nmap = &(wld.map);
 
-  /* if enemy, stop and give a chance for the human player to
+  /* If enemy, stop and give a chance for the human player to
      handle this case */
   if (is_enemy_unit_tile(ptile, pplayer)
       || is_enemy_city_tile(ptile, pplayer)) {
@@ -142,48 +168,183 @@ static bool adv_unit_move(struct unit *punit, struct tile *ptile)
     return FALSE;
   }
 
-  /* Try not to end move next to an enemy if we can avoid it by waiting */
-  mcost = map_move_cost_unit(&(wld.map), punit, ptile);
-  if (punit->moves_left <= mcost
-      && unit_move_rate(punit) > mcost
-      && adv_danger_at(punit, ptile)
-      && !adv_danger_at(punit, unit_tile(punit))) {
-    UNIT_LOG(LOG_DEBUG, punit, "ending move early to stay out of trouble");
-    return FALSE;
+  /* Select move kind. */
+  if (!can_unit_survive_at_tile(nmap, punit, ptile)
+      && ((ptrans = transporter_for_unit_at(punit, ptile)))
+      && is_action_enabled_unit_on_unit(nmap, ACTION_TRANSPORT_EMBARK,
+                                        punit, ptrans)) {
+    /* "Transport Embark". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK);
+  } else if (!can_unit_survive_at_tile(nmap, punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(nmap, ACTION_TRANSPORT_EMBARK2,
+                                               punit, ptrans)) {
+    /* "Transport Embark 2". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK2);
+  } else if (!can_unit_survive_at_tile(nmap, punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(nmap, ACTION_TRANSPORT_EMBARK3,
+                                               punit, ptrans)) {
+    /* "Transport Embark 3". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK3);
+  } else if (!can_unit_survive_at_tile(nmap, punit, ptile)
+             && ptrans != NULL
+             && is_action_enabled_unit_on_unit(nmap, ACTION_TRANSPORT_EMBARK4,
+                                               punit, ptrans)) {
+    /* "Transport Embark 4". */
+    paction = action_by_number(ACTION_TRANSPORT_EMBARK4);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_TRANSPORT_DISEMBARK1,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK1);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_TRANSPORT_DISEMBARK2,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 2". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK2);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_TRANSPORT_DISEMBARK3,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 3". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK3);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_TRANSPORT_DISEMBARK4,
+                                            punit, ptile, NULL)) {
+    /* "Transport Disembark 4". */
+    paction = action_by_number(ACTION_TRANSPORT_DISEMBARK4);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_ENTER,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut". */
+    paction = action_by_number(ACTION_HUT_ENTER);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_ENTER2,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 2". */
+    paction = action_by_number(ACTION_HUT_ENTER2);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_ENTER3,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 3". */
+    paction = action_by_number(ACTION_HUT_ENTER3);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_ENTER4,
+                                            punit, ptile, NULL)) {
+    /* "Enter Hut 4". */
+    paction = action_by_number(ACTION_HUT_ENTER4);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_FRIGHTEN,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_FRIGHTEN2,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 2". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN2);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_FRIGHTEN3,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 3". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN3);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_HUT_FRIGHTEN4,
+                                            punit, ptile, NULL)) {
+    /* "Frighten Hut 4". */
+    paction = action_by_number(ACTION_HUT_FRIGHTEN4);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_UNIT_MOVE,
+                                            punit, ptile, NULL)) {
+    /* "Unit Move". */
+    paction = action_by_number(ACTION_UNIT_MOVE);
+  } else if (is_action_enabled_unit_on_tile(nmap, ACTION_UNIT_MOVE2,
+                                            punit, ptile, NULL)) {
+    /* "Unit Move 2". */
+    paction = action_by_number(ACTION_UNIT_MOVE2);
+  } else {
+    /* "Unit Move 3". */
+    paction = action_by_number(ACTION_UNIT_MOVE3);
   }
 
-  /* go */
-  unit_activity_handling(punit, ACTIVITY_IDLE);
+  /* Try not to end move next to an enemy if we can avoid it by waiting */
+  if (action_has_result(paction, ACTRES_UNIT_MOVE)
+      || action_has_result(paction, ACTRES_TRANSPORT_DISEMBARK)) {
+    /* The unit will have to move it self rather than being moved. */
+    int mcost = map_move_cost_unit(nmap, punit, ptile);
+
+    if (paction) {
+      struct tile *from_tile;
+
+      /* Ugly hack to understand the OnNativeTile unit state requirements
+       * used in the Action_Success_Actor_Move_Cost effect. */
+      fc_assert(utype_is_moved_to_tgt_by_action(paction,
+                                                unit_type_get(punit)));
+      from_tile = unit_tile(punit);
+      punit->tile = ptile;
+
+      mcost += unit_pays_mp_for_action(paction, punit);
+
+      punit->tile = from_tile;
+    }
+
+    if (punit->moves_left <= mcost
+        && unit_move_rate(punit) > mcost
+        && adv_danger_at(punit, ptile)
+        && !adv_danger_at(punit, unit_tile(punit))) {
+      UNIT_LOG(LOG_DEBUG, punit,
+               "ending move early to stay out of trouble");
+      return FALSE;
+    }
+  }
+
+  /* Go */
+  unit_activity_handling(punit, ACTIVITY_IDLE, ACTION_NONE);
   /* Move */
-  (void) unit_move_handling(punit, ptile, FALSE, TRUE, NULL);
+  /* TODO: Differentiate (server side AI) player from server side agent
+   * working for (possibly AI) player by using ACT_REQ_PLAYER and
+   * ACT_REQ_SS_AGENT */
+  if (paction != nullptr && ptrans != nullptr
+      && action_has_result(paction, ACTRES_TRANSPORT_EMBARK)) {
+      /* "Transport Embark". */
+      unit_do_action(unit_owner(punit), punit->id, ptrans->id,
+                     0, "", action_number(paction));
+    } else if (paction
+               && (action_has_result(paction,
+                                     ACTRES_TRANSPORT_DISEMBARK)
+                   || action_has_result(paction,
+                                        ACTRES_HUT_ENTER)
+                   || action_has_result(paction,
+                                        ACTRES_HUT_FRIGHTEN)
+                   || action_has_result(paction,
+                                        ACTRES_UNIT_MOVE))) {
+    /* "Transport Disembark", "Transport Disembark 2", "Enter Hut",
+     * "Frighten Hut" or "Unit Move". */
+    unit_do_action(unit_owner(punit), punit->id, tile_index(ptile),
+                   0, "", action_number(paction));
+  }
 
   return TRUE;
 }
 
 /**********************************************************************//**
   Similar to is_my_zoc(), but with some changes:
-  - destination (x0,y0) need not be adjacent?
+  - destination (x0, y0) need not be adjacent?
   - don't care about some directions?
 
-  Fix to bizarre did-not-find bug.  Thanks, Katvrr -- Syela
+  Fix to bizarre did-not-find bug. Thanks, Katvrr -- Syela
 **************************************************************************/
-static bool adv_could_be_my_zoc(struct unit *myunit, struct tile *ptile)
+static bool adv_could_be_my_zoc(struct unit *punit, struct tile *ptile)
 {
-  if (same_pos(ptile, unit_tile(myunit))) {
-    return FALSE; /* can't be my zoc */
+  struct tile *utile = unit_tile(punit);
+  struct player *owner;
+  struct civ_map *cmap = &(wld.map);
+  bool flagless = unit_has_type_flag(punit, UTYF_FLAGLESS);
+
+  if (same_pos(ptile, utile)) {
+    return FALSE; /* Can't be my zoc */
   }
-  if (is_tiles_adjacent(ptile, unit_tile(myunit))
-      && !is_non_allied_unit_tile(ptile, unit_owner(myunit))) {
+
+  owner = unit_owner(punit);
+  if (is_tiles_adjacent(ptile, utile)
+      && !is_non_allied_unit_tile(ptile, owner, flagless)) {
     return FALSE;
   }
 
-  adjc_iterate(&(wld.map), ptile, atile) {
+  adjc_iterate(cmap, ptile, atile) {
     if (!terrain_has_flag(tile_terrain(atile), TER_NO_ZOC)
-        && is_non_allied_unit_tile(atile, unit_owner(myunit))) {
+        && is_non_allied_unit_tile(atile, owner, flagless)) {
       return FALSE;
     }
   } adjc_iterate_end;
-  
+
   return TRUE;
 }
 
@@ -200,7 +361,7 @@ int adv_could_unit_move_to_tile(struct unit *punit, struct tile *dest_tile)
   enum unit_move_result reason =
     unit_move_to_tile_test(&(wld.map), punit, ACTIVITY_IDLE, unit_tile(punit),
                            dest_tile, unit_has_type_flag(punit, UTYF_IGZOC),
-                           NULL, FALSE);
+                           TRUE, NULL, FALSE);
 
   switch (reason) {
   case MR_OK:
@@ -239,7 +400,7 @@ int adv_unit_att_rating(const struct unit *punit)
 }
 
 /**********************************************************************//**
-  Basic (i.e. not taking attacker specific corections into account)
+  Basic (i.e. not taking attacker specific corrections into account)
   defense rating of this particular unit.
 **************************************************************************/
 int adv_unit_def_rating_basic(const struct unit *punit)
@@ -268,17 +429,19 @@ bool adv_danger_at(struct unit *punit, struct tile *ptile)
   struct city *pcity = tile_city(ptile);
   enum override_bool dc = NO_OVERRIDE;
   int extras_bonus = 0;
+  struct player *owner = unit_owner(punit);
 
   /* Give AI code possibility to decide itself */
-  CALL_PLR_AI_FUNC(consider_tile_dangerous, unit_owner(punit), ptile, punit, &dc);
+  CALL_PLR_AI_FUNC(consider_tile_dangerous, owner, ptile, punit, &dc);
   if (dc == OVERRIDE_TRUE) {
     return TRUE;
   } else if (dc == OVERRIDE_FALSE) {
     return FALSE;
   }
 
-  if (pcity && pplayers_allied(city_owner(pcity), unit_owner(punit))
-      && !is_non_allied_unit_tile(ptile, pplayer)) {
+  if (pcity != NULL && pplayers_allied(city_owner(pcity), owner)
+      && !is_non_allied_unit_tile(ptile, pplayer,
+                                  unit_has_type_flag(punit, UTYF_FLAGLESS))) {
     /* We will be safe in a friendly city */
     return FALSE;
   }
@@ -290,14 +453,16 @@ bool adv_danger_at(struct unit *punit, struct tile *ptile)
   d = adv_unit_def_rating_basic_squared(punit) * db;
 
   adjc_iterate(&(wld.map), ptile, ptile1) {
-    if (!map_is_known_and_seen(ptile1, unit_owner(punit), V_MAIN)) {
+    if (!map_is_known_and_seen(ptile1, owner, V_MAIN)) {
       /* We cannot see danger at (ptile1) => assume there is none */
       continue;
     }
     unit_list_iterate(ptile1->units, enemy) {
-      if (pplayers_at_war(unit_owner(enemy), unit_owner(punit))
-          && unit_attack_unit_at_tile_result(enemy, punit, ptile) == ATT_OK
-          && unit_attack_units_at_tile_result(enemy, ptile) == ATT_OK) {
+      if (pplayers_at_war(unit_owner(enemy), owner)
+          && (unit_attack_unit_at_tile_result(enemy, NULL, punit, ptile)
+              == ATT_OK)
+          && (unit_attack_units_at_tile_result(enemy, NULL, ptile)
+              == ATT_OK)) {
         a += adv_unit_att_rating(enemy);
         if ((a * a * 10) >= d) {
           /* The enemies combined strength is too big! */
@@ -307,7 +472,7 @@ bool adv_danger_at(struct unit *punit, struct tile *ptile)
     } unit_list_iterate_end;
   } adjc_iterate_end;
 
-  return FALSE; /* as good a quick'n'dirty should be -- Syela */
+  return FALSE; /* As good a quick'n'dirty should be -- Syela */
 }
 
 /**********************************************************************//**
@@ -321,7 +486,7 @@ static int stack_value(const struct tile *ptile,
   if (is_stack_vulnerable(ptile)) {
     unit_list_iterate(ptile->units, punit) {
       if (unit_owner(punit) == pplayer) {
-	cost += unit_build_shield_cost(punit);
+	cost += unit_build_shield_cost_base(punit);
       }
     } unit_list_iterate_end;
   }
@@ -380,9 +545,9 @@ static double chance_killed_at(const struct tile *ptile,
   - Therefore the total (re)build cost is a good representation of the
     the cost of destruction.
 **************************************************************************/
-static int stack_risk(const struct tile *ptile,
-                      struct adv_risk_cost *risk_cost,
-                      const struct pf_parameter *param)
+static unsigned stack_risk(const struct tile *ptile,
+                           struct adv_risk_cost *risk_cost,
+                           const struct pf_parameter *param)
 {
   double risk = 0;
   /* Compute the risk of destruction, assuming we will stop at this tile */
@@ -399,8 +564,9 @@ static int stack_risk(const struct tile *ptile,
    * if we enter or try to enter the tile. */
   if (risk_cost->enemy_zoc_cost != 0
       && (is_non_allied_city_tile(ptile, param->owner)
-	  || !is_my_zoc(param->owner, ptile, param->map)
-	  || is_non_allied_unit_tile(ptile, param->owner))) {
+          || !is_plr_zoc_srv(param->owner, ptile, param->map)
+          || is_non_allied_unit_tile(ptile, param->owner,
+                                     utype_has_flag(param->utype, UTYF_FLAGLESS)))) {
     /* We could become stuck. */
     risk += risk_cost->enemy_zoc_cost;
   }
@@ -415,15 +581,15 @@ static int stack_risk(const struct tile *ptile,
   Avoiding tall stacks *all* along a path is useful because a unit following a
   path might have to stop early because of ZoCs.
 **************************************************************************/
-static int prefer_short_stacks(const struct tile *ptile,
-                               enum known_type known,
-                               const struct pf_parameter *param)
+static unsigned prefer_short_stacks(const struct tile *ptile,
+                                    enum known_type known,
+                                    const struct pf_parameter *param)
 {
   return stack_risk(ptile, (struct adv_risk_cost *)param->data, param);
 }
 
 /**********************************************************************//**
-  Set PF call-backs to favour paths that do not create tall stacks
+  Set PF callbacks to favour paths that do not create tall stacks
   or cross dangerous tiles.
 **************************************************************************/
 void adv_avoid_risks(struct pf_parameter *parameter,
@@ -438,7 +604,7 @@ void adv_avoid_risks(struct pf_parameter *parameter,
 
   parameter->data = risk_cost;
   parameter->get_EC = prefer_short_stacks;
-  risk_cost->base_value = unit_build_shield_cost(punit);
+  risk_cost->base_value = unit_build_shield_cost_base(punit);
   risk_cost->fearfulness = fearfulness * linger_fraction;
 
   risk_cost->enemy_zoc_cost = PF_TURN_FACTOR * 20;

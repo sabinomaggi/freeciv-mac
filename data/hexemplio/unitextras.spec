@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -63,6 +63,6 @@ tiles = { "row", "column", "tag"
   2, 4, "unit.lowfuel"
   2, 5, "unit.connect"
   2, 6, "unit.auto_attack"
-  2, 6, "unit.auto_settler"
+  2, 6, "unit.auto_worker"
   2, 7, "unit.patrol"                   ;[?]
 }

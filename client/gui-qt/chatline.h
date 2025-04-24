@@ -39,6 +39,7 @@ class QPushButton;
 QString apply_tags(QString str, const struct text_tag_list *tags,
                    QColor bg_color);
 template<> std::set<chat_listener *> listener<chat_listener>::instances;
+
 /***************************************************************************
   Listener for chat. See listener<> for information about how to use it
 ***************************************************************************/
@@ -62,7 +63,7 @@ public:
 
   virtual void chat_message_received(const QString &,
                                      const struct text_tag_list *);
-  virtual void chat_word_list_changed(const QStringList &);
+  virtual void chat_word_list_changed(const QStringList &cmplt_word_list);
 
   void send_chat_message(const QString &message);
 
@@ -87,7 +88,7 @@ private slots:
 public:
   explicit chat_input(QWidget *parent = nullptr);
 
-  virtual void chat_word_list_changed(const QStringList &);
+  virtual void chat_word_list_changed(const QStringList &cmplt_word_list);
 
   bool event(QEvent *event);
 };
@@ -99,7 +100,7 @@ class text_browser_dblclck : public QTextBrowser
 {
   Q_OBJECT
 public:
-  explicit text_browser_dblclck(QWidget *parent = NULL): QTextBrowser(parent) {}
+  explicit text_browser_dblclck(QWidget *parent = nullptr): QTextBrowser(parent) {}
 signals:
   void dbl_clicked();
 protected:
@@ -124,7 +125,8 @@ public:
   void scroll_to_bottom();
   void update_font();
 private slots:
-  void state_changed(int state);
+  void state_changed(Qt::CheckState state);
+  void state_changed_depr(int state);
   void rm_links();
   void anchor_clicked(const QUrl &link);
   void toggle_size();
@@ -150,4 +152,4 @@ public:
   QString get_message() const { return message; }
 };
 
-#endif                        /* FC__CHATLINE_H */
+#endif // FC__CHATLINE_H

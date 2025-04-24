@@ -80,7 +80,7 @@ static struct {
   char *full_descr;
   enum event_type event;
 } events[] = {
-  /* TRANS: this and following strings are names for events which cause the
+  /* TRANS: This and following strings are names for events which cause the
    * server to generate messages. They are used in configuring how the client
    * handles the different types of messages. Some of them will be displayed
    * with prefixes, such as "Technology: Learned From Great Library". */
@@ -154,8 +154,8 @@ static struct {
   GEN_EV(E_FIRST_CONTACT,	E_S_NATION,	N_("First Contact")),
   GEN_EV(E_NEW_GOVERNMENT,	E_S_NATION,	N_("Learned New Government")),
   GEN_EV(E_LOW_ON_FUNDS,	E_S_NATION,	N_("Low Funds")),
-  GEN_EV(E_POLLUTION,		E_S_NATION,	N_("Pollution")),
-  GEN_EV(E_REVOLT_DONE,		E_S_NATION,	N_("Revolution Ended")),
+  GEN_EV(E_POLLUTION,           E_S_NATION,     N_("?event:Pollution")),
+  GEN_EV(E_REVOLT_DONE,         E_S_NATION,     N_("Revolution Ended")),
   GEN_EV(E_REVOLT_START,	E_S_NATION,	N_("Revolution Started")),
   GEN_EV(E_SPACESHIP,		E_S_NATION,	N_("Spaceship Events")),
   GEN_EV(E_TREATY_ALLIANCE,	E_S_TREATY,	N_("Alliance")),
@@ -218,14 +218,23 @@ static struct {
   GEN_EV(E_BEGINNER_HELP,       E_S_XYZZY,      N_("Help for beginners")),
   GEN_EV(E_MY_UNIT_DID_HEAL,    E_S_UNIT,       N_("Unit did heal")),
   GEN_EV(E_MY_UNIT_WAS_HEALED,  E_S_UNIT,       N_("Unit was healed")),
-  /* The sound system also generates "e_game_quit", although there's no
-   * corresponding identifier E_GAME_QUIT. */
+  GEN_EV(E_MULTIPLIER,          E_S_NATION,     N_("Multiplier changed")),
+  GEN_EV(E_UNIT_ACTION_ACTOR_SUCCESS,  E_S_UNIT, N_("Your unit did")),
+  GEN_EV(E_UNIT_ACTION_ACTOR_FAILURE,  E_S_UNIT, N_("Your unit failed")),
+  GEN_EV(E_UNIT_ACTION_TARGET_HOSTILE, E_S_UNIT, N_("Unit did to you")),
+  GEN_EV(E_UNIT_ACTION_TARGET_OTHER,   E_S_UNIT, N_("Unit did")),
+  GEN_EV(E_INFRAPOINTS,         E_S_NATION,      N_("Infrapoints")),
+  GEN_EV(E_HUT_MAP,             E_S_HUT,         N_("Map found from a hut")),
+  GEN_EV(E_TREATY_SHARED_TILES, E_S_TREATY,      N_("Tiles shared")),
+  GEN_EV(E_CITY_CONQUERED,      E_S_CITY,        N_("Conquered")),
+  /* The sound system also generates "e_client_quit", although there's no
+   * corresponding identifier E_CLIENT_QUIT. */
 };
 
 
-/* 
+/*
  * Maps from enum event_type to indexes of events[]. Set by
- * events_init. 
+ * events_init().
  */
 static int event_to_index[E_COUNT];
 
@@ -256,7 +265,7 @@ static int compar_event_message_texts(const void *i1, const void *i2)
 {
   const enum event_type *j1 = i1;
   const enum event_type *j2 = i2;
-  
+
   return fc_strcasecmp(get_event_message_text(*j1),
                        get_event_message_text(*j2));
 }
@@ -272,12 +281,12 @@ const char *get_event_tag(enum event_type event)
     return events[event_to_index[event]].tag_name;
   }
   log_error("unknown event %d", event);
+
   return NULL;
 }
 
 /**********************************************************************//**
- If is_city_event is FALSE this event doesn't effect a city even if
- there is a city at the event location.
+  Does the event affect a city if there's one at the event location.
 **************************************************************************/
 bool is_city_event(enum event_type event)
 {
@@ -316,7 +325,7 @@ bool is_city_event(enum event_type event)
 }
 
 /**********************************************************************//**
-  Initialize events. 
+  Initialize events.
   Now also initialise sorted_events[].
 **************************************************************************/
 void events_init(void)
@@ -332,14 +341,14 @@ void events_init(void)
 
     if (E_S_XYZZY > events[i].esn) {
       const char *event_format = Q_(event_sections[events[i].esn]);
-      int l = 1 + strlen(event_format) + strlen(_(events[i].descr_orig));
+      int l = 1 + strlen(event_format) + strlen(Q_(events[i].descr_orig));
 
       events[i].full_descr = fc_malloc(l);
       fc_snprintf(events[i].full_descr, l, event_format,
-                  _(events[i].descr_orig));
+                  Q_(events[i].descr_orig));
     } else {
       /* No section part */
-      events[i].full_descr = _(events[i].descr_orig);
+      events[i].full_descr = fc_strdup(Q_(events[i].descr_orig));
     }
 
     event_to_index[events[i].event] = i;
@@ -351,7 +360,7 @@ void events_init(void)
               "\tdescr_orig='%s'\n"
               "\tdescr='%s'",
               i, events[i].event, events[i].enum_name, events[i].tag_name,
-              events[i].descr_orig, events[i].full_descr);
+              Qn_(events[i].descr_orig), events[i].full_descr);
   }
 
   for (i = 0; i <= event_type_max(); i++) {
@@ -363,17 +372,14 @@ void events_init(void)
 }
 
 /**********************************************************************//**
-  Free events. 
+  Free events.
 **************************************************************************/
 void events_free(void)
 {
   int i;
 
   for (i = 0; i <= event_type_max(); i++) {
-    if (E_S_XYZZY > events[i].esn) {
-      /* We have allocated memory for this event */
-      free(events[i].full_descr);
-      events[i].full_descr = NULL;
-    }
+    free(events[i].full_descr);
+    events[i].full_descr = NULL;
   }
 }

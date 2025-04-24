@@ -13,11 +13,15 @@ AC_DEFUN([FC_CHECK_MAGICKWAND],
     PKG_CHECK_MODULES([WAND], [MagickWand], [wand=yes], [wand=no])
 
     if test "x$wand" = "xno" ; then
+      PKG_CHECK_MODULES([WAND], [MagickWand-6.Q16HDRI], [wand=yes], [wand=no])
+    fi
+
+    if test "x$wand" = "xno" ; then
       AC_MSG_CHECKING([for MagickWand-config in default path])
 
       for i in /usr/local /usr;
       do
-        test -r $i/bin/${host}-MagicWand-config &&
+        test -r $i/bin/${host}-MagickWand-config &&
         WAND_CONFIG_PATH=$i/bin && WAND_CONFIG_NAME=${host}-MagickWand-config &&
         break
       done
@@ -68,14 +72,20 @@ AC_DEFUN([FC_CHECK_MAGICKWAND],
     ac_save_CFLAGS="$CFLAGS"
     ac_save_LIBS="$LIBS"
     CFLAGS="$CFLAGS $WAND_CFLAGS"
-    LIBS="$WAND_LIBS $LIBS"
+    LIBS="$WAND_LIBS $UTILITY_LIBS $LIBS"
 
     AC_MSG_CHECKING([for all development tools needed for MagickWand])
-    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <wand/magick_wand.h>]],
+    dnl First look for MagickWand-7
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <MagickWand/MagickWand.h>]],
+[MagickWand *mw = NewMagickWand();])],
+    [AC_MSG_RESULT([yes])
+     AC_DEFINE([FREECIV_MWAND7], [1], [MagickWand version 7 API in use])],
+      dnl ...then older versions
+      [AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <wand/magick_wand.h>]],
 [MagickWand *mw = NewMagickWand();])], [AC_MSG_RESULT([yes])],
 [AC_MSG_RESULT([no])
 wand=no
-AC_MSG_WARN([MagickWand deactivated due to missing development packages.])])
+AC_MSG_WARN([MagickWand deactivated due to missing development packages.])])])
 
     dnl
     dnl reset variables to old values

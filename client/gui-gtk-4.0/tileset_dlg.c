@@ -34,19 +34,18 @@
 #include "dialogs_g.h"
 
 extern char forced_tileset_name[512];
-static void tileset_suggestion_callback(GtkWidget *dlg, gint arg);
 
 /************************************************************************//**
   Callback either loading suggested tileset or doing nothing
 ****************************************************************************/
-static void tileset_suggestion_callback(GtkWidget *dlg, gint arg)
+static void tileset_suggestion_response(gint arg)
 {
   if (arg == GTK_RESPONSE_YES) {
     /* User accepted tileset loading */
     sz_strlcpy(forced_tileset_name, game.control.preferred_tileset);
-    if (!tilespec_reread(game.control.preferred_tileset, FALSE, 1.0)) {
-      tileset_error(LOG_ERROR, _("Can't load requested tileset %s."),
-                    game.control.preferred_tileset);
+    if (!tilespec_reread(game.control.preferred_tileset, TRUE, 1.0)) {
+      tileset_error(LOG_ERROR, game.control.preferred_tileset,
+                    _("Can't load requested tileset."));
     }
   }
 }
@@ -63,9 +62,9 @@ void popup_tileset_suggestion_dialog(void)
   dialog = gtk_dialog_new_with_buttons(_("Preferred tileset"),
                                        NULL,
                                        0,
-                                       _("Load tileset"),
+                                       _("_Load tileset"),
                                        GTK_RESPONSE_YES,
-                                       _("Keep current tileset"),
+                                       _("_Keep current tileset"),
                                        GTK_RESPONSE_NO,
                                        NULL);
   setup_dialog(dialog, toplevel);
@@ -79,17 +78,15 @@ void popup_tileset_suggestion_dialog(void)
               game.control.preferred_tileset, tileset_basename(tileset));
 
   label = gtk_label_new(buf);
-  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), label);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
+                 label);
   gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_CENTER);
-  gtk_widget_show(label);
-
-  g_signal_connect(dialog, "response",
-                   G_CALLBACK(tileset_suggestion_callback), NULL);
+  gtk_widget_set_visible(label, TRUE);
 
   /* In case incoming rulesets are incompatible with current tileset
    * we need to block their receive before user has accepted loading
    * of the correct tileset. */
-  gtk_dialog_run(GTK_DIALOG(dialog));
+  tileset_suggestion_response(blocking_dialog(dialog));
 
-  gtk_widget_destroy(dialog);
+  gtk_window_destroy(GTK_WINDOW(dialog));
 }

@@ -83,7 +83,7 @@ static inline void science_report_store_set(GtkListStore *store,
                                             Tech_type_id tech);
 static bool science_report_combo_get_active(GtkComboBox *combo,
                                             Tech_type_id *tech,
-                                            const char **name);
+                                            char **name);
 static void science_report_combo_set_active(GtkComboBox *combo,
                                             Tech_type_id tech);
 static gboolean science_diagram_button_release_callback(GtkWidget *widget,
@@ -153,7 +153,7 @@ static inline void science_report_store_set(GtkListStore *store,
 ****************************************************************************/
 static bool science_report_combo_get_active(GtkComboBox *combo,
                                             Tech_type_id *tech,
-                                            const char **name)
+                                            char **name)
 {
   GtkTreeIter iter;
 
@@ -389,6 +389,7 @@ static void science_report_update(struct science_report *preport)
   const char *text;
   double pct;
   Tech_type_id tech;
+  Tech_type_id ac = advance_count();
 
   fc_assert_ret(NULL != preport);
   fc_assert_ret(NULL != presearch);
@@ -411,34 +412,51 @@ static void science_report_update(struct science_report *preport)
   store = GTK_LIST_STORE(gtk_combo_box_get_model(preport->reachable_techs));
   gtk_list_store_clear(store);
   sorting_list = NULL;
-  if (A_UNSET == presearch->researching
-      || is_future_tech(presearch->researching)) {
-    gtk_list_store_append(store, &iter);
-    science_report_store_set(store, &iter, presearch->researching);
-    gtk_combo_box_set_active_iter(preport->reachable_techs, &iter);
-  }
 
   /* Collect all techs which are reachable in the next step. */
-  advance_index_iterate(A_FIRST, i) {
+  advance_index_iterate_max(A_FIRST, i, ac) {
     if (TECH_PREREQS_KNOWN == presearch->inventions[i].state) {
       sorting_list = g_list_prepend(sorting_list, GINT_TO_POINTER(i));
     }
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
 
-  /* Sort the list, append it to the store. */
-  sorting_list = g_list_sort(sorting_list, cmp_func);
-  for (item = sorting_list; NULL != item; item = g_list_next(item)) {
-    tech = GPOINTER_TO_INT(item->data);
-    gtk_list_store_append(store, &iter);
-    science_report_store_set(store, &iter, tech);
-    if (tech == presearch->researching) {
+  if (sorting_list != NULL) {
+    if (A_UNSET == presearch->researching
+        || is_future_tech(presearch->researching)) {
+      gtk_list_store_append(store, &iter);
+      science_report_store_set(store, &iter, presearch->researching);
       gtk_combo_box_set_active_iter(preport->reachable_techs, &iter);
     }
+
+    /* Sort the list, append it to the store. */
+    sorting_list = g_list_sort(sorting_list, cmp_func);
+    for (item = sorting_list; NULL != item; item = g_list_next(item)) {
+      tech = GPOINTER_TO_INT(item->data);
+      gtk_list_store_append(store, &iter);
+      science_report_store_set(store, &iter, tech);
+      if (tech == presearch->researching) {
+        gtk_combo_box_set_active_iter(preport->reachable_techs, &iter);
+      }
+    }
+
+    /* Free, re-init. */
+    g_list_free(sorting_list);
+    sorting_list = NULL;
+  } else {
+    /* No reachable normal techs. Can we select Future Tech? */
+    Tech_type_id next;
+
+    gtk_list_store_append(store, &iter);
+    if (research_future_next(presearch)) {
+      next = A_FUTURE;
+    } else {
+      next = presearch->researching;
+    }
+    science_report_store_set(store, &iter, next);
+
+    gtk_combo_box_set_active_iter(preport->reachable_techs, &iter);
   }
 
-  /* Free, re-init. */
-  g_list_free(sorting_list);
-  sorting_list = NULL;
   store = GTK_LIST_STORE(gtk_combo_box_get_model(preport->reachable_goals));
   gtk_list_store_clear(store);
 
@@ -446,48 +464,64 @@ static void science_report_update(struct science_report *preport)
   gtk_label_set_text(preport->goal_label,
                      get_science_goal_text(presearch->tech_goal));
 
-  if (A_UNSET == presearch->tech_goal) {
-    gtk_list_store_append(store, &iter);
-    science_report_store_set(store, &iter, A_UNSET);
-    gtk_combo_box_set_active_iter(preport->reachable_goals, &iter);
-  }
-
   /* Collect all techs which are reachable in next 10 steps. */
-  advance_index_iterate(A_FIRST, i) {
+  advance_index_iterate_max(A_FIRST, i, ac) {
     if (research_invention_reachable(presearch, i)
         && TECH_KNOWN != presearch->inventions[i].state
         && (i == presearch->tech_goal
             || 10 >= presearch->inventions[i].num_required_techs)) {
       sorting_list = g_list_prepend(sorting_list, GINT_TO_POINTER(i));
     }
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
 
-  /* Sort the list, append it to the store. */
-  sorting_list = g_list_sort(sorting_list, cmp_func);
-  for (item = sorting_list; NULL != item; item = g_list_next(item)) {
-    tech = GPOINTER_TO_INT(item->data);
-    gtk_list_store_append(store, &iter);
-    science_report_store_set(store, &iter, tech);
-    if (tech == presearch->tech_goal) {
+  if (sorting_list != NULL) {
+    if (A_UNSET == presearch->tech_goal) {
+      gtk_list_store_append(store, &iter);
+      science_report_store_set(store, &iter, A_UNSET);
       gtk_combo_box_set_active_iter(preport->reachable_goals, &iter);
     }
-  }
 
-  /* Free. */
-  g_list_free(sorting_list);
+    /* Sort the list, append it to the store. */
+    sorting_list = g_list_sort(sorting_list, cmp_func);
+    for (item = sorting_list; NULL != item; item = g_list_next(item)) {
+      tech = GPOINTER_TO_INT(item->data);
+      gtk_list_store_append(store, &iter);
+      science_report_store_set(store, &iter, tech);
+      if (tech == presearch->tech_goal) {
+        gtk_combo_box_set_active_iter(preport->reachable_goals, &iter);
+      }
+    }
+
+    /* Free. */
+    g_list_free(sorting_list);
+  } else {
+    /* No reachable normal techs. Can we select Future Tech? */
+    Tech_type_id goal;
+
+    gtk_list_store_append(store, &iter);
+
+    if (research_future_next(presearch)) {
+      goal = A_FUTURE;
+    } else {
+      goal = A_UNSET;
+    }
+
+    science_report_store_set(store, &iter, goal);
+    gtk_combo_box_set_active_iter(preport->reachable_goals, &iter);
+  }
 
   /* Re-enable callbacks. */
   science_report_no_combo_callback = FALSE;
 }
 
 /************************************************************************//**
-  Actived item in the reachable techs combo box.
+  Activated item in the reachable techs combo box.
 ****************************************************************************/
 static void science_report_current_callback(GtkComboBox *combo,
                                             gpointer data)
 {
   Tech_type_id tech;
-  const char *tech_name;
+  char *tech_name;
 
   if (!science_report_combo_get_active(combo, &tech, &tech_name)) {
     return;
@@ -498,7 +532,9 @@ static void science_report_current_callback(GtkComboBox *combo,
   } else if (can_client_issue_orders()) {
     dsend_packet_player_research(&client.conn, tech);
   }
-  /* Revert, or we will be not synchron with the server. */
+
+  free(tech_name);
+  /* Revert, or we will not be in sync with the server. */
   science_report_combo_set_active(combo, research_get
                                   (client_player())->researching);
 }
@@ -515,12 +551,12 @@ static void science_report_show_all_callback(GtkComboBox *combo,
 }
 
 /************************************************************************//**
-  Actived item in the reachable goals combo box.
+  Activated item in the reachable goals combo box.
 ****************************************************************************/
 static void science_report_goal_callback(GtkComboBox *combo, gpointer data)
 {
   Tech_type_id tech;
-  const char *tech_name;
+  char *tech_name;
 
   if (!science_report_combo_get_active(combo, &tech, &tech_name)) {
     return;
@@ -531,7 +567,9 @@ static void science_report_goal_callback(GtkComboBox *combo, gpointer data)
   } else if (can_client_issue_orders()) {
     dsend_packet_player_tech_goal(&client.conn, tech);
   }
-  /* Revert, or we will be not synchron with the server. */
+
+  free(tech_name);
+  /* Revert, or we will not be in sync with the server. */
   science_report_combo_set_active(combo, research_get
                                   (client_player())->tech_goal);
 }
@@ -553,7 +591,7 @@ static void science_report_init(struct science_report *preport)
   /* TRANS: Research report title */
   gui_dialog_set_title(preport->shell, _("Research"));
 
-  gui_dialog_add_button(preport->shell, "window-close", _("Close"),
+  gui_dialog_add_button(preport->shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
   gui_dialog_set_default_response(preport->shell, GTK_RESPONSE_CLOSE);
 
@@ -710,7 +748,7 @@ void science_report_dialog_popdown(void)
 /************************************************************************//**
   Update the science report dialog.
 ****************************************************************************/
-void real_science_report_dialog_update(void)
+void real_science_report_dialog_update(void *unused)
 {
   if (NULL != science_report.shell) {
     science_report_update(&science_report);
@@ -754,6 +792,7 @@ enum economy_report_columns {
   ERD_COL_COUNT,
   ERD_COL_COST,
   ERD_COL_TOTAL_COST,
+  ERD_COL_EMPTY,  /*  will make an empty space for scroll bar */
 
   /* Not visible. */
   ERD_COL_IS_IMPROVEMENT,
@@ -774,6 +813,7 @@ static GtkListStore *economy_report_store_new(void)
                             G_TYPE_INT,         /* ERD_COL_COUNT */
                             G_TYPE_INT,         /* ERD_COL_COST */
                             G_TYPE_INT,         /* ERD_COL_TOTAL_COST */
+                            G_TYPE_STRING,      /* ERD_COL_EMPTY */
                             G_TYPE_BOOLEAN,     /* ERD_COL_IS_IMPROVEMENT */
                             G_TYPE_INT,         /* ERD_COL_UNI_KIND */
                             G_TYPE_INT);        /* ERD_COL_UNI_VALUE_ID */
@@ -800,10 +840,13 @@ economy_report_column_name(enum economy_report_columns col)
   case ERD_COL_TOTAL_COST:
     /* TRANS: Upkeep total, count*cost. */
     return _("U Total");
+  case ERD_COL_EMPTY:
+    /* empty space for scrollbar*/
+    return "   ";
   case ERD_COL_IS_IMPROVEMENT:
   case ERD_COL_CID:
   case ERD_COL_NUM:
-    break;
+    break;	/* no more columns will be displayed after reaching this */
   }
 
   return NULL;
@@ -857,6 +900,7 @@ static void economy_report_update(struct economy_report *preport)
                        ERD_COL_COUNT, pentry->count,
                        ERD_COL_COST, pentry->cost,
                        ERD_COL_TOTAL_COST, pentry->total_cost,
+                       ERD_COL_EMPTY, " ",
                        ERD_COL_IS_IMPROVEMENT, TRUE,
                        ERD_COL_CID, id,
                        -1);
@@ -873,6 +917,7 @@ static void economy_report_update(struct economy_report *preport)
     struct unit_entry *pentry = unit_entries + i;
     struct unit_type *putype = pentry->type;
     struct sprite *sprite = get_unittype_sprite(tileset, putype,
+                                                ACTIVITY_LAST,
                                                 direction8_invalid());
     cid id = cid_encode_unit(putype);
 
@@ -885,6 +930,7 @@ static void economy_report_update(struct economy_report *preport)
                        ERD_COL_COUNT, pentry->count,
                        ERD_COL_COST, pentry->cost,
                        ERD_COL_TOTAL_COST, pentry->total_cost,
+                       ERD_COL_EMPTY, " ",
                        ERD_COL_IS_IMPROVEMENT, FALSE,
                        ERD_COL_CID, id,
                        -1);
@@ -938,7 +984,7 @@ static void economy_report_command_callback(struct gui_dialog *pdialog,
   switch (selected.kind) {
   case VUT_IMPROVEMENT:
     {
-      struct impr_type *pimprove = selected.value.building;
+      const struct impr_type *pimprove = selected.value.building;
 
       if (can_sell_building(pimprove)
           && (ERD_RES_SELL_ALL == response
@@ -977,7 +1023,7 @@ static void economy_report_command_callback(struct gui_dialog *pdialog,
   case VUT_UTYPE:
     {
       if (ERD_RES_DISBAND_UNITS == response) {
-        struct unit_type *putype = selected.value.utype;
+        const struct unit_type *putype = selected.value.utype;
         gint count;
         gtk_tree_model_get(model, &iter, ERD_COL_COUNT, &count, -1);
 
@@ -1151,7 +1197,7 @@ static void economy_report_init(struct economy_report *preport)
   gtk_widget_set_margin_bottom(label, 5);
   preport->label = GTK_LABEL(label);
 
-  gui_dialog_add_button(preport->shell, "window-close", _("Close"),
+  gui_dialog_add_button(preport->shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
 
   button = gui_dialog_add_button(preport->shell, NULL, _("_Disband"),
@@ -1219,7 +1265,7 @@ void economy_report_dialog_popdown(void)
 /************************************************************************//**
   Update the economy report dialog.
 ****************************************************************************/
-void real_economy_report_dialog_update(void)
+void real_economy_report_dialog_update(void *unused)
 {
   if (NULL != economy_report.shell) {
     economy_report_update(&economy_report);
@@ -1252,6 +1298,7 @@ enum units_report_columns {
   URD_COL_SHIELD,
   URD_COL_FOOD,
   URD_COL_GOLD,
+  URD_COL_EMPTY,	/* empty space for scrollbar */
 
   /* Not visible. */
   URD_COL_TEXT_WEIGHT,
@@ -1286,6 +1333,9 @@ static const struct {
     N_("Total food upkeep"),      TRUE,   -1 },
   { /* URD_COL_GOLD */         G_TYPE_INT,     N_("Gold"),
     N_("Total gold upkeep"),      TRUE,   -1 },
+  { /* URD_COL_EMPTY */         G_TYPE_STRING, "   ",
+    " ", TRUE, -1 },
+
   { /* URD_COL_TEXT_WEIGHT */  G_TYPE_INT,     NULL /* ... */ },
   { /* URD_COL_UPG_VISIBLE */  G_TYPE_BOOLEAN, NULL /* ... */ },
   { /* URD_COL_NUPG_VISIBLE */ G_TYPE_BOOLEAN, NULL /* ... */ },
@@ -1299,9 +1349,10 @@ static GtkListStore *units_report_store_new(void)
 {
   int i;
   GType cols[URD_COL_NUM];
+
   fc_assert(ARRAY_SIZE(unit_report_columns) == URD_COL_NUM);
 
-  for (i=0; i<URD_COL_NUM; i++) {
+  for (i = 0; i < URD_COL_NUM; i++) {
     cols[i] = unit_report_columns[i].type;
   }
   
@@ -1399,6 +1450,7 @@ static void units_report_update(struct units_report *preport)
                        URD_COL_SHIELD, info->upkeep[O_SHIELD],
                        URD_COL_FOOD, info->upkeep[O_FOOD],
                        URD_COL_GOLD, info->upkeep[O_GOLD],
+                       URD_COL_EMPTY, " ",
                        URD_COL_TEXT_WEIGHT, PANGO_WEIGHT_NORMAL,
                        URD_COL_UPG_VISIBLE, TRUE,
                        URD_COL_NUPG_VISIBLE, FALSE,
@@ -1431,6 +1483,7 @@ static void units_report_update(struct units_report *preport)
                      URD_COL_SHIELD, unit_totals.upkeep[O_SHIELD],
                      URD_COL_FOOD, unit_totals.upkeep[O_FOOD],
                      URD_COL_GOLD, unit_totals.upkeep[O_GOLD],
+                     URD_COL_EMPTY, " ",
                      URD_COL_TEXT_WEIGHT, PANGO_WEIGHT_BOLD,
                      URD_COL_UPG_VISIBLE, FALSE,
                      URD_COL_NUPG_VISIBLE, TRUE,
@@ -1475,6 +1528,7 @@ static void units_report_selection_callback(GtkTreeSelection *selection,
     gui_dialog_set_response_sensitive(preport->shell, URD_RES_NEAREST, TRUE);
     gui_dialog_set_response_sensitive(preport->shell, URD_RES_UPGRADE,
         (can_client_issue_orders()
+         && action_ever_possible(ACTION_UPGRADE_UNIT)
          && NULL != can_upgrade_unittype(client_player(), utype)));
   }
 }
@@ -1498,7 +1552,7 @@ static struct unit *find_nearest_unit(const struct unit_type *utype,
           && FOCUS_AVAIL == punit->client.focus_status
           && 0 < punit->moves_left
           && !punit->done_moving
-          && !punit->ai_controlled) {
+          && punit->ssa_controller == SSA_NONE) {
         dist = sq_map_distance(unit_tile(punit), ptile);
         if (dist < best_dist) {
           best_candidate = punit;
@@ -1552,14 +1606,14 @@ static void units_report_command_callback(struct gui_dialog *pdialog,
 
       if (ACTIVITY_IDLE == punit->activity
           || ACTIVITY_SENTRY == punit->activity) {
-        if (can_unit_do_activity(punit, ACTIVITY_IDLE)) {
+        if (can_unit_do_activity_client(punit, ACTIVITY_IDLE)) {
           unit_focus_set_and_select(punit);
         }
       }
     }
   } else if (can_client_issue_orders()) {
     GtkWidget *shell;
-    struct unit_type *upgrade = can_upgrade_unittype(client_player(), utype);
+    const struct unit_type *upgrade = can_upgrade_unittype(client_player(), utype);
     char buf[1024];
     int price = unit_upgrade_price(client_player(), utype, upgrade);
 
@@ -1673,7 +1727,7 @@ static void units_report_init(struct units_report *preport)
     }
   }
 
-  gui_dialog_add_button(preport->shell, "window-close", _("Close"),
+  gui_dialog_add_button(preport->shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
 
   button = gui_dialog_add_button(preport->shell, NULL, _("_Upgrade"),
@@ -1737,7 +1791,7 @@ void units_report_dialog_popdown(void)
 /************************************************************************//**
   Update the units report dialog.
 ****************************************************************************/
-void real_units_report_dialog_update(void)
+void real_units_report_dialog_update(void *unused)
 {
   if (NULL != units_report.shell) {
     units_report_update(&units_report);
@@ -1760,6 +1814,7 @@ enum endgame_report_columns {
   FRD_COL_PLAYER,
   FRD_COL_NATION,
   FRD_COL_SCORE,
+  FRD_COL_TOOLTIP,
 
   FRD_COL_NUM
 };
@@ -1779,6 +1834,7 @@ endgame_report_column_name(enum endgame_report_columns col)
     return _("Nation\n");
   case FRD_COL_SCORE:
     return _("Score\n");
+  case FRD_COL_TOOLTIP:
   case FRD_COL_NUM:
     break;
   }
@@ -1809,6 +1865,7 @@ static void endgame_report_update(struct endgame_report *preport,
   col_types[FRD_COL_PLAYER] = G_TYPE_STRING;
   col_types[FRD_COL_NATION] = GDK_TYPE_PIXBUF;
   col_types[FRD_COL_SCORE] = G_TYPE_INT;
+  col_types[FRD_COL_TOOLTIP] = G_TYPE_STRING;
   for (i = FRD_COL_NUM; (guint)i < col_num; i++) {
     col_types[i] = G_TYPE_INT;
   }
@@ -1836,13 +1893,18 @@ static void endgame_report_update(struct endgame_report *preport,
       title = packet->category_name[i - FRD_COL_NUM];
     }
 
-    col = gtk_tree_view_column_new_with_attributes(Q_(title), renderer,
-                                                   attribute, i, NULL);
-    gtk_tree_view_append_column(preport->tree_view, col);
-    if (GDK_TYPE_PIXBUF != col_types[i]) {
-      gtk_tree_view_column_set_sort_column_id(col, i);
+    if (title != NULL) {
+      col = gtk_tree_view_column_new_with_attributes(Q_(title), renderer,
+                                                     attribute, i, NULL);
+      gtk_tree_view_append_column(preport->tree_view, col);
+      if (GDK_TYPE_PIXBUF != col_types[i]) {
+        gtk_tree_view_column_set_sort_column_id(col, i);
+      }
     }
   }
+
+  gtk_tree_view_set_tooltip_column(GTK_TREE_VIEW(preport->tree_view),
+                                   FRD_COL_TOOLTIP);
 
   preport->store = store;
   preport->player_count = packet->player_num;
@@ -1865,6 +1927,7 @@ void endgame_report_dialog_player(const struct packet_endgame_player *packet)
                      FRD_COL_PLAYER, player_name(pplayer),
                      FRD_COL_NATION, get_flag(nation_of_player(pplayer)),
                      FRD_COL_SCORE, packet->score,
+                     FRD_COL_TOOLTIP, score_tooltip(pplayer, packet->score),
                      -1);
   for (i = 0; i < packet->category_num; i++) {
     gtk_list_store_set(preport->store, &iter,

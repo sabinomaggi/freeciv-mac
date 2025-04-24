@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,10 +22,10 @@ extern "C" {
 #include "messagewin_g.h"
 }
 
-//Qt
+// Qt
 #include <QWidget>
 
-//qt-client
+// gui-qt
 #include "chatline.h"
 #include "mapview.h"
 
@@ -52,7 +52,7 @@ private:
   QGridLayout *layout;
   QPixmap *pix;
 protected:
-  void enterEvent(QEvent *event);
+  void enterEvent(QEnterEvent *event);
   void leaveEvent(QEvent *event);
   void paint(QPainter *painter, QPaintEvent *event);
   void paintEvent(QPaintEvent *event);
@@ -93,4 +93,4 @@ protected:
   int& e_pos();
 };
 
-#endif /* FC__MESSAGEWIN_H */
+#endif // FC__MESSAGEWIN_H

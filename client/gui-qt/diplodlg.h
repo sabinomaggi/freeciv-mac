@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -54,17 +54,16 @@ class diplo_wdg: public QWidget
   QLabel *plr2_accept;
   QPushButton *accept_treaty;
   QPushButton *cancel_treaty;
-  QSpinBox *gold_edit1;
-  QSpinBox *gold_edit2;
   QTableWidget *text_edit;
 
 public:
-  diplo_wdg(int id, int id2);
+  diplo_wdg(struct treaty *ptreaty,
+            struct player *they, struct player *initiator);
   ~diplo_wdg();
   void update_wdg();
   void set_index(int ind);
   int get_index();
-  struct Treaty treaty;
+  struct treaty *treaty;
 
 private slots:
   void all_advances();
@@ -81,7 +80,7 @@ private slots:
   void response_accept();
   void response_cancel();
   void sea_map_clause();
-  void show_menu(int player);
+  void show_menu(struct player *pplayer);
   void show_menu_p1();
   void show_menu_p2();
   void world_map_clause();
@@ -90,10 +89,10 @@ private slots:
 protected:
   void closeEvent(QCloseEvent *event);
 private:
-  int player1;
-  int player2;
+  struct player *plr1;
+  struct player *plr2;
   int active_menu;
-  int curr_player;
+  struct player *curr_player;
   bool p1_accept;
   bool p2_accept;
   int index;
@@ -105,20 +104,23 @@ private:
 class diplo_dlg: public QTabWidget
 {
   Q_OBJECT
-  QMap<int, diplo_wdg *> treaty_list;
+  QMap<struct player *, diplo_wdg *> treaty_list;
 
 public:
-  diplo_dlg(int counterpart, int initiated_from);
+  diplo_dlg(struct treaty *ptreaty, struct player *they,
+            struct player *initiator);
   ~diplo_dlg();
+  void reactivate();
   void update_dlg();
   bool init(bool raise);
-  diplo_wdg *find_widget(int counterpart);
-  void close_widget(int counterpart);
-  void add_widget(int counterpart, int initiated_from);
-  void make_active(int party);
+  diplo_wdg *find_widget(struct player *they);
+  void close_widget(struct player *they);
+  void add_widget(struct treaty *ptreaty, struct player *they,
+                  struct player *initiator);
+  void make_active(struct player *party);
 
 private:
   int index;
 };
 
-#endif /* FC__DIPLODLG_H */
+#endif // FC__DIPLODLG_H

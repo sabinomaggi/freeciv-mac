@@ -60,20 +60,21 @@ static void calculate_city_clusters(struct player *pplayer)
   struct unit_type *punittype;
   struct unit *ghost;
   int range;
+  const struct civ_map *nmap = &(wld.map);
 
   city_list_iterate(pplayer->cities, pcity) {
     pcity->server.adv->downtown = 0;
   } city_list_iterate_end;
 
   if (num_role_units(action_id_get_role(ACTION_HELP_WONDER)) == 0) {
-    return; /* ruleset has no help wonder unit */
+    return; /* Ruleset has no help wonder unit */
   }
 
   punittype = best_role_unit_for_player(pplayer,
       action_id_get_role(ACTION_HELP_WONDER));
 
-  if (!punittype) {
-    /* simulate future unit */
+  if (punittype == NULL) {
+    /* Simulate future unit */
     punittype = get_role_unit(action_id_get_role(ACTION_HELP_WONDER), 0);
   }
 
@@ -89,7 +90,7 @@ static void calculate_city_clusters(struct player *pplayer)
     struct adv_city *city_data = pcity->server.adv;
 
     unit_tile_set(ghost, pcity->tile);
-    pft_fill_unit_parameter(&parameter, ghost);
+    pft_fill_unit_parameter(&parameter, nmap, ghost);
     parameter.omniscience = !has_handicap(pplayer, H_MAP);
     pfm = pf_map_new(&parameter);
 
@@ -99,7 +100,7 @@ static void calculate_city_clusters(struct player *pplayer)
       if (move_cost > range) {
         break;
       }
-      if (!acity) {
+      if (acity == NULL) {
         continue;
       }
       if (city_owner(acity) == pplayer) {
@@ -114,7 +115,7 @@ static void calculate_city_clusters(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Set building wants for human player 
+  Set building wants for human player
 **************************************************************************/
 static void ba_human_wants(struct player *pplayer, struct city *wonder_city)
 {
@@ -131,18 +132,13 @@ static void ba_human_wants(struct player *pplayer, struct city *wonder_city)
   } city_list_iterate_end;
 
   improvement_iterate(pimprove) {
-    const bool is_coinage = improvement_has_flag(pimprove, IF_GOLD);
-
-    /* Handle coinage specially because you can never complete coinage */
-    if (is_coinage
-     || can_player_build_improvement_later(pplayer, pimprove)) {
+    if (can_player_build_improvement_later(pplayer, pimprove)) {
       city_list_iterate(pplayer->cities, pcity) {
         if (pcity != wonder_city && is_wonder(pimprove)) {
           /* Only wonder city should build wonders! */
           pcity->server.adv->building_want[improvement_index(pimprove)] = 0;
-        } else if (!is_coinage
-                    && (!can_city_build_improvement_later(pcity, pimprove)
-                        || (!is_improvement_productive(pcity, pimprove)))) {
+        } else if (!can_city_build_improvement_later(pcity, pimprove)
+                   || (!is_improvement_productive(pcity, pimprove))) {
           /* Don't consider impossible or unproductive buildings */
           pcity->server.adv->building_want[improvement_index(pimprove)] = 0;
         } else if (city_has_building(pcity, pimprove)) {
@@ -164,7 +160,7 @@ static void ba_human_wants(struct player *pplayer, struct city *wonder_city)
   city_list_iterate(pplayer->cities, pcity) {
     improvement_iterate(pimprove) {
       if (pcity->server.adv->building_want[improvement_index(pimprove)] != 0) {
-        CITY_LOG(LOG_DEBUG, pcity, "want to build %s with " ADV_WANT_PRINTF, 
+        CITY_LOG(LOG_DEBUG, pcity, "want to build %s with " ADV_WANT_PRINTF,
                  improvement_rule_name(pimprove),
                  pcity->server.adv->building_want[improvement_index(pimprove)]);
       }
@@ -196,7 +192,7 @@ void building_advisor(struct player *pplayer)
    || 0 >= wonder_city->surplus[O_SHIELD]
    || VUT_UTYPE == wonder_city->production.kind /* changed to defender? */
    || !is_wonder(wonder_city->production.value.building)
-   || !can_city_build_improvement_now(wonder_city, 
+   || !can_city_build_improvement_now(wonder_city,
                                       wonder_city->production.value.building)
    || !is_improvement_productive(wonder_city,
                                  wonder_city->production.value.building)) {
@@ -225,9 +221,10 @@ void building_advisor(struct player *pplayer)
         }
       }
 
-      if (is_terrain_class_near_tile(pcity->tile, TC_OCEAN)) {
+      if (is_terrain_class_near_tile(&(wld.map), pcity->tile, TC_OCEAN)) {
         value /= 2;
       }
+
       /* Downtown is the number of cities within a certain pf range.
        * These may be able to help with caravans. Also look at the whole
        * continent. */
@@ -239,10 +236,12 @@ void building_advisor(struct player *pplayer)
           value += adv->stats.cities[place] / 8;
         }
       }
-      if (place >= 0 && adv->threats.continent[place] > 0) {
-        /* We have threatening neighbours: -25% */
+
+      if (place >= 0 && adv->continents[place].threat > 0) {
+        /* We have threatening neighbors: -25% */
         value -= value / 4;
       }
+
       /* Require that there is at least some neighbors for wonder helpers,
        * if ruleset supports it. */
       if (value > best_candidate_value
@@ -252,6 +251,7 @@ void building_advisor(struct player *pplayer)
         best_candidate_value = value;
       }
     } city_list_iterate_end;
+
     if (best_candidate) {
       CITY_LOG(LOG_DEBUG, best_candidate, "chosen as wonder-city!");
       adv->wonder_city = best_candidate->id;
@@ -274,15 +274,19 @@ void building_advisor_choose(struct city *pcity, struct adv_choice *choice)
 {
   struct player *plr = city_owner(pcity);
   struct impr_type *chosen = NULL;
-  int want = 0;
+  adv_want want = 0;
 
   improvement_iterate(pimprove) {
+    int id;
+
     if (is_wonder(pimprove)) {
       continue; /* Humans should not be advised to build wonders or palace */
     }
-    if (pcity->server.adv->building_want[improvement_index(pimprove)] > want
-          && can_city_build_improvement_now(pcity, pimprove)) {
-      want = pcity->server.adv->building_want[improvement_index(pimprove)];
+
+    id = improvement_index(pimprove);
+    if (pcity->server.adv->building_want[id] > want
+        && can_city_build_improvement_now(pcity, pimprove)) {
+      want = pcity->server.adv->building_want[id];
       chosen = pimprove;
     }
   } improvement_iterate_end;
@@ -290,18 +294,18 @@ void building_advisor_choose(struct city *pcity, struct adv_choice *choice)
   choice->want = want;
   choice->value.building = chosen;
 
-  if (chosen) {
+  if (chosen != NULL) {
     choice->type = CT_BUILDING;
 
-    CITY_LOG(LOG_DEBUG, pcity, "wants most to build %s at %d",
-             improvement_rule_name(chosen),
-             want);
+    CITY_LOG(LOG_DEBUG, pcity, "advisor wants to build %s with want "
+             ADV_WANT_PRINTF,
+             improvement_rule_name(chosen), want);
   } else {
     choice->type = CT_NONE;
   }
   choice->need_boat = FALSE;
 
-  /* Allow ai to override */
+  /* Allow AI to override */
   CALL_PLR_AI_FUNC(choose_building, plr, pcity, choice);
 }
 

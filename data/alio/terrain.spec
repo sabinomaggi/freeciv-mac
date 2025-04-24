@@ -1,13 +1,13 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
-; ampilo2 oil rig became thermal vent
-; ampilo2 coal became glowing rocks
-; ampilo2 tundra became radiating rocks and alien forest bg
+; amplio2 oil rig became thermal vent
+; amplio2 coal became glowing rocks
+; amplio2 tundra became radiating rocks and alien forest bg
 ; Wesnoth graphic became huge plant, alien mine and alien forest fg
 ; TODO: add individual artists if they are identified
 artists = "
@@ -28,10 +28,10 @@ dy = 64
 pixel_border = 1
 
 tiles = { "row", "column","tag"
-  0,    0,  "ts.thermal_vent"
-  1,    0,  "ts.glowing_rocks"
-  2,    0,  "ts.huge_plant"
-  3,    0,  "ts.alien_mine"
+  0,    0,  "ts.thermal_vent:0"
+  1,    0,  "ts.glowing_rocks:0"
+  2,    0,  "ts.huge_plant:0"
+  3,    0,  "ts.alien_mine:0"
 
   0,    1,  "t.l0.radiating_rocks1"
   5,    1,  "t.l1.radiating_rocks1"

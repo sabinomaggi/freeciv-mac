@@ -25,6 +25,7 @@
 
 /* common */
 #include "game.h"
+#include "nation.h"
 #include "player.h"
 #include "tech.h"
 
@@ -136,7 +137,7 @@ const char *government_rule_name(const struct government *pgovern)
 }
 
 /**********************************************************************//**
-  Return the (translated) name of the given government. 
+  Return the (translated) name of the given government.
   You don't have to free the return pointer.
 **************************************************************************/
 const char *government_name_translation(const struct government *pgovern)
@@ -147,7 +148,7 @@ const char *government_name_translation(const struct government *pgovern)
 }
 
 /**********************************************************************//**
-  Return the (translated) name of the given government of a player. 
+  Return the (translated) name of the given government of a player.
   You don't have to free the return pointer.
 **************************************************************************/
 const char *government_name_for_player(const struct player *pplayer)
@@ -176,8 +177,8 @@ bool can_change_to_government(struct player *pplayer,
     return TRUE;
   }
 
-  return are_reqs_active(pplayer, NULL, NULL, NULL, NULL, NULL, NULL,
-                         NULL, NULL, NULL, &gov->reqs, RPT_CERTAIN);
+  return are_reqs_active(&(const struct req_context) { .player = pplayer },
+                         NULL, &gov->reqs, RPT_CERTAIN);
 }
 
 
@@ -358,7 +359,7 @@ government_ruler_title_new(struct government *pgovern,
 }
 
 /**********************************************************************//**
-  Return the nation of the rule title. Returns NULL if this is default.
+  Return the nation of the ruler title. Returns NULL if this is default.
 **************************************************************************/
 const struct nation_type *
 ruler_title_nation(const struct ruler_title *pruler_title)
@@ -367,7 +368,7 @@ ruler_title_nation(const struct ruler_title *pruler_title)
 }
 
 /**********************************************************************//**
-  Return the male rule title name.
+  Return the male ruler title name.
 **************************************************************************/
 const char *
 ruler_title_male_untranslated_name(const struct ruler_title *pruler_title)
@@ -376,7 +377,7 @@ ruler_title_male_untranslated_name(const struct ruler_title *pruler_title)
 }
 
 /**********************************************************************//**
-  Return the female rule title name.
+  Return the female ruler title name.
 **************************************************************************/
 const char *
 ruler_title_female_untranslated_name(const struct ruler_title *pruler_title)
@@ -397,21 +398,17 @@ const char *ruler_title_for_player(const struct player *pplayer,
   fc_assert_ret_val(NULL != buf, NULL);
   fc_assert_ret_val(0 < buf_len, NULL);
 
-  /* Try specific nation rule title. */
+  /* Try specific nation ruler title. */
   if (!ruler_title_hash_lookup(pgovern->ruler_titles,
                                pnation, &pruler_title)
-      /* Try default rule title. */
+      /* Try default ruler title. */
       && !ruler_title_hash_lookup(pgovern->ruler_titles,
                                   NULL, &pruler_title)) {
     log_error("Missing title for government \"%s\" (nb %d) "
               "nation \"%s\" (nb %d).",
               government_rule_name(pgovern), government_number(pgovern),
               nation_rule_name(pnation), nation_number(pnation));
-    if (pplayer->is_male) {
-      fc_snprintf(buf, buf_len, _("Mr. %s"), player_name(pplayer));
-    } else {
-      fc_snprintf(buf, buf_len, _("Ms. %s"), player_name(pplayer));
-    }
+    default_title_for_player(pplayer, buf, buf_len);
   } else {
     fc_snprintf(buf, buf_len,
                 name_translation_get(pplayer->is_male
@@ -423,6 +420,20 @@ const char *ruler_title_for_player(const struct player *pplayer,
   return buf;
 }
 
+/**********************************************************************//**
+  Return default ruler title of the player (translated).
+**************************************************************************/
+const char *default_title_for_player(const struct player *pplayer,
+                                     char *buf, size_t buf_len)
+{
+  if (pplayer->is_male) {
+    fc_snprintf(buf, buf_len, _("Mr. %s"), player_name(pplayer));
+  } else {
+    fc_snprintf(buf, buf_len, _("Ms. %s"), player_name(pplayer));
+  }
+
+  return buf;
+}
 
 /**************************************************************************
   Government iterator.
@@ -492,7 +503,8 @@ static inline void government_init(struct government *pgovern)
                                 NULL, NULL, NULL, ruler_title_destroy);
   requirement_vector_init(&pgovern->reqs);
   pgovern->changed_to_times = 0;
-  pgovern->disabled = FALSE;
+  pgovern->ruledit_disabled = FALSE;
+  pgovern->ruledit_dlg = NULL;
 }
 
 /**********************************************************************//**

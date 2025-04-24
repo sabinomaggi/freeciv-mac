@@ -38,6 +38,7 @@
 #include "climisc.h"
 #include "global_worklist.h"
 #include "options.h"
+#include "text.h"
 #include "tilespec.h"
 
 /* client/gui-gtk-3.22 */
@@ -92,6 +93,7 @@ static void update_max_unit_size(void)
   unit_type_iterate(i) {
     int x1, x2, y1, y2;
     struct sprite *sprite = get_unittype_sprite(tileset, i,
+                                                ACTIVITY_LAST,
                                                 direction8_invalid());
 
     sprite_get_bounding_box(sprite, &x1, &y1, &x2, &y2);
@@ -217,13 +219,13 @@ static GtkWidget *create_worklists_report(void)
   shell = gtk_dialog_new_with_buttons(_("Edit worklists"),
                                       NULL,
                                       0,
-                                      _("New"),
+                                      _("_New"),
                                       WORKLISTS_NEW,
-                                      _("Delete"),
+                                      _("_Delete"),
                                       WORKLISTS_DELETE,
-                                      _("Properties"),
+                                      _("_Properties"),
                                       WORKLISTS_PROPERTIES,
-                                      _("Close"),
+                                      _("_Close"),
                                       WORKLISTS_CLOSE,
                                       NULL);
   setup_dialog(shell, toplevel);
@@ -378,14 +380,6 @@ static void delete_worklist(int global_worklist_id)
 }
 
 /************************************************************************//**
-  User responded to worklist report
-****************************************************************************/
-static void worklist_response(GtkWidget *shell, gint response)
-{
-  gtk_widget_destroy(shell);
-}
-
-/************************************************************************//**
   Worklist editor window used by the global worklist report.
 ****************************************************************************/
 static void popup_worklist(struct global_worklist *pgwl)
@@ -398,19 +392,20 @@ static void popup_worklist(struct global_worklist *pgwl)
     shell = gtk_dialog_new_with_buttons(global_worklist_name(pgwl),
                                         GTK_WINDOW(worklists_shell),
                                         GTK_DIALOG_DESTROY_WITH_PARENT,
-                                        _("Close"),
+                                        _("_Close"),
                                         GTK_RESPONSE_CLOSE,
                                         NULL);
     gtk_window_set_role(GTK_WINDOW(shell), "worklist");
     gtk_window_set_position(GTK_WINDOW(shell), GTK_WIN_POS_MOUSE);
-    g_signal_connect(shell, "response", G_CALLBACK(worklist_response), NULL);
+    g_signal_connect(shell, "response", G_CALLBACK(gtk_widget_destroy), NULL);
     gtk_window_set_default_size(GTK_WINDOW(shell), 500, 400);
 
     editor = create_worklist();
     reset_global_worklist(editor, pgwl);
     insert_worklist(global_worklist_id(pgwl), editor);
 
-    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell))), editor);
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell))),
+                      editor);
     gtk_widget_show(editor);
 
     refresh_worklist(editor);
@@ -473,11 +468,14 @@ static void menu_item_callback(GtkMenuItem *item, struct worklist_data *ptr)
   for (i = 0; i < (size_t) worklist_length(pwl); i++) {
     GtkTreeIter it;
     cid id;
+    char buf[8192];
 
     id = cid_encode(pwl->entries[i]);
 
     gtk_list_store_append(ptr->dst, &it);
-    gtk_list_store_set(ptr->dst, &it, 0, (gint) id, -1);
+    gtk_list_store_set(ptr->dst, &it, 0, (gint)id,
+                       1, production_help(&(pwl->entries[i]),
+                                          buf, sizeof(buf)), -1);
   }
 
   commit_worklist(ptr);
@@ -949,6 +947,7 @@ static void cell_render_func(GtkTreeViewColumn *col, GtkCellRenderer *rend,
 
     if (VUT_UTYPE == target.kind) {
       sprite = sprite_scale(get_unittype_sprite(tileset, target.value.utype,
+                                                ACTIVITY_LAST,
                                                 direction8_invalid()),
                             max_unit_width, max_unit_height);
     } else {
@@ -1004,7 +1003,7 @@ static void populate_view(GtkTreeView *view, struct city **ppcity,
   intl_slist(ARRAY_SIZE(titles), titles, &titles_done);
 
   /* Case i == 0 taken out of the loop to workaround gcc-4.2.1 bug
-   * http://gcc.gnu.org/PR33381
+   * https://gcc.gnu.org/PR33381
    * Some values would 'stick' from i == 0 round. */
   i = 0;
 
@@ -1026,8 +1025,7 @@ static void populate_view(GtkTreeView *view, struct city **ppcity,
   }
 
   for (i = 1; i < ARRAY_SIZE(titles); i++) {
-
-    gint pos = i-1;
+    gint pos = i - 1;
 
     rend = gtk_cell_renderer_text_new();
     g_object_set_data(G_OBJECT(rend), "column", GINT_TO_POINTER(pos));
@@ -1065,8 +1063,8 @@ GtkWidget *create_worklist(void)
 
   ptr = fc_malloc(sizeof(*ptr));
 
-  src_store = gtk_list_store_new(1, G_TYPE_INT);
-  dst_store = gtk_list_store_new(1, G_TYPE_INT);
+  src_store = gtk_list_store_new(2, G_TYPE_INT, G_TYPE_STRING);
+  dst_store = gtk_list_store_new(2, G_TYPE_INT, G_TYPE_STRING);
 
   ptr->global_worklist_id = -1;
   ptr->pcity = NULL;
@@ -1103,6 +1101,7 @@ GtkWidget *create_worklist(void)
   g_object_unref(src_store);
   gtk_size_group_add_widget(group, src_view);
   gtk_widget_set_name(src_view, "small_font");
+  gtk_tree_view_set_tooltip_column(GTK_TREE_VIEW(src_view), 1);
 
   populate_view(GTK_TREE_VIEW(src_view), &ptr->pcity, &ptr->src_col);
   gtk_container_add(GTK_CONTAINER(sw), src_view);
@@ -1195,6 +1194,7 @@ GtkWidget *create_worklist(void)
   g_object_unref(dst_store);
   gtk_size_group_add_widget(group, dst_view);
   gtk_widget_set_name(dst_view, "small_font");
+  gtk_tree_view_set_tooltip_column(GTK_TREE_VIEW(dst_view), 1);
 
   populate_view(GTK_TREE_VIEW(dst_view), &ptr->pcity, &ptr->dst_col);
   gtk_container_add(GTK_CONTAINER(sw), dst_view);
@@ -1347,7 +1347,6 @@ void refresh_worklist(GtkWidget *editor)
   } else {
     selected = FALSE;
   }
-  gtk_list_store_clear(ptr->src);
 
   /* These behave just right if ptr->pcity is NULL -> in case of global
    * worklist. */
@@ -1355,20 +1354,52 @@ void refresh_worklist(GtkWidget *editor)
                                                       ptr->future);
   name_and_sort_items(targets, targets_used, items, FALSE, ptr->pcity);
 
+  /* Re-purpose existing items in the list store -- this avoids the
+   * UI jumping around (especially as the set of source tasks doesn't
+   * actually change much in practice). */
+  model = GTK_TREE_MODEL(ptr->src);
+  exists = gtk_tree_model_get_iter_first(model, &it);
+
   path = NULL;
   for (i = 0; i < targets_used; i++) {
-    gtk_list_store_append(ptr->src, &it);
-    gtk_list_store_set(ptr->src, &it, 0, (gint) cid_encode(items[i].item), -1);
+    char buf[8192];
+
+    if (!exists) {
+      gtk_list_store_append(ptr->src, &it);
+    }
+
+    gtk_list_store_set(ptr->src, &it, 0, (gint)cid_encode(items[i].item),
+                       1, production_help(&(items[i].item),
+                                          buf, sizeof(buf)), -1);
 
     if (selected && cid_encode(items[i].item) == id) {
       path = gtk_tree_model_get_path(GTK_TREE_MODEL(ptr->src), &it);
     }
+
+    if (exists) {
+      exists = gtk_tree_model_iter_next(model, &it);
+    }
   }
+
+  /* If the list got shorter, delete any excess items. */
+  if (exists) {
+    GtkTreeIter it_next;
+    bool more;
+
+    do {
+      it_next = it;
+      more = gtk_tree_model_iter_next(model, &it_next);
+
+      gtk_list_store_remove(ptr->src, &it);
+      it = it_next;
+    } while (more);
+  }
+
+  /* Select the same item that was previously selected, if any. */
   if (path) {
     gtk_tree_view_set_cursor(GTK_TREE_VIEW(ptr->src_view), path, NULL, FALSE);
     gtk_tree_path_free(path);
   }
-
 
   /* refresh target worklist. */
   model = GTK_TREE_MODEL(ptr->dst);
@@ -1389,12 +1420,15 @@ void refresh_worklist(GtkWidget *editor)
 
   for (i = 0; i < worklist_length(&queue); i++) {
     struct universal target = queue.entries[i];
+    char buf[8192];
 
     if (!exists) {
       gtk_list_store_append(ptr->dst, &it);
     }
 
-    gtk_list_store_set(ptr->dst, &it, 0, (gint) cid_encode(target), -1);
+    gtk_list_store_set(ptr->dst, &it, 0, (gint)cid_encode(target),
+                       1, production_help(&target,
+                                          buf, sizeof(buf)), -1);
 
     if (exists) {
       exists = gtk_tree_model_iter_next(model, &it);

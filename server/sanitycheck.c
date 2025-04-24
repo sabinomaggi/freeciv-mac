@@ -25,6 +25,7 @@
 #include "government.h"
 #include "map.h"
 #include "movement.h"
+#include "nation.h"
 #include "player.h"
 #include "research.h"
 #include "specialist.h"
@@ -35,6 +36,7 @@
 /* server */
 #include "citytools.h"
 #include "cityturn.h"           /* city_repair_size() */
+#include "diplhand.h"           /* valid_dst_closest() */
 #include "maphand.h"
 #include "plrhand.h"
 #include "srv_main.h"
@@ -92,12 +94,12 @@ static void check_specials(const char *file, const char *function, int line)
 
     extra_type_by_cause_iterate(EC_MINE, pextra) {
       if (tile_has_extra(ptile, pextra)) {
-        SANITY_TILE(ptile, pterrain->mining_result == pterrain);
+        SANITY_TILE(ptile, pterrain->mining_time != 0);
       }
     } extra_type_by_cause_iterate_end;
     extra_type_by_cause_iterate(EC_IRRIGATION, pextra) {
       if (tile_has_extra(ptile, pextra)) {
-        SANITY_TILE(ptile, pterrain->irrigation_result == pterrain);
+        SANITY_TILE(ptile, pterrain->irrigation_time != 0);
       }
     } extra_type_by_cause_iterate_end;
 
@@ -178,9 +180,12 @@ static void check_map(const char *file, const char *function, int line)
 
     if (NULL != pcity) {
       SANITY_TILE(ptile, same_pos(pcity->tile, ptile));
-      if (BORDERS_DISABLED != game.info.borders) {
-        SANITY_TILE(ptile, tile_owner(ptile) != NULL);
-      }
+      SANITY_TILE(ptile, tile_owner(ptile) != NULL);
+    }
+
+    if (NULL == pcity && BORDERS_DISABLED == game.info.borders) {
+      /* Only city tiles are claimed when borders are disabled */
+      SANITY_TILE(ptile, tile_owner(ptile) == NULL);
     }
 
     if (is_ocean_tile(ptile)) {
@@ -236,9 +241,8 @@ static bool check_city_good(struct city *pcity, const char *file,
 
   SANITY_CITY(pcity, !terrain_has_flag(tile_terrain(pcenter), TER_NO_CITIES));
 
-  if (BORDERS_DISABLED != game.info.borders) {
-    SANITY_CITY(pcity, NULL != tile_owner(pcenter));
-  }
+  SANITY_CITY(pcity, NULL != tile_owner(pcenter));
+  SANITY_CITY(pcity, city_owner(pcity) == tile_owner(pcenter));
 
   if (NULL != tile_owner(pcenter)) {
     if (tile_owner(pcenter) != pplayer) {
@@ -290,12 +294,27 @@ static bool check_city_good(struct city *pcity, const char *file,
         case RDIR_BIDIRECTIONAL:
           SANITY_CITY(pcity, proute->dir == RDIR_BIDIRECTIONAL);
           break;
+        case RDIR_NONE:
+          SANITY_CITY(pcity, back_route->dir != RDIR_NONE);
+          break;
         }
 
         SANITY_CITY(pcity, proute->goods == back_route->goods);
       }
     }
   } trade_routes_iterate_end;
+
+  worker_task_list_iterate(pcity->task_reqs, ptask) {
+    if (!worker_task_is_sane(ptask)) {
+      SANITY_FAIL("(%4d,%4d) Bad worker task %d in \"%s\", removing...",
+                  TILE_XY(pcity->tile),
+                  ptask->act,
+                  city_name_get(pcity));
+      worker_task_list_remove(pcity->task_reqs, ptask);
+      free(ptask);
+      ptask = NULL;
+    }
+  } worker_task_list_iterate_end;
 
   return TRUE;
 }
@@ -309,11 +328,12 @@ static void check_city_size(struct city *pcity, const char *file,
   int delta;
   int citizen_count = 0;
   struct tile *pcenter = city_tile(pcity);
+  const struct civ_map *nmap = &(wld.map);
 
   SANITY_CITY(pcity, city_size_get(pcity) >= 1);
 
-  city_tile_iterate_skip_free_worked(city_map_radius_sq_get(pcity), pcenter,
-                                  ptile, _index, _x, _y) {
+  city_tile_iterate_skip_free_worked(nmap, city_map_radius_sq_get(pcity), pcenter,
+                                     ptile, _index, _x, _y) {
     if (tile_worked(ptile) == pcity) {
       citizen_count++;
     }
@@ -331,7 +351,7 @@ static void check_city_size(struct city *pcity, const char *file,
               city_specialists(pcity));
 
     city_repair_size(pcity, delta);
-    city_refresh_from_main_map(pcity, NULL);
+    city_refresh_from_main_map(nmap, pcity, NULL);
   }
 }
 
@@ -357,7 +377,7 @@ static void check_city_feelings(const struct city *pcity, const char *file,
      * savegame despite the fact that city workers_frozen level of the city
      * is above zero -> can't limit sanitycheck callpoints by that. Instead
      * we check even more relevant needs_arrange. */
-    SANITY_CITY(pcity, !pcity->server.needs_arrange);
+    SANITY_CITY(pcity, pcity->server.needs_arrange == CNA_NOT);
 
     SANITY_CITY(pcity, city_size_get(pcity) - spe == sum);
   }
@@ -397,7 +417,6 @@ static void check_units(const char *file, const char *function, int line)
   players_iterate(pplayer) {
     unit_list_iterate(pplayer->units, punit) {
       struct tile *ptile = unit_tile(punit);
-      struct terrain *pterr = tile_terrain(ptile);
       struct city *pcity;
       struct city *phome;
       struct unit *ptrans = unit_transport_get(punit);
@@ -416,7 +435,7 @@ static void check_units(const char *file, const char *function, int line)
       SANITY_CHECK(player_unit_by_number(unit_owner(punit),
                                          punit->id) != NULL);
 
-      if (!can_unit_continue_current_activity(punit)) {
+      if (!can_unit_continue_current_activity(&(wld.map), punit)) {
         SANITY_FAIL("(%4d,%4d) %s has activity %s, "
                     "but it can't continue at %s",
                     TILE_XY(ptile), unit_rule_name(punit),
@@ -424,9 +443,7 @@ static void check_units(const char *file, const char *function, int line)
                     tile_get_info_text(ptile, TRUE, 0));
       }
 
-      if (activity_requires_target(punit->activity)
-          && (punit->activity != ACTIVITY_IRRIGATE || pterr->irrigation_result == pterr)
-          && (punit->activity != ACTIVITY_MINE || pterr->mining_result == pterr)) {
+      if (activity_requires_target(punit->activity)) {
         SANITY_CHECK(punit->activity_target != NULL);
       }
 
@@ -493,7 +510,7 @@ static void check_units(const char *file, const char *function, int line)
 static void check_players(const char *file, const char *function, int line)
 {
   players_iterate(pplayer) {
-    int found_palace = 0;
+    int found_primary_capital = 0;
 
     if (!pplayer->is_alive) {
       /* Dead players' units and cities are disbanded in kill_player(). */
@@ -507,14 +524,14 @@ static void check_players(const char *file, const char *function, int line)
     SANITY_CHECK(!pplayer->nation || pplayer->nation->player == pplayer);
     SANITY_CHECK(player_list_search(team_members(pplayer->team), pplayer));
 
-    SANITY_CHECK(!(city_list_size(pplayer->cities) > 0
-                   && !pplayer->server.got_first_city));
+    SANITY_CHECK(player_has_flag(pplayer, PLRF_FIRST_CITY)
+                 || city_list_size(pplayer->cities) == 0);
 
     city_list_iterate(pplayer->cities, pcity) {
-      if (is_capital(pcity)) {
-	found_palace++;
+      if (pcity->capital == CAPITAL_PRIMARY) {
+	found_primary_capital++;
       }
-      SANITY_CITY(pcity, found_palace <= 1);
+      SANITY_CITY(pcity, found_primary_capital <= 1);
     } city_list_iterate_end;
 
     players_iterate(pplayer2) {
@@ -528,6 +545,7 @@ static void check_players(const char *file, const char *function, int line)
       state2 = player_diplstate_get(pplayer2, pplayer);
       SANITY_CHECK(state1->type == state2->type);
       SANITY_CHECK(state1->max_state == state2->max_state);
+      SANITY_CHECK(valid_dst_closest(state1) == state1->max_state);
       if (state1->type == DS_CEASEFIRE
           || state1->type == DS_ARMISTICE) {
         SANITY_CHECK(state1->turns_left == state2->turns_left);
@@ -546,6 +564,7 @@ static void check_players(const char *file, const char *function, int line)
           && pplayers_allied(pplayer, pplayer2)) {
         enum dipl_reason allied_players_can_be_allied =
           pplayer_can_make_treaty(pplayer, pplayer2, DS_ALLIANCE);
+
         SANITY_CHECK(allied_players_can_be_allied
                      != DIPL_ALLIANCE_PROBLEM_US);
         SANITY_CHECK(allied_players_can_be_allied
@@ -622,6 +641,8 @@ check_researches(const char *file, const char *function, int line)
     SANITY_CHECK(A_UNSET == presearch->tech_goal
                  || (A_NONE != presearch->tech_goal
                      && valid_advance_by_number(presearch->tech_goal)));
+    SANITY_CHECK(presearch->techs_researched
+                 == recalculate_techs_researched(presearch));
   } researches_iterate_end;
 }
 
@@ -631,9 +652,11 @@ check_researches(const char *file, const char *function, int line)
 static void check_connections(const char *file, const char *function,
                               int line)
 {
-  /* est_connections is a subset of all_connections */
-  SANITY_CHECK(conn_list_size(game.all_connections)
-	       >= conn_list_size(game.est_connections));
+  int all = conn_list_size(game.all_connections);
+
+  /* Other lists are subsets of all_connections */
+  SANITY_CHECK(all >= conn_list_size(game.est_connections));
+  SANITY_CHECK(all >= conn_list_size(game.web_client_connections));
 }
 
 /**********************************************************************//**

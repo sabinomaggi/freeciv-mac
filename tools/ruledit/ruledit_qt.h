@@ -29,7 +29,9 @@ class QLineEdit;
 class QStackedLayout;
 
 class requirers_dlg;
+class tab_achievement;
 class tab_building;
+class tab_counter;
 class tab_good;
 class tab_gov;
 class tab_misc;
@@ -41,6 +43,12 @@ class tab_enabler;
 class tab_extras;
 class tab_terrains;
 class req_edit;
+class req_vec_fix;
+class req_vec_fix_item;
+
+// Minimum initial size of the window
+#define RULEDIT_WINWIDTH  700
+#define RULEDIT_WINHEIGHT 650
 
 class ruledit_main : public QMainWindow
 {
@@ -58,7 +66,7 @@ protected:
   void closeEvent(QCloseEvent *cevent);
 };
 
-/* get 'struct req_edit_list' and related functions: */
+// get 'struct req_edit_list' and related functions:
 #define SPECLIST_TAG req_edit
 #define SPECLIST_TYPE class req_edit
 #include "speclist.h"
@@ -67,7 +75,7 @@ protected:
   TYPED_LIST_ITERATE(class req_edit, reqeditlist, preqedit)
 #define req_edit_list_iterate_end LIST_ITERATE_END
 
-/* get 'struct effect_edit_list' and related functions: */
+// get 'struct effect_edit_list' and related functions:
 #define SPECLIST_TAG effect_edit
 #define SPECLIST_TYPE class effect_edit
 #include "speclist.h"
@@ -75,6 +83,15 @@ protected:
 #define effect_edit_list_iterate(effecteditlist, peffectedit) \
   TYPED_LIST_ITERATE(class effect_edit, effecteditlist, peffectedit)
 #define effect_edit_list_iterate_end LIST_ITERATE_END
+
+// get 'struct req_vec_fix_list' and related functions:
+#define SPECLIST_TAG req_vec_fix
+#define SPECLIST_TYPE class req_vec_fix
+#include "speclist.h"
+
+#define req_vec_fix_list_iterate(reqvecfixlist, preqvecfix)               \
+  TYPED_LIST_ITERATE(class req_vec_fix, reqvecfixlist, preqvecfix)
+#define req_vec_fix_list_iterate_end LIST_ITERATE_END
 
 class ruledit_gui : public QObject
 {
@@ -90,6 +107,9 @@ class ruledit_gui : public QObject
     void open_req_edit(QString target, struct requirement_vector *preqs);
     void unregister_req_edit(class req_edit *redit);
 
+    void open_req_vec_fix(req_vec_fix_item *item_info);
+    void unregister_req_vec_fix(req_vec_fix *fixer);
+
     void open_effect_edit(QString target, struct universal *uni,
                           enum effect_filter_main_class efmc);
     void unregister_effect_edit(class effect_edit *e_edit);
@@ -97,14 +117,25 @@ class ruledit_gui : public QObject
 
     struct rule_data data;
 
+signals:
+  /********************************************************************//**
+    A requirement vector may have been changed.
+    @param vec the requirement vector that was changed.
+  ************************************************************************/
+  void req_vec_may_have_changed(const requirement_vector *vec);
+
   private:
+    void launch_now();
+
     QLabel *msg_dspl;
     QTabWidget *stack;
     QLineEdit *ruleset_select;
     QWidget *central;
     QStackedLayout *main_layout;
 
+    tab_achievement *ach;
     tab_building *bldg;
+    tab_counter *counter;
     tab_misc *misc;
     tab_tech *tech;
     tab_unit *unit;
@@ -117,10 +148,12 @@ class ruledit_gui : public QObject
     tab_nation *nation;
 
     struct req_edit_list *req_edits;
+    struct req_vec_fix_list *req_vec_fixers;
     struct effect_edit_list *effect_edits;
 
   private slots:
-    void launch_now();
+    void rulesetdir_given();
+    void incoming_req_vec_change(const requirement_vector *vec);
 };
 
 int ruledit_qt_run(int argc, char **argv);

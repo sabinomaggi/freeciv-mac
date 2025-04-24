@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#include <time.h>	/* time_t */
+#include <time.h>       /* time_t */
 
 #ifdef FREECIV_HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -47,18 +47,13 @@ extern "C" {
 /* common */
 #include "fc_types.h"
 
+/* common/networking */
+#include "conn_types.h"
+
 struct conn_pattern_list;
 struct genhash;
 struct packet_handlers;
 struct timer_list;
-
-/* Used in the network protocol. */
-#define MAX_LEN_PACKET   4096
-#define MAX_LEN_CAPSTR    512
-#define MAX_LEN_PASSWORD  512 /* do not change this under any circumstances */
-#define MAX_LEN_CONTENT  (MAX_LEN_PACKET - 20)
-
-#define MAX_LEN_BUFFER   (MAX_LEN_PACKET * 128)
 
 /****************************************************************************
   Command access levels for client-side use; at present, they are only
@@ -169,13 +164,13 @@ struct connection {
   char username[MAX_LEN_NAME];
   char addr[MAX_LEN_ADDR];
 
-  /* 
+  /*
    * "capability" gives the capability string of the executable (be it
    * a client or server) at the other end of the connection.
    */
   char capability[MAX_LEN_CAPSTR];
 
-  /* 
+  /*
    * "access_level" stores the current access level of the client
    * corresponding to this connection.
    */
@@ -183,7 +178,7 @@ struct connection {
 
   enum gui_type client_gui;
 
-  void (*notify_of_writable_data) (struct connection * pc,
+  void (*notify_of_writable_data) (struct connection *pc,
                                    bool data_available_and_socket_full);
 
   union {
@@ -212,21 +207,24 @@ struct connection {
       /* Holds number of tries for authentication from client. */
       int auth_tries;
 
-      /* the time that the server will respond after receiving an auth reply.
-       * this is used to throttle the connection. Also used to reject a 
-       * connection if we've waited too long for a password. */
+      /* The time that the server will respond after receiving an auth reply.
+       * This is used to throttle the connection. Also used to reject
+       * a connection if we've waited too long for a password. */
       time_t auth_settime;
 
-      /* used to follow where the connection is in the authentication
+      /* Used to follow where the connection is in the authentication
        * process */
       enum auth_status status;
       char password[MAX_LEN_PASSWORD];
 
-      /* for reverse lookup and blacklisting in db */
+      /* For reverse lookup and blacklisting in db */
       char ipaddr[MAX_LEN_ADDR];
 
       /* The access level initially given to the client upon connection. */
       enum cmdlevel granted_access_level;
+
+      /* Server setting control packet already sent. */
+      bool settings_sent;
 
       /* The list of ignored connection patterns. */
       struct conn_pattern_list *ignore_list;
@@ -365,6 +363,8 @@ struct conn_pattern *conn_pattern_from_string(const char *pattern,
                                               size_t error_buf_len);
 
 bool conn_is_valid(const struct connection *pconn);
+
+#define conn_is_webclient(__pconn__) ((__pconn__)->client_gui == GUI_WEB)
 
 #ifdef __cplusplus
 }

@@ -16,12 +16,12 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QToolButton>
 
 // utility
@@ -33,6 +33,7 @@
 #include "tech.h"
 
 // ruledit
+#include "edit_tech.h"
 #include "ruledit.h"
 #include "ruledit_qt.h"
 #include "validity.h"
@@ -50,6 +51,8 @@ tab_tech::tab_tech(ruledit_gui *ui_in) : QWidget()
   QPushButton *effects_button;
   QPushButton *add_button;
   QPushButton *delete_button;
+  QPushButton *edit_button;
+  int row = 0;
 
   ui = ui_in;
   selected = 0;
@@ -64,21 +67,25 @@ tab_tech::tab_tech(ruledit_gui *ui_in) : QWidget()
   label = new QLabel(QString::fromUtf8(R__("Rule Name")));
   label->setParent(this);
   rname = new QLineEdit(this);
-  rname->setText("None");
+  rname->setText(R__("None"));
   connect(rname, SIGNAL(returnPressed()), this, SLOT(name_given()));
-  tech_layout->addWidget(label, 0, 0);
-  tech_layout->addWidget(rname, 0, 2);
+  tech_layout->addWidget(label, row, 0);
+  tech_layout->addWidget(rname, row++, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Name")));
   label->setParent(this);
-  same_name = new QRadioButton();
+  same_name = new QCheckBox();
   connect(same_name, SIGNAL(toggled(bool)), this, SLOT(same_name_toggle(bool)));
   name = new QLineEdit(this);
-  name->setText("None");
+  name->setText(R__("None"));
   connect(name, SIGNAL(returnPressed()), this, SLOT(name_given()));
-  tech_layout->addWidget(label, 1, 0);
-  tech_layout->addWidget(same_name, 1, 1);
-  tech_layout->addWidget(name, 1, 2);
+  tech_layout->addWidget(label, row, 0);
+  tech_layout->addWidget(same_name, row, 1);
+  tech_layout->addWidget(name, row++, 2);
+
+  edit_button = new QPushButton(QString::fromUtf8(R__("Edit Values")), this);
+  connect(edit_button, SIGNAL(pressed()), this, SLOT(edit_now()));
+  tech_layout->addWidget(edit_button, row++, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Req1")));
   label->setParent(this);
@@ -86,16 +93,16 @@ tab_tech::tab_tech(ruledit_gui *ui_in) : QWidget()
   req1_button->setParent(this);
   req1 = prepare_req_button(req1_button, AR_ONE);
   connect(req1_button, SIGNAL(pressed()), this, SLOT(req1_jump()));
-  tech_layout->addWidget(label, 2, 0);
-  tech_layout->addWidget(req1_button, 2, 2);
+  tech_layout->addWidget(label, row, 0);
+  tech_layout->addWidget(req1_button, row++, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Req2")));
   label->setParent(this);
   req2_button = new QToolButton();
   req2 = prepare_req_button(req2_button, AR_TWO);
   connect(req2_button, SIGNAL(pressed()), this, SLOT(req2_jump()));
-  tech_layout->addWidget(label, 3, 0);
-  tech_layout->addWidget(req2_button, 3, 2);
+  tech_layout->addWidget(label, row, 0);
+  tech_layout->addWidget(req2_button, row++, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Root Req")));
   label->setParent(this);
@@ -103,23 +110,20 @@ tab_tech::tab_tech(ruledit_gui *ui_in) : QWidget()
   root_req_button->setParent(this);
   root_req = prepare_req_button(root_req_button, AR_ROOT);
   connect(root_req_button, SIGNAL(pressed()), this, SLOT(root_req_jump()));
-  tech_layout->addWidget(label, 4, 0);
-  tech_layout->addWidget(root_req_button, 4, 2);
+  tech_layout->addWidget(label, row, 0);
+  tech_layout->addWidget(root_req_button, row++, 2);
 
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
-  tech_layout->addWidget(effects_button, 5, 2);
-  show_experimental(effects_button);
+  tech_layout->addWidget(effects_button, row++, 2);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add tech")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
-  tech_layout->addWidget(add_button, 6, 0);
-  show_experimental(add_button);
+  tech_layout->addWidget(add_button, row, 0);
 
   delete_button = new QPushButton(QString::fromUtf8(R__("Remove this tech")), this);
   connect(delete_button, SIGNAL(pressed()), this, SLOT(delete_now()));
-  tech_layout->addWidget(delete_button, 6, 2);
-  show_experimental(delete_button);
+  tech_layout->addWidget(delete_button, row++, 2);
 
   refresh();
   update_tech_info(nullptr);
@@ -136,13 +140,11 @@ void tab_tech::refresh()
 {
   tech_list->clear();
 
-  advance_iterate(A_FIRST, padv) {
-    if (padv->require[AR_ONE] != A_NEVER) {
-      QListWidgetItem *item = new QListWidgetItem(advance_rule_name(padv));
+  advance_re_active_iterate(padv) {
+    QListWidgetItem *item = new QListWidgetItem(advance_rule_name(padv));
 
-      tech_list->insertItem(advance_index(padv), item);
-    }
-  } advance_iterate_end;
+    tech_list->insertItem(advance_index(padv), item);
+  } advance_re_active_iterate_end;
 
   techs_to_menu(req1);
   techs_to_menu(req2);
@@ -186,9 +188,9 @@ void tab_tech::techs_to_menu(QMenu *fill_menu)
 {
   fill_menu->clear();
 
-  advance_iterate(A_NONE, padv) {
+  advance_iterate_all(padv) {
     fill_menu->addAction(tech_name(padv));
-  } advance_iterate_end;
+  } advance_iterate_all_end;
 }
 
 /**********************************************************************//**
@@ -229,8 +231,10 @@ void tab_tech::update_tech_info(struct advance *adv)
     req2_button->setText(tech_name(adv->require[AR_TWO]));
     root_req_button->setText(tech_name(adv->require[AR_ROOT]));
   } else {
-    name->setText("None");
-    rname->setText("None");
+    name->setText(R__("None"));
+    rname->setText(R__("None"));
+    // FIXME: Could these be translated, or do we depend on
+    //        them matching English rule_name of tech "None"?
     req1_button->setText("None");
     req2_button->setText("None");
     root_req_button->setText("None");
@@ -247,7 +251,10 @@ void tab_tech::select_tech()
   QList<QListWidgetItem *> select_list = tech_list->selectedItems();
 
   if (!select_list.isEmpty()) {
-    update_tech_info(advance_by_rule_name(select_list.at(0)->text().toUtf8().data()));
+    QByteArray tn_bytes;
+
+    tn_bytes = select_list.at(0)->text().toUtf8();
+    update_tech_info(advance_by_rule_name(tn_bytes.data()));
   }
 }
 
@@ -286,7 +293,11 @@ void tab_tech::root_req_jump()
 **************************************************************************/
 void tab_tech::req1_menu(QAction *action)
 {
-  struct advance *padv = advance_by_rule_name(action->text().toUtf8().data());
+  struct advance *padv;
+  QByteArray an_bytes;
+
+  an_bytes = action->text().toUtf8();
+  padv = advance_by_rule_name(an_bytes.data());
 
   if (padv != 0 && selected != 0) {
     selected->require[AR_ONE] = padv;
@@ -300,7 +311,11 @@ void tab_tech::req1_menu(QAction *action)
 **************************************************************************/
 void tab_tech::req2_menu(QAction *action)
 {
-  struct advance *padv = advance_by_rule_name(action->text().toUtf8().data());
+  struct advance *padv;
+  QByteArray an_bytes;
+
+  an_bytes = action->text().toUtf8();
+  padv = advance_by_rule_name(an_bytes.data());
 
   if (padv != 0 && selected != 0) {
     selected->require[AR_TWO] = padv;
@@ -314,7 +329,11 @@ void tab_tech::req2_menu(QAction *action)
 **************************************************************************/
 void tab_tech::root_req_menu(QAction *action)
 {
-  struct advance *padv = advance_by_rule_name(action->text().toUtf8().data());
+  struct advance *padv;
+  QByteArray an_bytes;
+
+  an_bytes = action->text().toUtf8();
+  padv = advance_by_rule_name(an_bytes.data());
 
   if (padv != 0 && selected != 0) {
     selected->require[AR_ROOT] = padv;
@@ -329,10 +348,14 @@ void tab_tech::root_req_menu(QAction *action)
 void tab_tech::name_given()
 {
   if (selected != nullptr) {
-    advance_iterate(A_FIRST, padv) {
+    QByteArray name_bytes;
+    QByteArray rname_bytes;
+
+    advance_iterate(padv) {
       if (padv != selected
           && padv->require[AR_ONE] != A_NEVER) {
-        if (!strcmp(advance_rule_name(padv), rname->text().toUtf8().data())) {
+        rname_bytes = rname->text().toUtf8();
+        if (!strcmp(advance_rule_name(padv), rname_bytes.data())) {
           ui->display_msg(R__("A tech with that rule name already exists!"));
           return;
         }
@@ -343,15 +366,17 @@ void tab_tech::name_given()
       name->setText(rname->text());
     }
 
+    name_bytes = name->text().toUtf8();
+    rname_bytes = rname->text().toUtf8();
     names_set(&(selected->name), 0,
-              name->text().toUtf8().data(),
-              rname->text().toUtf8().data());
+              name_bytes.data(),
+              rname_bytes.data());
     refresh();
   }
 }
 
 /**********************************************************************//**
-  User requested tech deletion 
+  User requested tech deletion
 **************************************************************************/
 void tab_tech::delete_now()
 {
@@ -364,6 +389,10 @@ void tab_tech::delete_now()
     }
 
     selected->require[AR_ONE] = A_NEVER;
+
+    if (selected->ruledit_dlg != nullptr) {
+      ((edit_tech *)selected->ruledit_dlg)->done(0);
+    }
 
     refresh();
     update_tech_info(nullptr);
@@ -385,6 +414,10 @@ bool tab_tech::initialize_new_tech(struct advance *padv)
   padv->require[AR_TWO] = none;
   padv->require[AR_ROOT] = none;
   name_set(&(padv->name), 0, "New Tech");
+  BV_CLR_ALL(padv->flags);
+  if (padv->helptext != nullptr) {
+    strvec_clear(padv->helptext);
+  }
 
   return true;
 }
@@ -397,7 +430,7 @@ void tab_tech::add_now()
   struct advance *new_adv;
 
   // Try to reuse freed tech slot
-  advance_iterate(A_FIRST, padv) {
+  advance_iterate(padv) {
     if (padv->require[AR_ONE] == A_NEVER) {
       if (initialize_new_tech(padv)) {
         update_tech_info(padv);
@@ -419,7 +452,7 @@ void tab_tech::add_now()
   if (initialize_new_tech(new_adv)) {
     update_tech_info(new_adv);
     refresh();
-  } else{
+  } else {
     game.control.num_tech_types--; // Restore
   }
 }
@@ -448,5 +481,22 @@ void tab_tech::edit_effects()
 
     ui->open_effect_edit(QString::fromUtf8(advance_rule_name(selected)),
                          &uni, EFMC_NORMAL);
+  }
+}
+
+/**********************************************************************//**
+  User requested tech edit dialog
+**************************************************************************/
+void tab_tech::edit_now()
+{
+  if (selected != nullptr) {
+    if (selected->ruledit_dlg == nullptr) {
+      edit_tech *edit = new edit_tech(ui, selected);
+
+      edit->show();
+      selected->ruledit_dlg = edit;
+    } else {
+      ((edit_tech *)selected->ruledit_dlg)->raise();
+    }
   }
 }

@@ -4,19 +4,29 @@
 ; specified in cities.ruleset file and the index only defines the read order
 ; of the images. The definitions are read starting with index 0 till the first
 ; missing value The index is checked against the city bonus of effect
-; EFT_CITY_IMG and the resulting image is used to draw the city on the tile.
+; City_Image and the resulting image is used to draw the city on the tile.
 ;
 ; Obviously the first tile must be 'style_name'_city_0 and the sizes must be
-; in ascending order. There must also be a 'style_name'_wall_0 tile used to
-; draw the wall and an occupied tile to indicate a military units in a city.
+; in ascending order. There must also be a 'style_name'_wall_0 tile used
+; for the default wall graphics and an occupied tile to indicate
+; a military units in a city.
+; For providing multiple walls buildings (as requested by the "Visible_Walls"
+; effect value) tags are 'style_name'_bldg_'effect_value'_'index'.
 ; The maximum number of images is only limited by the maximum size of a city
 ; (currently MAX_CITY_SIZE = 255).
+;
+; For providing custom citizen icons for the city style, use tags of the form
+; 'citizen.<tag>.<citizen_type>_<index>'
+; where <tag> is citizens_graphic tag from the styles.ruleset,
+; <citizen_type> is type like 'content', same ones as
+; misc/small.spec has for the default citizen icons, and
+; <index> is a running number for alternative sprites.
 ;
 
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -51,19 +61,19 @@ tiles = { "row", "column", "tag"
 ; used by all city styles
 
  0,  0, "city.disorder"
- 0,  1, "base.airbase_mg"
+ 0,  1, "base.airbase_mg:0"
  0,  2, "tx.airbase_full"
- 0,  4, "base.outpost_fg"
- 0,  5, "base.outpost_bg"
+ 0,  4, "base.outpost_fg:0"
+ 0,  5, "base.outpost_bg:0"
  0,  6, "city.electricage_occupied_0"
  0,  6, "city.modern_occupied_0"
  0,  6, "city.postmodern_occupied_0"
- 0,  8, "base.buoy_mg"
- 0,  9, "extra.ruins_mg"
+ 0,  8, "base.buoy_mg:0"
+ 0,  9, "extra.ruins_mg:0"
 
- 1,  1, "base.airstrip_mg"
- 1,  4, "base.fortress_fg"
- 1,  5, "base.fortress_bg"
+ 1,  1, "base.airstrip_mg:0"
+ 1,  4, "base.fortress_fg:0"
+ 1,  5, "base.fortress_bg:0"
 ;
 ; city tiles
 ;
@@ -72,12 +82,12 @@ tiles = { "row", "column", "tag"
  2,  1, "city.electricage_city_1"
  2,  2, "city.electricage_city_2"
  2,  3, "city.electricage_city_3"
- 2,  4, "city.electricage_city_4" 
+ 2,  4, "city.electricage_city_4"
  2,  5, "city.electricage_wall_0"
  2,  6, "city.electricage_wall_1"
  2,  7, "city.electricage_wall_2"
  2,  8, "city.electricage_wall_3"
- 2,  9, "city.electricage_wall_4" 
+ 2,  9, "city.electricage_wall_4"
 
 
  3,  0, "city.modern_city_0"
@@ -96,11 +106,11 @@ tiles = { "row", "column", "tag"
  4,  1, "city.postmodern_city_1"
  4,  2, "city.postmodern_city_2"
  4,  3, "city.postmodern_city_3"
- 4,  4, "city.postmodern_city_4" 
+ 4,  4, "city.postmodern_city_4"
  4,  5, "city.postmodern_wall_0"
  4,  6, "city.postmodern_wall_1"
  4,  7, "city.postmodern_wall_2"
  4,  8, "city.postmodern_wall_3"
- 4,  9, "city.postmodern_wall_4" 
+ 4,  9, "city.postmodern_wall_4"
 
 }

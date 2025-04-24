@@ -1,5 +1,18 @@
 
 ===========================================================================
+ Acquiring soundsets and musicsets
+===========================================================================
+
+Some soundsets (sound effects) and musicsets (soundtrack) are available
+for install via the modpack installer utility.
+See README.modpack_installer for more information about the utility.
+
+Some older soundsets (sound files and a spec file) are available
+from <https://files.freeciv.org/contrib/audio/soundsets>. At this
+address you find also extra sound files to change an existing soundset or
+create a new one.
+
+===========================================================================
  Sound Support
 ===========================================================================
 
@@ -13,20 +26,15 @@ Tags are used to give an easy way to change sounds. A specfile is used
 to indicate which tags refer to which sound files. A change of spec
 file, given as an option at startup, will change sounds. For example,
 
-	freeciv-gtk3 --Sound mysounds.spec
+	freeciv-gtk4 --Sound mysounds.spec
 
 will read sound files from "mysounds.spec". You will need to download
-or copy or link those sounds into whichever directory is mentioned in this 
-file first, or edit it to refer to the right files. All references are by 
+or copy or link those sounds into whichever directory is mentioned in this
+file first, or edit it to refer to the right files. All references are by
 default relative to the data/ directory. Soundpacks can be downloaded from
 the Freeciv website in the tar format. You will either need to unpack them
 with eg "tar -xzvf stdsoundsX.tar.gz" or use 7-Zip (for Windows etc.), and
 put the files in the data directory mentioned above.
-
-You can get additional soundsets (sound files and a spec file)
-from <http://files.freeciv.org/contrib/audio/soundsets>. At this
-address you find also extra sound files to change an existing soundset or
-create a new one.
 
 ================================
  Plugins
@@ -37,7 +45,7 @@ set of available plugins depend on the libraries found on the host
 system. You can choose the plugin the client should use via the
 command line:
 
-	freeciv-gtk3 --Plugin sdl
+	freeciv-gtk4 --Plugin sdl
 
 You can choose "none" to mute the client. Freeciv currently supports
 the following plugins:
@@ -97,6 +105,6 @@ Sound creators: Please name sound files intelligibly. Include a README
 where you present the licensing terms used (if public domain, say so)
 for the sound files.
 
-Modpack makers: Please give secondary tags that refer to standard tags 
-so that those who have not downloaded the latest & greatest sound pack 
+Modpack makers: Please give secondary tags that refer to standard tags
+so that those who have not downloaded the latest & greatest sound pack
 can still enjoy the game.

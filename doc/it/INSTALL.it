@@ -65,21 +65,21 @@ Freeciv ha i seguenti prerequisiti per l'installazione.
    L' output deve contenere la scritta GNU make.
 
 La versione CVS ha dei prerequisiti addizionali. Una versione distribuita
-contiene i file generati.                           
- 
+contiene i file generati.
+
  - I programmi della versione 0.10.38 o successive di GNU gettext.
 
    In particolare il programma xgettext e' necessario per creare i file
    *.gmo che non sono inclusi nel CVS.
-                                         
+
  - La versione 2.13 o successive di GNU autoconf.
- 
+
    Autoconf e' necessario per creare configure a partire da configure.in.
- 
+
  - La versione 1.4 o successive di GNU automake.
- 
-   Automake e' necessario per creare i vari Makefile.in dai file Makefile.am. 
-                                           
+
+   Automake e' necessario per creare i vari Makefile.in dai file Makefile.am.
+
 
 1. Prerequisiti per il Client:
 ==============================
@@ -317,7 +317,7 @@ seguenti passi:
     vengono generati dallo script configure.
 
     Ulteriori informazioni riguardo la mailing list freeciv-dev presso il sito
-    ufficiale del gioco:  http://www.freeciv.org/
+    ufficiale del gioco:  https://www.freeciv.org/
 
 Da notare che dalla versione 1.7.2 abbiamo interrotto il supporto di
 Imake, e dalla versione  1.8.1 non includiamo piu' il file Makefile.noimake
@@ -617,7 +617,7 @@ debian.
 
 Prerequisiti: un ambiete unix con gcc e binutils per windows (mingw32)
 per il client win32 nativo: libz e libpng
-(da http://files.freeciv.org/requirements)
+(da https://files.freeciv.org/requirements)
 Puoi usare i makefile gcc standard ma devi modificare le variabili CC
 e RANLIB appropriatamente.
 
@@ -638,7 +638,7 @@ export CC="gcc -mno-cygwin"
 ./configure --with-included-gettext --prefix=.
 
 2. Compilare con un vero Unix (Cross Compilation):
-Sostituite X con il numero che avete scelto al momento in cui avete 
+Sostituite X con il numero che avete scelto al momento in cui avete
 installato il cross-compilatore.
 
 export CC=iX86-mingw32-gcc
@@ -665,7 +665,7 @@ Vi suggeriamo di spostare la directory data:
 mv share/freeciv data
 
 Il passo finale e' quello di convertire la grafica nel formato png. Usate il programma
-di grafica da voi preferito per effettuare la conversione. Potete usare ad esempio 
+di grafica da voi preferito per effettuare la conversione. Potete usare ad esempio
 ImageMagick assieme a pngquant. Ma cio' che e' veramente importante e che controlliate
 il risultato. Controllate ogni file. Il canale alpha (la trasparenza) spesso sparisce
 magicamente. Al momento purtroppo non ci sono script affidabili per la trasformazione.

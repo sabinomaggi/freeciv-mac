@@ -1,5 +1,4 @@
 /Makefile.in
-/Makefile
 /depcomp
 /undep.sh
 /missing
@@ -10,3 +9,4 @@
 /compile
 /ar-lib
 /langstat_*.txt
+/*.metainfo.xml

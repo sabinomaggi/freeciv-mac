@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -63,11 +63,13 @@ class mr_idle : public QObject
   Q_OBJECT
 public:
   mr_idle();
-  void add_callback(call_me_back* cb);
-  QQueue<call_me_back*> callback_list;
+  ~mr_idle();
+
+  void add_callback(call_me_back *cb);
 private slots:
   void idling();
 private:
+  QQueue<call_me_back*> callback_list;
   QTimer timer;
 };
 
@@ -82,10 +84,10 @@ class map_view : public QWidget
 public:
   map_view();
   void paint(QPainter *painter, QPaintEvent *event);
-  void find_place(int pos_x, int pos_y, int &w, int &h, int wdth, int hght, 
+  void find_place(int pos_x, int pos_y, int &w, int &h, int wdth, int hght,
                   int recursive_nr);
-  void resume_searching(int pos_x,int pos_y,int &w, int &h,
-                        int wdtht, int hght, int recursive_nr);
+  void resume_searching(int pos_x, int pos_y, int &w, int &h,
+                        int wdth, int hght, int recursive_nr);
   void update_cursor(enum cursor_type);
   bool menu_click;
 
@@ -260,4 +262,4 @@ bool mapview_is_frozen(void);
 void pixmap_put_overlay_tile(int canvas_x, int  canvas_y,
                              struct sprite *ssprite);
 
-#endif /* FC__MAPVIEW_H */
+#endif // FC__MAPVIEW_H

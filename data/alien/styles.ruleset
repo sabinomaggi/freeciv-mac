@@ -2,16 +2,16 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes
+; for other "maintenance". If you want to make custom changes
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
 [datafile]
-description="Nation theme data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Nation theme data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
 
 ; /* <-- avoid gettext warnings
 ;
@@ -43,7 +43,6 @@ name = _("?style:Human")
 ;                    more info on city tiles
 ; citizens_graphic = group of citizens tiles to use, see citizens/small
 ;                    spec for more info on citizens tiles
-;                    FIXME: this and _alt not currently used!
 ; reqs             = requirements for this city style (see README.effects)
 ;
 ; */ <-- avoid gettext warnings
@@ -53,7 +52,6 @@ name        = _("?citystyle:Human")
 graphic     = "city.human"
 graphic_alt = "city.classical"
 citizens_graphic     = "human"
-citizens_graphic_alt = "ancient"
 reqs = { "type", "name", "range"
          "Style", "Human", "Player"
        }
@@ -63,7 +61,6 @@ name        = _("?citystyle:Dual")
 graphic     = "city.dual"
 graphic_alt = "city.modern"
 citizens_graphic     = "dual"
-citizens_graphic_alt = "modern"
 reqs =
    { "type", "name", "range"
      "Tech", "Alien Rights", "Player"
@@ -74,10 +71,9 @@ name        = _("?citystyle:Oceanic")
 graphic     = "city.ocean"
 graphic_alt = "city.modern"
 citizens_graphic     = "dual"
-citizens_graphic_alt = "modern"
 reqs =
    { "type", "name", "range"
-     "TerrainClass", "Oceanic", "Local"
+     "TerrainClass", "Oceanic", "Tile"
    }
 
 ; /* <-- avoid gettext warnings

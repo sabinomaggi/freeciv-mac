@@ -69,7 +69,7 @@ void choice_dialog_button_set_sensitive(GtkWidget *cd, int button,
   Set label for choice dialog button.
 ***********************************************************************/
 void choice_dialog_button_set_label(GtkWidget *cd, int number,
-                                    const char* label)
+                                    const char *label)
 {
   GtkWidget* button = choice_dialog_get_nth_button(cd, number);
   gtk_button_set_label(GTK_BUTTON(button), label);
@@ -79,7 +79,7 @@ void choice_dialog_button_set_label(GtkWidget *cd, int number,
   Set tool tip for choice dialog button.
 ***********************************************************************/
 void choice_dialog_button_set_tooltip(GtkWidget *cd, int number,
-                                      const char* tool_tip)
+                                      const char *tool_tip)
 {
   GtkWidget* button = choice_dialog_get_nth_button(cd, number);
   gtk_widget_set_tooltip_text(button, tool_tip);
@@ -94,7 +94,7 @@ void choice_dialog_button_move_to_the_end(GtkWidget *cd,
   GtkWidget *button = choice_dialog_get_nth_button(cd, number);
   GtkWidget *bbox = g_object_get_data(G_OBJECT(cd), "bbox");
 
-  gtk_box_reorder_child(GTK_BOX(bbox), button, -1);
+  gtk_box_reorder_child_after(GTK_BOX(bbox), button, NULL);
 }
 
 /*******************************************************************//**
@@ -105,20 +105,16 @@ GtkWidget *choice_dialog_start(GtkWindow *parent, const gchar *name,
 {
   GtkWidget *dshell, *dlabel, *vbox, *bbox;
 
-  dshell = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  dshell = gtk_window_new();
   setup_dialog(dshell, toplevel);
-  gtk_window_set_position (GTK_WINDOW(dshell), GTK_WIN_POS_MOUSE);
 
   gtk_window_set_title(GTK_WINDOW(dshell), name);
 
   gtk_window_set_transient_for(GTK_WINDOW(dshell), parent);
   gtk_window_set_destroy_with_parent(GTK_WINDOW(dshell), TRUE);
 
-  vbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
-                                 GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(vbox), 5);
-  gtk_container_add(GTK_CONTAINER(dshell),vbox);
+  vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+  gtk_window_set_child(GTK_WINDOW(dshell), vbox);
 
   gtk_widget_set_margin_start(vbox, 5);
   gtk_widget_set_margin_end(vbox, 5);
@@ -126,19 +122,18 @@ GtkWidget *choice_dialog_start(GtkWindow *parent, const gchar *name,
   gtk_widget_set_margin_bottom(vbox, 5);
 
   dlabel = gtk_label_new(text);
-  gtk_container_add(GTK_CONTAINER(vbox), dlabel);
+  gtk_box_append(GTK_BOX(vbox), dlabel);
 
-  bbox = gtk_button_box_new(GTK_ORIENTATION_VERTICAL);
-  gtk_box_set_spacing(GTK_BOX(bbox), 2);
-  gtk_container_add(GTK_CONTAINER(vbox), bbox);
-  
+  bbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_box_append(GTK_BOX(vbox), bbox);
+
   g_object_set_data(G_OBJECT(dshell), "bbox", bbox);
   g_object_set_data(G_OBJECT(dshell), "nbuttons", GINT_TO_POINTER(0));
   g_object_set_data(G_OBJECT(dshell), "hide", GINT_TO_POINTER(FALSE));
-  
-  gtk_widget_show(vbox);
-  gtk_widget_show(dlabel);
-  
+
+  gtk_widget_set_visible(vbox, TRUE);
+  gtk_widget_set_visible(dlabel, TRUE);
+
   return dshell;
 }
 
@@ -149,9 +144,9 @@ GtkWidget *choice_dialog_start(GtkWindow *parent, const gchar *name,
 static void choice_dialog_clicked(GtkWidget *w, gpointer data)
 {
   if (g_object_get_data(G_OBJECT(data), "hide")) {
-    gtk_widget_hide(GTK_WIDGET(data));
+    gtk_widget_set_visible(GTK_WIDGET(data), FALSE);
   } else {
-    gtk_widget_destroy(GTK_WIDGET(data));
+    gtk_window_destroy(GTK_WINDOW(data));
   }
 }
 
@@ -172,8 +167,8 @@ void choice_dialog_add(GtkWidget *dshell, const gchar *label,
 
   fc_snprintf(name, sizeof(name), "button%d", nbuttons);
 
-  button = gtk_button_new_with_label(label);
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  button = gtk_button_new_with_mnemonic(label);
+  gtk_box_append(GTK_BOX(bbox), button);
   g_object_set_data(G_OBJECT(dshell), name, button);
 
   if (handler) {
@@ -200,8 +195,8 @@ void choice_dialog_end(GtkWidget *dshell)
 
   bbox = g_object_get_data(G_OBJECT(dshell), "bbox");
 
-  gtk_widget_show(bbox);
-  gtk_widget_show(dshell);  
+  gtk_widget_set_visible(bbox, TRUE);
+  gtk_widget_set_visible(dshell, TRUE);
 }
 
 /*******************************************************************//**
@@ -223,7 +218,7 @@ GtkWidget *popup_choice_dialog(GtkWindow *parent, const gchar *dialogname,
   gchar *name;
 
   dshell = choice_dialog_start(parent, dialogname, text);
-  
+
   va_start(args, text);
 
   while ((name = va_arg(args, gchar *))) {
@@ -241,4 +236,14 @@ GtkWidget *popup_choice_dialog(GtkWindow *parent, const gchar *dialogname,
   choice_dialog_end(dshell);
 
   return dshell;
+}
+
+/*******************************************************************//**
+  Free choice dialog.
+***********************************************************************/
+void choice_dialog_destroy(GtkWidget *dlg)
+{
+  if (dlg != NULL) {
+    gtk_window_destroy(GTK_WINDOW(dlg));
+  }
 }

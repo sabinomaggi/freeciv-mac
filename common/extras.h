@@ -18,10 +18,11 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* common */
-#include "base.h"
 #include "fc_types.h"
-#include "road.h"
-#include "terrain.h"
+#include "unittype.h"
+
+struct base_type;
+struct road_type;
 
 /* Used in the network protocol. */
 #define SPECENUM_NAME extra_flag_id
@@ -58,22 +59,27 @@ extern "C" {
 /* Units inside will not die all at once */
 #define SPECENUM_VALUE10 EF_NO_STACK_DEATH
 #define SPECENUM_VALUE10NAME N_("NoStackDeath")
+/* Extra itself makes tile to be considered extra owners ZoC */
+#define SPECENUM_VALUE11 EF_CAUSE_ZOC
+#define SPECENUM_VALUE11NAME N_("CauseZoC")
 
-#define SPECENUM_VALUE11 EF_USER_FLAG_1
-#define SPECENUM_VALUE12 EF_USER_FLAG_2
-#define SPECENUM_VALUE13 EF_USER_FLAG_3
-#define SPECENUM_VALUE14 EF_USER_FLAG_4
-#define SPECENUM_VALUE15 EF_USER_FLAG_5
-#define SPECENUM_VALUE16 EF_USER_FLAG_6
-#define SPECENUM_VALUE17 EF_USER_FLAG_7
-#define SPECENUM_VALUE18 EF_USER_FLAG_8
+#define SPECENUM_VALUE12 EF_USER_FLAG_1
+#define SPECENUM_VALUE13 EF_USER_FLAG_2
+#define SPECENUM_VALUE14 EF_USER_FLAG_3
+#define SPECENUM_VALUE15 EF_USER_FLAG_4
+#define SPECENUM_VALUE16 EF_USER_FLAG_5
+#define SPECENUM_VALUE17 EF_USER_FLAG_6
+#define SPECENUM_VALUE18 EF_USER_FLAG_7
+#define SPECENUM_VALUE19 EF_USER_FLAG_8
+#define SPECENUM_VALUE20 EF_USER_FLAG_9
+#define SPECENUM_VALUE21 EF_USER_FLAG_10
 
 #define SPECENUM_COUNT EF_COUNT
 #define SPECENUM_NAMEOVERRIDE
 #define SPECENUM_BITVECTOR bv_extra_flags
 #include "specenum_gen.h"
 
-#define EF_LAST_USER_FLAG EF_USER_FLAG_8
+#define EF_LAST_USER_FLAG EF_USER_FLAG_10
 #define MAX_NUM_USER_EXTRA_FLAGS (EF_LAST_USER_FLAG - EF_USER_FLAG_1 + 1)
 
 #define EXTRA_NONE (-1)
@@ -82,7 +88,8 @@ struct extra_type
 {
   int id;
   struct name_translation name;
-  bool disabled;
+  bool ruledit_disabled;
+  void *ruledit_dlg;
   enum extra_category category;
   uint16_t causes;
   uint8_t rmcauses;
@@ -94,6 +101,7 @@ struct extra_type
   char act_gfx_alt2[MAX_LEN_NAME];
   char rmact_gfx[MAX_LEN_NAME];
   char rmact_gfx_alt[MAX_LEN_NAME];
+  char rmact_gfx_alt2[MAX_LEN_NAME];
 
   struct requirement_vector reqs;
   struct requirement_vector rmreqs;
@@ -106,10 +114,12 @@ struct extra_type
    * for example for the editor to list non-buildable but editor-placeable
    * extras. */
   bool buildable;
+  bool generated;
   int build_time;
   int build_time_factor;
   int removal_time;
   int removal_time_factor;
+  int infracost;
 
   int defense_bonus;
   int appearance_chance;
@@ -123,6 +133,8 @@ struct extra_type
   bv_extras conflicts;
   bv_extras hidden_by;
   bv_extras bridged_over; /* Needs "bridge" to get built over these extras */
+
+  int no_aggr_near_city;
 
   Tech_type_id visibility_req;
 
@@ -181,31 +193,47 @@ struct extra_type *extra_type_by_translated_name(const char *name);
 
 void extra_to_caused_by_list(struct extra_type *pextra, enum extra_cause cause);
 struct extra_type_list *extra_type_list_by_cause(enum extra_cause cause);
-struct extra_type *rand_extra_for_tile(struct tile *ptile, enum extra_cause cause);
+struct extra_type *rand_extra_for_tile(struct tile *ptile, enum extra_cause cause,
+                                       bool generated);
 
 struct extra_type_list *extra_type_list_of_unit_hiders(void);
-
-void extra_to_category_list(struct extra_type *pextra, enum extra_category cat);
-struct extra_type_list *extra_type_list_for_category(enum extra_category cat);
+struct extra_type_list *extra_type_list_of_zoccers(void);
+struct extra_type_list *extra_type_list_of_terr_claimers(void);
 
 #define is_extra_caused_by(e, c) (e->causes & (1 << c))
 bool is_extra_caused_by_worker_action(const struct extra_type *pextra);
 bool is_extra_caused_by_action(const struct extra_type *pextra,
-                               enum unit_activity act);
+                               const struct action *paction);
 
-void extra_to_removed_by_list(struct extra_type *pextra, enum extra_rmcause rmcause);
+void _extra_to_removed_by_list(struct extra_type *pextra, enum extra_rmcause rmcause);
+
+/************************************************************************//**
+  Wrapper around real _extra_to_removed_by_list(), notifying compiler about
+  illegal parameters.
+****************************************************************************/
+static inline void extra_to_removed_by_list(struct extra_type *pextra,
+                                            enum extra_rmcause rmcause)
+{
+  fc__unreachable(rmcause >= ERM_COUNT);
+
+  _extra_to_removed_by_list(pextra, rmcause);
+}
+
 struct extra_type_list *extra_type_list_by_rmcause(enum extra_rmcause rmcause);
+struct extra_type_list *extra_type_list_cleanable(void);
 
 bool is_extra_removed_by(const struct extra_type *pextra, enum extra_rmcause rmcause);
 bool is_extra_removed_by_worker_action(const struct extra_type *pextra);
 bool is_extra_removed_by_action(const struct extra_type *pextra,
-                                enum unit_activity act);
+                                const struct action *paction);
 
-bool is_extra_card_near(const struct tile *ptile, const struct extra_type *pextra);
-bool is_extra_near_tile(const struct tile *ptile, const struct extra_type *pextra);
+bool is_extra_card_near(const struct civ_map *nmap, const struct tile *ptile,
+                        const struct extra_type *pextra);
+bool is_extra_near_tile(const struct civ_map *nmap, const struct tile *ptile,
+                        const struct extra_type *pextra);
 
 bool extra_can_be_built(const struct extra_type *pextra, const struct tile *ptile);
-bool can_build_extra(struct extra_type *pextra,
+bool can_build_extra(const struct extra_type *pextra,
                      const struct unit *punit,
                      const struct tile *ptile);
 bool can_build_extra_base(const struct extra_type *pextra,
@@ -214,8 +242,11 @@ bool can_build_extra_base(const struct extra_type *pextra,
 bool player_can_build_extra(const struct extra_type *pextra,
                             const struct player *pplayer,
                             const struct tile *ptile);
+bool player_can_place_extra(const struct extra_type *pextra,
+                            const struct player *pplayer,
+                            const struct tile *ptile);
 
-bool can_remove_extra(struct extra_type *pextra,
+bool can_remove_extra(const struct extra_type *pextra,
                       const struct unit *punit,
                       const struct tile *ptile);
 bool player_can_remove_extra(const struct extra_type *pextra,
@@ -231,10 +262,18 @@ bool is_native_tile_to_extra(const struct extra_type *pextra,
 bool extra_conflicting_on_tile(const struct extra_type *pextra,
                                const struct tile *ptile);
 
+bool hut_on_tile(const struct tile *ptile);
+bool unit_can_enter_hut(const struct unit *punit,
+                        const struct tile *ptile);
+bool unit_can_displace_hut(const struct unit *punit,
+                           const struct tile *ptile);
+
 bool extra_has_flag(const struct extra_type *pextra, enum extra_flag_id flag);
-bool is_extra_flag_card_near(const struct tile *ptile,
+bool is_extra_flag_card_near(const struct civ_map *nmap,
+                             const struct tile *ptile,
                              enum extra_flag_id flag);
-bool is_extra_flag_near_tile(const struct tile *ptile,
+bool is_extra_flag_near_tile(const struct civ_map *nmap,
+                             const struct tile *ptile,
                              enum extra_flag_id flag);
 
 void user_extra_flags_init(void);
@@ -243,6 +282,7 @@ void set_user_extra_flag_name(enum extra_flag_id id,
                               const char *name,
                               const char *helptxt);
 const char *extra_flag_helptxt(enum extra_flag_id id);
+bool extra_flag_is_in_use(enum extra_flag_id id);
 
 bool extra_causes_env_upset(struct extra_type *pextra,
                             enum environment_upset_type upset);
@@ -259,6 +299,9 @@ struct extra_type *next_extra_for_tile(const struct tile *ptile, enum extra_caus
 struct extra_type *prev_extra_in_tile(const struct tile *ptile, enum extra_rmcause rmcause,
                                       const struct player *pplayer,
                                       const struct unit *punit);
+struct extra_type *prev_cleanable_in_tile(const struct tile *ptile,
+                                          const struct player *pplayer,
+                                          const struct unit *punit);
 
 enum extra_cause activity_to_extra_cause(enum unit_activity act);
 enum extra_rmcause activity_to_extra_rmcause(enum unit_activity act);
@@ -279,11 +322,11 @@ bool player_knows_extra_exist(const struct player *pplayer,
   }                                               \
 }
 
-#define extra_active_type_iterate(_p)                         \
+#define extra_type_re_active_iterate(_p)                      \
   extra_type_iterate(_p) {                                    \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define extra_active_type_iterate_end                         \
+#define extra_type_re_active_iterate_end                      \
     }                                                         \
   } extra_type_iterate_end;
 
@@ -316,15 +359,13 @@ bool player_knows_extra_exist(const struct player *pplayer,
   } extra_type_list_iterate_rev_end                      \
 }
 
-#define extra_type_by_category_iterate(_cat, _extra)                \
-{                                                                   \
-  struct extra_type_list *_etl_##_extra = extra_type_list_for_category(_cat); \
-  if (_etl_##_extra != NULL) {                                              \
-    extra_type_list_iterate(_etl_##_extra, _extra) {
+#define extra_type_cleanable_iterate(_extra) \
+{                                                                         \
+  struct extra_type_list *_etl_ = extra_type_list_cleanable();            \
+  extra_type_list_iterate_rev(_etl_, _extra) {
 
-#define extra_type_by_category_iterate_end                 \
-    } extra_type_list_iterate_end                          \
-  }                                                        \
+#define extra_type_cleanable_iterate_end                 \
+  } extra_type_list_iterate_rev_end                      \
 }
 
 #define extra_deps_iterate(_reqs, _dep)                 \

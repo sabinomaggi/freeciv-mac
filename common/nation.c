@@ -11,7 +11,7 @@
    GNU General Public License for more details.
 ***********************************************************************/
 
-/**********************************************************************
+/***********************************************************************
    Functions for handling the nations.
 ***********************************************************************/
 
@@ -30,6 +30,7 @@
 #include "game.h"
 #include "government.h"
 #include "player.h"
+#include "rgbcolor.h"
 #include "tech.h"
 #include "traits.h"
 
@@ -142,7 +143,7 @@ const char *nation_rule_name(const struct nation_type *pnation)
 }
 
 /************************************************************************//**
-  Return the (translated) adjective for the given nation. 
+  Return the (translated) adjective for the given nation.
   You don't have to free the return pointer.
 ****************************************************************************/
 const char *nation_adjective_translation(const struct nation_type *pnation)
@@ -152,7 +153,7 @@ const char *nation_adjective_translation(const struct nation_type *pnation)
 }
 
 /************************************************************************//**
-  Return the (translated) plural noun of the given nation. 
+  Return the (translated) plural noun of the given nation.
   You don't have to free the return pointer.
 ****************************************************************************/
 const char *nation_plural_translation(const struct nation_type *pnation)
@@ -162,7 +163,7 @@ const char *nation_plural_translation(const struct nation_type *pnation)
 }
 
 /************************************************************************//**
-  Return the (translated) adjective for the given nation of a player. 
+  Return the (translated) adjective for the given nation of a player.
   You don't have to free the return pointer.
 ****************************************************************************/
 const char *nation_adjective_for_player(const struct player *pplayer)
@@ -171,7 +172,7 @@ const char *nation_adjective_for_player(const struct player *pplayer)
 }
 
 /************************************************************************//**
-  Return the (translated) plural noun of the given nation of a player. 
+  Return the (translated) plural noun of the given nation of a player.
   You don't have to free the return pointer.
 ****************************************************************************/
 const char *nation_plural_for_player(const struct player *pplayer)
@@ -508,7 +509,6 @@ Nation_type_id nation_count(void)
   return game.control.nation_count;
 }
 
-
 /****************************************************************************
   Nation iterator.
 ****************************************************************************/
@@ -560,7 +560,11 @@ struct iterator *nation_iter_init(struct nation_iter *it)
   it->vtable.get = nation_iter_get;
   it->vtable.valid = nation_iter_valid;
   it->p = nations;
-  it->end = nations + nation_count();
+  if (nations == NULL) {
+    it->end = NULL;
+  } else {
+    it->end = nations + nation_count();
+  }
   return ITERATOR(it);
 }
 
@@ -715,6 +719,12 @@ struct nation_set *nation_set_new(const char *set_name,
 {
   struct nation_set *pset;
 
+  if (game.control.num_nation_sets <= num_nation_sets) {
+    log_error("More nation sets than reported (%d).",
+              game.control.num_nation_sets);
+    return NULL;
+  }
+
   if (MAX_NUM_NATION_SETS <= num_nation_sets) {
     log_error("Too many nation sets (%d is the maximum).",
               MAX_NUM_NATION_SETS);
@@ -751,9 +761,14 @@ struct nation_set *nation_set_new(const char *set_name,
 ****************************************************************************/
 struct nation_set *nation_set_by_number(int id)
 {
-  if (id < 0 || id >= num_nation_sets) {
+  /* Return valid pointer on client side even when the data of the
+   * group is not yet received. So compare against expected number
+   * of sets (game.control.num_nation_sets) and not
+   * what we have already set up (num_nation_sets) */
+  if (id < 0 || id >= game.control.num_nation_sets) {
     return NULL;
   }
+
   return nation_sets + id;
 }
 
@@ -946,7 +961,13 @@ struct nation_group *nation_group_new(const char *name)
 {
   struct nation_group *pgroup;
 
-  if (MAX_NUM_NATION_GROUPS <= num_nation_groups) {
+  if (game.control.num_nation_groups <= num_nation_groups) {
+    log_error("More nation groups than reported (%d).",
+              game.control.num_nation_groups);
+    return NULL;
+  }
+
+   if (MAX_NUM_NATION_GROUPS <= num_nation_groups) {
     log_error("Too many nation groups (%d is the maximum).",
               MAX_NUM_NATION_GROUPS);
     return NULL;
@@ -982,9 +1003,14 @@ struct nation_group *nation_group_new(const char *name)
 ****************************************************************************/
 struct nation_group *nation_group_by_number(int id)
 {
-  if (id < 0 || id >= num_nation_groups) {
+  /* Return valid pointer on client side even when the data of the
+   * group is not yet received. So compare against expected number
+   * of groups (game.control.num_nation_groups) and not
+   * what we have already set up (num_nation_groups) */
+  if (id < 0 || id >= game.control.num_nation_groups) {
     return NULL;
   }
+
   return nation_groups + id;
 }
 
@@ -1192,7 +1218,7 @@ int nations_match(const struct nation_type *pnation1,
     nation_list_iterate(pnation1->server.conflicts_with, pnation0) {
       if (pnation0 == pnation2) {
         in_conflict = TRUE;
-        sum = 1; /* Be sure to returns something negative. */
+        sum = 1; /* Be sure to return something negative. */
         break;
       }
     } nation_list_iterate_end;
@@ -1201,7 +1227,7 @@ int nations_match(const struct nation_type *pnation1,
       nation_list_iterate(pnation2->server.conflicts_with, pnation0) {
         if (pnation0 == pnation1) {
           in_conflict = TRUE;
-          sum = 1; /* Be sure to returns something negative. */
+          sum = 1; /* Be sure to return something negative. */
           break;
         }
       } nation_list_iterate_end;

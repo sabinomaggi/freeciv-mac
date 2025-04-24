@@ -98,8 +98,8 @@ RAPPORTEREN VAN FOUTEN:
 
 (Als het vertalingsfouten betreft in de Nederlandse versie, neem dan contact
 op met Pieter J. Kersten <kersten@dia.eur.nl>. Voor vertalingsfouten in andere
-talen, neem contact op met de primaire contactpersoon voor die taal. Kijk op 
-<http://freeciv.org/wiki/Translations> voor de namen en mailadressen van deze
+talen, neem contact op met de primaire contactpersoon voor die taal. Kijk op
+<https://www.freeciv.org/wiki/Translations> voor de namen en mailadressen van deze
 mensen.)
 
 Dit is wat u moet doen:
@@ -112,7 +112,7 @@ Dit is wat u moet doen:
    In het bijzonder zou u een ontwikkelaars-versie kunnen proberen uit onze
    CVS database. Deze kunt u FTP'en van:
 
-        http://files.freeciv.org/latest/
+        https://files.freeciv.org/latest/
 
  - Controleer de Freeciv FAQ (Frequent Asked Questions) op het Freeciv website
    om te kijken of er een noodoplossing (Engels: workaround) is voor uw fout.
@@ -137,7 +137,7 @@ Dit is wat u moet doen:
 
    - Vertel ons de naam en de versie van:
 
-       - Het besturingssysteem dat u gebruikt. U kunt in dit geval de 
+       - Het besturingssysteem dat u gebruikt. U kunt in dit geval de
          "uname -a" opdracht bruikbaar vinden.
 
        - Het versienummer van Freeciv
@@ -165,4 +165,4 @@ VERDERE INFORMATIE:
 
 Voor meer informatie, als altijd, kom naar het Freeciv website:
 
-        http://www.freeciv.org/
+        https://www.freeciv.org/

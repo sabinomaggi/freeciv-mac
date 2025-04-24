@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996-2005 - Freeciv Development Team
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,10 +20,10 @@
 struct color;
 struct sprite;
 
-struct canvas;			/* opaque type, real type is gui-dep */
+struct canvas;                  /* Opaque type, real type is gui-dep */
 
 enum line_type {
-  LINE_NORMAL, LINE_BORDER, LINE_TILE_FRAME, LINE_GOTO
+  LINE_NORMAL, LINE_BORDER, LINE_TILE_FRAME, LINE_GOTO, LINE_SELECT_RECT
 };
 
 /* Creator and destructor */
@@ -32,6 +32,8 @@ GUI_FUNC_PROTO(void, canvas_free, struct canvas *store)
 
 GUI_FUNC_PROTO(void, canvas_set_zoom, struct canvas *store, float zoom)
 GUI_FUNC_PROTO(bool, has_zoom_support, void)
+
+GUI_FUNC_PROTO(void, canvas_mapview_init, struct canvas *store);
 
 /* Drawing functions */
 GUI_FUNC_PROTO(void, canvas_copy, struct canvas *dest, struct canvas *src,
@@ -42,6 +44,9 @@ GUI_FUNC_PROTO(void, canvas_put_sprite, struct canvas *pcanvas,
                int offset_x, int offset_y, int width, int height);
 GUI_FUNC_PROTO(void, canvas_put_sprite_full, struct canvas *pcanvas, 
                int canvas_x, int canvas_y,
+               struct sprite *sprite)
+GUI_FUNC_PROTO(void, canvas_put_sprite_full_scaled, struct canvas *pcanvas,
+               int canvas_x, int canvas_y, int canvas_w, int canvas_h,
                struct sprite *sprite)
 GUI_FUNC_PROTO(void, canvas_put_sprite_fogged, struct canvas *pcanvas,
                int canvas_x, int canvas_y,
@@ -76,4 +81,4 @@ GUI_FUNC_PROTO(void, canvas_put_text, struct canvas *pcanvas,
                int canvas_x, int canvas_y, enum client_font font,
                struct color *pcolor, const char *text)
 
-#endif  /* FC__CANVAS_G_H */
+#endif /* FC__CANVAS_G_H */

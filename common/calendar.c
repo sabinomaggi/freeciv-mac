@@ -22,26 +22,29 @@
 #include "calendar.h"
 
 /************************************************************************//**
-  Returns the next year in the game.
+  Advance the calendar in the passed game_info structure
+  (may only be a copy of the real one).
+  FIXME: would be nice to pass a struct containing just the
+  calendar, not the whole game_info struct.
 ****************************************************************************/
-int game_next_year(int year)
+void game_next_year(struct packet_game_info *info)
 {
   int increase = get_world_bonus(EFT_TURN_YEARS);
   const int slowdown = (victory_enabled(VC_SPACERACE)
-			? get_world_bonus(EFT_SLOW_DOWN_TIMELINE) : 0);
+                        ? get_world_bonus(EFT_SLOW_DOWN_TIMELINE) : 0);
   int fragment_years;
 
-  if (game.info.year_0_hack) {
-    /* hacked it to get rid of year 0 */
-    year = 0;
-    game.info.year_0_hack = FALSE;
+  if (info->year_0_hack) {
+    /* Hack it to get rid of year 0 */
+    info->year = 0;
+    info->year_0_hack = FALSE;
   }
 
-    /* !McFred: 
+    /* !McFred:
        - want year += 1 for spaceship.
     */
 
-  /* test game with 7 normal AI's, gen 4 map, foodbox 10, foodbase 0: 
+  /* Test game with 7 normal AI's, gen 4 map, foodbox 10, foodbase 0:
    * Gunpowder about 0 AD
    * Railroad  about 500 AD
    * Electricity about 1000 AD
@@ -50,8 +53,8 @@ int game_next_year(int year)
    * about 1900 AD
    */
 
-  /* Note the slowdown operates even if Enable_Space is not active.  See
-   * README.effects for specifics. */
+  /* Note the slowdown operates even if Enable_Space is not active.
+   * See README.effects for specifics. */
   if (slowdown >= 3) {
     if (increase > 1) {
       increase = 1;
@@ -67,21 +70,19 @@ int game_next_year(int year)
   }
 
   if (game.calendar.calendar_fragments) {
-    game.info.fragment_count += get_world_bonus(EFT_TURN_FRAGMENTS);
-    fragment_years = game.info.fragment_count / game.calendar.calendar_fragments;
+    info->fragment_count += get_world_bonus(EFT_TURN_FRAGMENTS);
+    fragment_years = info->fragment_count / game.calendar.calendar_fragments;
 
     increase += fragment_years;
-    game.info.fragment_count -= fragment_years * game.calendar.calendar_fragments;
+    info->fragment_count -= fragment_years * game.calendar.calendar_fragments;
   }
 
-  year += increase;
+  info->year += increase;
 
-  if (year == 0 && game.calendar.calendar_skip_0) {
-    year = 1;
-    game.info.year_0_hack = TRUE;
+  if (info->year == 0 && game.calendar.calendar_skip_0) {
+    info->year = 1;
+    info->year_0_hack = TRUE;
   }
-
-  return year;
 }
 
 /************************************************************************//**
@@ -89,7 +90,7 @@ int game_next_year(int year)
 ****************************************************************************/
 void game_advance_year(void)
 {
-  game.info.year = game_next_year(game.info.year);
+  game_next_year(&game.info);
   game.info.turn++;
 }
 
@@ -109,6 +110,7 @@ const char *textcalfrag(int frag)
     /* Human readable fragment count starts from 1, not 0 */
     fc_snprintf(buf, sizeof(buf), "%d", frag + 1);
   }
+
   return buf;
 }
 

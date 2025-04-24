@@ -29,8 +29,20 @@
 /* Metaserver URL */
 #undef FREECIV_META_URL
 
+/* Metaserver communication built in */
+#define FREECIV_META_ENABLED
+
 /* Month next version will be released */
 #undef FREECIV_RELEASE_MONTH
+
+/* nullptr available at C */
+#undef FREECIV_HAVE_C23_NULLPTR
+
+/* nullptr available at C++ */
+#undef FREECIV_HAVE_CXX_NULLPTR
+
+/* Use C11 threads as thread implementation */
+#undef FREECIV_HAVE_C11_THREADS
 
 /* Use pthreads as thread implementation */
 #undef FREECIV_HAVE_PTHREAD
@@ -49,6 +61,18 @@
 
 /* Native language support enabled */
 #undef FREECIV_ENABLE_NLS
+
+/* This is crosser-based build */
+#undef FREECIV_CROSSER
+
+/* MagickWand version 7 API in use */
+#undef FREECIV_MWAND7
+
+/* Returning a value is expected even after exit() call */
+#undef FREECIV_RETURN_VALUE_AFTER_EXIT
+
+/* Var arg cannot be const */
+#undef FREECIV_NO_CONST_VAR_ARG
 
 /* locale.h available */
 #undef FREECIV_HAVE_LOCALE_H
@@ -110,7 +134,7 @@
 /* uses winsock2 */
 #undef FREECIV_HAVE_WINSOCK2
 
-/* socket zero isn't same stdin */
+/* socket zero isn't same as stdin */
 #undef FREECIV_SOCKET_ZERO_NOT_STDIN
 
 /* Extra debugging support */
@@ -127,6 +151,9 @@
 
 /* liblzma is available */
 #undef FREECIV_HAVE_LIBLZMA
+
+/* libzstd is available */
+#undef FREECIV_HAVE_LIBZSTD
 
 /* Location for freeciv to store its information */
 #undef FREECIV_STORAGE_DIR

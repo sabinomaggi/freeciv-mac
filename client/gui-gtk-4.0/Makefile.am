@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
-noinst_LTLIBRARIES = libgui-gtk3x.la
+noinst_LTLIBRARIES = libgui-gtk4.la
 AM_CPPFLAGS = \
 	-I$(srcdir)/.. \
 	-I$(srcdir)/../include \
@@ -12,9 +12,10 @@ AM_CPPFLAGS = \
 	-I$(srcdir)/../agents \
 	-I$(srcdir)/../luascript \
 	-I$(top_srcdir)/dependencies/tinycthread \
-	$(gui_gtk3x_cflags) $(SOUND_CFLAGS)
+	-I$(top_srcdir)/gen_headers/enums \
+	$(gui_gtk4_cflags) $(SOUND_CFLAGS)
 
-libgui_gtk3x_la_SOURCES = \
+libgui_gtk4_la_SOURCES = \
 	action_dialog.c \
 	canvas.c	\
 	canvas.h	\
@@ -58,6 +59,8 @@ libgui_gtk3x_la_SOURCES = \
 	happiness.h	\
 	helpdlg.c	\
 	helpdlg.h	\
+	infradlg.c	\
+	infradlg.h	\
 	inputdlg.c	\
 	inputdlg.h	\
 	inteldlg.c	\
@@ -80,6 +83,8 @@ libgui_gtk3x_la_SOURCES = \
 	pages.h		\
 	plrdlg.c	\
 	plrdlg.h	\
+	rallypointdlg.c	\
+	rallypointdlg.h	\
 	ratesdlg.h	\
 	repodlgs.c	\
 	repodlgs.h	\
@@ -93,6 +98,8 @@ libgui_gtk3x_la_SOURCES = \
 	tileset_dlg.c	\
 	transportdlg.c	\
 	transportdlg.h	\
+	unitselextradlg.c	\
+	unitselextradlg.h	\
 	unitselunitdlg.c	\
 	unitselunitdlg.h	\
 	unitselect.h	\
@@ -102,4 +109,4 @@ libgui_gtk3x_la_SOURCES = \
 	wldlg.c		\
 	wldlg.h
 
-libgui_gtk3x_la_LIBADD = -lm
+libgui_gtk4_la_LIBADD = -lm

@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,14 +25,14 @@ extern "C" {
 #include "support.h" /* bool */
 
 #ifdef FREECIV_HAVE_TINYCTHR
-#include "tinycthread.h"
+#include "fc_tinycthread.h"
 #define FREECIV_C11_THR
 #else
 #ifdef FREECIV_HAVE_C11_THREADS
 #include <threads.h>
 #define FREECIV_C11_THR
 #endif /* FREECIV_HAVE_C11_THREADS */
-#endif /* FREECIV_hAVE_TINYCTHR */
+#endif /* FREECIV_HAVE_TINYCTHR */
 
 #ifdef FREECIV_C11_THR
 
@@ -69,10 +69,10 @@ extern "C" {
 int fc_thread_start(fc_thread *thread, void (*function) (void *arg), void *arg);
 void fc_thread_wait(fc_thread *thread);
 
-void fc_init_mutex(fc_mutex *mutex);
-void fc_destroy_mutex(fc_mutex *mutex);
-void fc_allocate_mutex(fc_mutex *mutex);
-void fc_release_mutex(fc_mutex *mutex);
+void fc_mutex_init(fc_mutex *mutex);
+void fc_mutex_destroy(fc_mutex *mutex);
+void fc_mutex_allocate(fc_mutex *mutex);
+void fc_mutex_release(fc_mutex *mutex);
 
 void fc_thread_cond_init(fc_thread_cond *cond);
 void fc_thread_cond_destroy(fc_thread_cond *cond);

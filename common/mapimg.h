@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 2010 - The Freeciv Team
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
     mapimg_define()     Define a new map image.
     mapimg_delete()     Delete a map image definition.
     mapimg_show()       Show the map image definition.
-    mapimg_id2str()     Convert the map image definition to a string. Usefull
+    mapimg_id2str()     Convert the map image definition to a string. Useful
                         to save the definitions.
     mapimg_create()     ...
     mapimg_colortest()  ...
@@ -115,6 +115,7 @@ void mapimg_init(mapimg_tile_known_func mapimg_tile_known,
                  mapimg_plrcolor_get_func mapimg_plrcolor_get);
 void mapimg_reset(void);
 void mapimg_free(void);
+bool mapimg_initialised(void);
 int mapimg_count(void);
 char *mapimg_help(const char *cmdname);
 const char *mapimg_error(void);

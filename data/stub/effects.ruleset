@@ -2,9 +2,22 @@
 ; description.
 
 [datafile]
-description="<modpack> effects data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "<modpack> effects data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
+
+; /* <-- avoid gettext warnings
+;
+; User effect types
+;
+; type                    = Effect type to define. Must be one of user effects.
+; ai_valued_as            = Hardcoded effect type that AI considers this to match
+;
+; */ <-- avoid gettext warnings
+
+;[ueff_1]
+;type         = "User_Effect_1"
+;ai_valued_as = ""
 
 ; /* <-- avoid gettext warnings
 ;
@@ -18,6 +31,8 @@ format_version=20
 ; multiplier              = Name of the policy that gives a multiplier for effect's value
 ; reqs                    = Requirements for the effect to be active.
 ;                           See README.effects for help on requirements
+; comment                 = Comment for the benefit to someone examining the ruleset
+;                           Not used by freeciv any other way.
 ;
 ; */ <-- avoid gettext warnings
 
@@ -52,7 +67,7 @@ value   = 1
 [effect_tech_cost_base]
 type    = "Tech_Cost_Factor"
 value   = 1
-  	 
+
 ; Cities can always work tiles
 [effect_tile_workable]
 type    = "Tile_Workable"

@@ -10,6 +10,7 @@ AM_CPPFLAGS = \
 	-I$(srcdir)/networking \
 	-I$(srcdir)/scriptcore \
 	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums \
 	$(MAPIMG_WAND_CFLAGS) $(JANSSON_CFLAGS)
 
 libfreeciv_la_SOURCES = \
@@ -17,6 +18,8 @@ libfreeciv_la_SOURCES = \
 		achievements.h	\
 		actions.c	\
 		actions.h	\
+		actres.c	\
+		actres.h	\
 		ai.c		\
 		ai.h		\
 		base.c		\
@@ -36,6 +39,8 @@ libfreeciv_la_SOURCES = \
 		clientutils.h	\
 		combat.c	\
 		combat.h	\
+		counters.c	\
+		counters.h	\
 		culture.c	\
 		culture.h	\
 		diptreaty.c	\
@@ -46,12 +51,11 @@ libfreeciv_la_SOURCES = \
 		effects.h	\
 		events.c	\
 		events.h	\
+		explanation.h	\
 		extras.c	\
 		extras.h	\
 		featured_text.c	\
 		featured_text.h	\
-		fc_cmdhelp.c	\
-		fc_cmdhelp.h	\
 		fc_interface.c	\
 		fc_interface.h	\
 		fc_types.h	\
@@ -70,6 +74,8 @@ libfreeciv_la_SOURCES = \
 		mapimg.h	\
 		metaknowledge.c \
 		metaknowledge.h \
+		modpack.c	\
+		modpack.h	\
 		movement.c	\
 		movement.h	\
 		multipliers.c   \
@@ -77,6 +83,8 @@ libfreeciv_la_SOURCES = \
 		name_translation.h \
 		nation.c        \
 		nation.h        \
+		oblig_reqs.c	\
+		oblig_reqs.h	\
 		packets_gen.c	\
 		packets_gen.h	\
 		player.c	\
@@ -93,6 +101,8 @@ libfreeciv_la_SOURCES = \
 		road.h		\
 		server_settings.h \
 		server_settings.c \
+		sex.c		\
+		sex.h		\
 		spaceship.c	\
 		spaceship.h	\
 		specialist.c	\
@@ -158,13 +168,26 @@ BUILT_SOURCES = packets_gen.c packets_gen.h
 packets_gen.h packets_gen.c: packets_generate
 .INTERMEDIATE: packets_generate
 packets_generate: networking/packets.def generate_packets.py
-	cd $(srcdir) && ./generate_packets.py
-	touch packets_generate
+	@if ! $(AM_V_P) ; then echo "  $@" ; fi
+	$(AM_V_at) cd $(srcdir) && \
+		./generate_packets.py \
+			networking/packets.def \
+			--common-h packets_gen.h \
+			--common-c packets_gen.c \
+			--client-h ../client/packhand_gen.h \
+			--client-c ../client/packhand_gen.c \
+			--server-h ../server/hand_gen.h \
+			--server-c ../server/hand_gen.c \
+			$(GENERATE_PACKETS_ARGS)
+	$(AM_V_at) touch packets_generate
 
 # These files are not generated to builddir, but to srcdir */
 MAINTAINERCLEANFILES = \
 	$(srcdir)/packets_gen.h \
 	$(srcdir)/packets_gen.c
+
+DISTCLEANFILES = \
+	fc_gitrev_gen.h
 
 if GITREV
 BUILT_SOURCES += fc_gitrev_gen.h
@@ -173,4 +196,6 @@ endif
 .PHONY : fc_gitrev_gen.h
 
 fc_gitrev_gen.h :
-	"$(top_srcdir)/bootstrap/generate_gitrev.sh" "$(top_srcdir)" "$(top_builddir)"
+	@if ! $(AM_V_P) ; then echo "  $@" ; fi
+	$(AM_V_at) "$(top_srcdir)/bootstrap/generate_gitrev.sh" \
+		"$(top_srcdir)" "$(top_builddir)/common/fc_gitrev_gen.h"

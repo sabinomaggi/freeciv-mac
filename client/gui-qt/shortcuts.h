@@ -14,12 +14,12 @@
 #ifndef FC__SHORTCUTSDLG_H
 #define FC__SHORTCUTSDLG_H
 
+// Qt
 #include <QDialog>
 #include <QLineEdit>
 #include <QPushButton>
 
 class QDialogButtonBox;
-class QSignalMapper;
 class QVBoxLayout;
 struct fc_shortcut;
 
@@ -27,8 +27,9 @@ void popup_shortcuts_dialog();
 QString shortcut_to_string(fc_shortcut *sc);
 void write_shortcuts();
 bool read_shortcuts();
+void shortcutreset();
 
-/* Assing numbers for casting */
+// Assign numbers for casting
 enum shortcut_id {
   SC_NONE = 0,
   SC_SCROLL_MAP = 1,
@@ -62,33 +63,39 @@ enum shortcut_id {
   SC_UPGRADE_UNIT = 29,
   SC_SETHOME = 30,
   SC_BUILDMINE = 31,
-  SC_BUILDIRRIGATION = 32,
-  SC_BUILDROAD = 33,
-  SC_BUILDCITY = 34,
-  SC_SENTRY = 35,
-  SC_FORTIFY = 36,
-  SC_GOTO = 37,
-  SC_WAIT = 38,
-  SC_TRANSFORM = 39,
-  SC_NUKE = 40,
-  SC_LOAD = 41,
-  SC_UNLOAD = 42,
-  SC_BUY_MAP = 43,
-  SC_IFACE_LOCK = 44,
-  SC_AUTOMATE = 45,
-  SC_PARADROP = 46,
-  SC_POPUP_COMB_INF = 47,
-  SC_RELOAD_THEME = 48,
-  SC_RELOAD_TILESET = 49,
-  SC_SHOW_FULLBAR = 50,
-  SC_ZOOM_IN = 51,
-  SC_ZOOM_OUT = 52,
-  SC_LOAD_LUA = 53,
-  SC_RELOAD_LUA = 54,
-  SC_ZOOM_RESET = 55,
-  SC_GOBUILDCITY = 56,
-  SC_GOJOINCITY = 57
+  SC_PLANT = 32,
+  SC_BUILDIRRIGATION = 33,
+  SC_CULTIVATE = 34,
+  SC_BUILDROAD = 35,
+  SC_BUILDCITY = 36,
+  SC_SENTRY = 37,
+  SC_FORTIFY = 38,
+  SC_GOTO = 39,
+  SC_WAIT = 40,
+  SC_TRANSFORM = 41,
+  SC_NUKE = 42,
+  SC_BOARD = 43,
+  SC_DEBOARD = 44,
+  SC_BUY_MAP = 45,
+  SC_IFACE_LOCK = 46,
+  SC_AUTOMATE = 47,
+  SC_CLEAN = 48,
+  SC_POPUP_COMB_INF = 49,
+  SC_RELOAD_THEME = 50,
+  SC_RELOAD_TILESET = 51,
+  SC_SHOW_FULLBAR = 52,
+  SC_ZOOM_IN = 53,
+  SC_ZOOM_OUT = 54,
+  SC_LOAD_LUA = 55,
+  SC_RELOAD_LUA = 56,
+  SC_ZOOM_RESET = 57,
+  SC_GOBUILDCITY = 58,
+  SC_GOJOINCITY = 59,
+  SC_STACK_SIZE = 60,
+  SC_PARADROP = 61
 };
+
+#define SC_NUM_SHORTCUTS 61
 
 
 /**************************************************************************
@@ -113,15 +120,17 @@ class fc_shortcuts
 {
   Q_DISABLE_COPY(fc_shortcuts);
   fc_shortcuts();
-  static fc_shortcuts* m_instance;
+  static fc_shortcuts *m_instance;
 
 public:
-  static fc_shortcuts* sc();
+  ~fc_shortcuts();
+  static fc_shortcuts *sc();
+  static bool is_instantiated();
   static void drop();
   static QMap<shortcut_id, fc_shortcut*> hash;
 public:
   static void init_default(bool read);
-  fc_shortcut* get_shortcut(shortcut_id id);
+  fc_shortcut *get_shortcut(shortcut_id id);
   shortcut_id get_id(fc_shortcut *sc);
   void set_shortcut(fc_shortcut *sc);
   QString get_desc(shortcut_id id);
@@ -146,6 +155,7 @@ public:
 **************************************************************************/
 class fc_shortcut_popup : public QDialog
 {
+  Q_OBJECT
 public:
   fc_shortcut_popup(QWidget *parent);
   void run(fc_shortcut *s);
@@ -182,7 +192,6 @@ class fc_shortcuts_dialog : public  QDialog
   Q_OBJECT
   QVBoxLayout *main_layout;
   QVBoxLayout *scroll_layout;
-  QSignalMapper *signal_map;
   QDialogButtonBox *button_box;
   QMap<shortcut_id, fc_shortcut*> *hashcopy;
   void add_option(fc_shortcut *sc);
@@ -196,6 +205,4 @@ private slots:
   void edit_shortcut();
 };
 
-
-
-#endif /* FC__SHORTCUSDLG_H */
+#endif // FC__SHORTCUSDLG_H

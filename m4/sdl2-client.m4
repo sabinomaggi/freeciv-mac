@@ -7,14 +7,7 @@ AC_DEFUN([FC_SDL2_CLIENT],
 [
   if test "x$gui_sdl2" = "xyes" || test "x$client" = "xall" ||
      test "x$client" = "xauto" ; then
-    if test "x$SDL_mixer" = "xsdl" ; then
-      if test "x$gui_sdl2" = "xyes"; then
-        AC_MSG_ERROR([specified client 'sdl2' not configurable (cannot use SDL_mixer with it))])
-      fi
-      sdl2_found=no
-    else
-      AM_PATH_SDL2([2.0.0], [sdl2_found="yes"], [sdl2_found="no"])
-    fi
+    AM_PATH_SDL2([2.0.0], [sdl2_found="yes"], [sdl2_found="no"])
     if test "$sdl2_found" = yes; then
       gui_sdl2_cflags="$SDL2_CFLAGS"
       gui_sdl2_libs="$SDL2_LIBS"
@@ -30,7 +23,10 @@ AC_DEFUN([FC_SDL2_CLIENT],
         missing_2_project="SDL2_ttf"
       fi
       if test "x$sdl2_h_found" = "xyes" ; then
-        PKG_CHECK_MODULES([FT2], [freetype2 >= 2.1.3], [freetype_found="yes"], [freetype_found="no"])
+        dnl Version number here is as specified by libtool, not the main
+        dnl freetype version number.
+        dnl See https://git.savannah.gnu.org/cgit/freetype/freetype2.git/tree/docs/VERSIONS.TXT
+        PKG_CHECK_MODULES([FT2], [freetype2 >= 7.0.1], [freetype_found="yes"], [freetype_found="no"])
         if test "$freetype_found" = yes; then
           gui_sdl2_cflags="$gui_sdl2_cflags $FT2_CFLAGS"
           gui_sdl2_libs="$gui_sdl2_libs $FT2_LIBS"
@@ -69,6 +65,10 @@ AC_DEFUN([FC_SDL2_CLIENT],
       AC_CHECK_LIB(socket, connect, gui_sdl2_libs="-lsocket $gui_sdl2_libs")
       AC_CHECK_LIB(bind, gethostbyaddr, gui_sdl2_libs="-lbind $gui_sdl2_libs")
 
+      dnl Control -mwindows flag ourselves instead of letting pkg-config to force
+      dnl it on us.
+      gui_sdl2_libs="$(echo $gui_sdl2_libs | $SED 's/-mwindows//g') $MWINDOWS_FLAG"
+
     elif test "x$gui_sdl2" = "xyes"; then
       AC_MSG_ERROR([specified client 'sdl2' not configurable (SDL2 >= 2.0.0 is needed (www.libsdl.org))])
     fi
@@ -82,7 +82,7 @@ AC_DEFUN([FC_SDL2_PROJECT],
   ac_save_LIBS="$LIBS"
   CPPFLAGS="$CPPFLAGS $SDL2_CFLAGS"
   CFLAGS="$CFLAGS $SDL2_CFLAGS"
-  LIBS="$LIBS $SDL2_LIBS"
+  LIBS="$LIBS $SDL2_LIBS -lm"
   AC_CHECK_LIB([$1], [$2],
                [sdl2_lib_found="yes"], [sdl2_lib_found="no"
 sdl2_h_found="no"])

@@ -17,6 +17,7 @@ pkgdata_DATA = \
 		akwe.ruleset \
 		alandalus.ruleset \
 		alander.ruleset \
+		alaskan.ruleset \
 		albanian.ruleset \
 		aleut.ruleset \
 		algerian.ruleset \
@@ -125,6 +126,7 @@ pkgdata_DATA = \
 		colombian.ruleset \
 		comanche.ruleset \
 		comorian.ruleset \
+		conch.ruleset \
 		confederate.ruleset \
 		congolese.ruleset \
 		congolesebrazzaville.ruleset \
@@ -145,12 +147,14 @@ pkgdata_DATA = \
 		czech.ruleset \
 		czechoslovak.ruleset \
 		dacian.ruleset \
+		dagestan.ruleset \
 		dahomean.ruleset \
 		danish.ruleset \
 		darfuri.ruleset \
 		djiboutian.ruleset \
 		dominican.ruleset \
 		dominicano.ruleset \
+		donetsk.ruleset \
 		dryad.ruleset \
 		dutch.ruleset \
 		eastgerman.ruleset \
@@ -176,6 +180,7 @@ pkgdata_DATA = \
 		finnish.ruleset \
 		flemish.ruleset \
 		florentine.ruleset \
+		florida.ruleset \
 		formosan.ruleset \
 		franconian.ruleset \
 		frankish.ruleset \
@@ -289,12 +294,15 @@ pkgdata_DATA = \
 		liburnian.ruleset \
 		libyan.ruleset \
 		liechtensteiner.ruleset \
+		liege.ruleset \
 		ligurian.ruleset \
 		lippe.ruleset \
 		lipkatatar.ruleset \
 		lithuanian.ruleset \
 		lojbanistani.ruleset \
 		lorrain.ruleset \
+		louisianian.ruleset \
+		luhansk.ruleset \
 		luwian.ruleset \
 		luxembourgish.ruleset \
 		lycian.ruleset \
@@ -330,6 +338,7 @@ pkgdata_DATA = \
 		micronesian.ruleset \
 		mikmaq.ruleset \
 		milanese.ruleset \
+		minnesotan.ruleset \
 		miskito.ruleset \
 		mitanni.ruleset \
 		mixtec.ruleset \
@@ -361,6 +370,7 @@ pkgdata_DATA = \
 		nigerien.ruleset \
 		nimiipuu.ruleset \
 		norman.ruleset \
+		northirish.ruleset \
 		northkorean.ruleset \
 		northumbrian.ruleset \
 		norwegian.ruleset \
@@ -381,6 +391,7 @@ pkgdata_DATA = \
 		paeonian.ruleset \
 		pakistani.ruleset \
 		palatinate.ruleset \
+		palauan.ruleset \
 		palestinian.ruleset \
 		palmyrene.ruleset \
 		panamanian.ruleset \
@@ -401,6 +412,7 @@ pkgdata_DATA = \
 		polynesian.ruleset \
 		pontic.ruleset \
 		portuguese.ruleset \
+		poyaisian.ruleset \
 		prussian.ruleset \
 		puertorican.ruleset \
 		purhepecha.ruleset \
@@ -505,6 +517,7 @@ pkgdata_DATA = \
 		timurid.ruleset \
 		tocharian.ruleset \
 		togolese.ruleset \
+		tokiponan.ruleset \
 		toltec.ruleset \
 		tongan.ruleset \
 		transnistrian.ruleset \
@@ -517,6 +530,7 @@ pkgdata_DATA = \
 		turkmen.ruleset \
 		turk.ruleset \
 		turkishcypriot.ruleset \
+		tuvaluan.ruleset \
 		tuvan.ruleset \
 		tyrolian.ruleset \
 		ugandan.ruleset \
@@ -563,7 +577,7 @@ pkgdata_DATA = \
 		zapotec.ruleset \
 		zhuang.ruleset \
 		zimbabwean.ruleset \
-		zulu.ruleset 
+		zulu.ruleset
 
 EXTRA_DIST = $(pkgdata_DATA) Makefile.am.sh
 

@@ -36,13 +36,13 @@ typedef int Tech_type_id;
   use Tech_type_id very widely, and don't use (-1) flag values. (?)
 */
 /* [more accurately]
- * Unlike most other indices, the Tech_type_id is widely used, because it 
- * so frequently passed to packet and scripting.  The client menu routines 
- * sometimes add and substract these numbers.
+ * Unlike most other indices, the Tech_type_id is widely used, because it
+ * so frequently passed to packet and scripting. The client menu routines
+ * sometimes add and subtract these numbers.
  */
 #define A_NONE 0
 #define A_FIRST 1
-#define A_LAST MAX_NUM_ITEMS /* Used in the network protocol. */
+#define A_LAST (MAX_NUM_ADVANCES + 1) /* Used in the network protocol. */
 #define A_FUTURE (A_LAST + 1)
 #define A_ARRAY_SIZE (A_FUTURE + 1)
 #define A_UNSET (A_LAST + 2)
@@ -84,26 +84,23 @@ typedef int Tech_type_id;
 /* Player can build air units */
 #define SPECENUM_VALUE2 TF_BUILD_AIRBORNE
 #define SPECENUM_VALUE2NAME N_("Build_Airborne")
-/* Player can claim ocean tiles non-adjacent to border source */ 
-#define SPECENUM_VALUE3 TF_CLAIM_OCEAN
-#define SPECENUM_VALUE3NAME N_("Claim_Ocean")
-/* Player can claim ocean tiles non-adjacent to border source as long
- * as source is ocean tile */
-#define SPECENUM_VALUE4 TF_CLAIM_OCEAN_LIMITED
-#define SPECENUM_VALUE4NAME N_("Claim_Ocean_Limited")
-#define SPECENUM_VALUE5 TECH_USER_1
-#define SPECENUM_VALUE6 TECH_USER_2
-#define SPECENUM_VALUE7 TECH_USER_3
-#define SPECENUM_VALUE8 TECH_USER_4
-#define SPECENUM_VALUE9 TECH_USER_5
-#define SPECENUM_VALUE10 TECH_USER_6
-#define SPECENUM_VALUE11 TECH_USER_7
-#define SPECENUM_VALUE12 TECH_USER_LAST
+#define SPECENUM_VALUE3 TECH_USER_1
+#define SPECENUM_VALUE4 TECH_USER_2
+#define SPECENUM_VALUE5 TECH_USER_3
+#define SPECENUM_VALUE6 TECH_USER_4
+#define SPECENUM_VALUE7 TECH_USER_5
+#define SPECENUM_VALUE8 TECH_USER_6
+#define SPECENUM_VALUE9 TECH_USER_7
+#define SPECENUM_VALUE10 TECH_USER_8
+#define SPECENUM_VALUE11 TECH_USER_9
+#define SPECENUM_VALUE12 TECH_USER_10
 /* Keep this last. */
 #define SPECENUM_COUNT TF_COUNT
 #define SPECENUM_BITVECTOR bv_tech_flags
 #define SPECENUM_NAMEOVERRIDE
 #include "specenum_gen.h"
+
+#define TECH_USER_LAST TECH_USER_10
 
 #define MAX_NUM_USER_TECH_FLAGS (TECH_USER_LAST - TECH_USER_1 + 1)
 
@@ -117,18 +114,20 @@ enum tech_req {
 struct tech_class {
   int idx;
   struct name_translation name;
-  bool disabled;
+  bool ruledit_disabled;
   int cost_pct;
 };
 
 struct advance {
   Tech_type_id item_number;
   struct name_translation name;
-  char graphic_str[MAX_LEN_NAME];	/* which named sprite to use */
-  char graphic_alt[MAX_LEN_NAME];	/* alternate icon name */
+  void *ruledit_dlg;
+  char graphic_str[MAX_LEN_NAME];       /* Which named sprite to use */
+  char graphic_alt[MAX_LEN_NAME];       /* Alternate icon name */
   struct tech_class *tclass;
 
   struct advance *require[AR_SIZE];
+  bool inherited_root_req;
 
   /* Required to start researching this tech. For shared research it must
    * be fulfilled for at least one player that shares the research. */
@@ -137,8 +136,8 @@ struct advance {
   bv_tech_flags flags;
   struct strvec *helptext;
 
-  /* 
-   * Message displayed to the first player to get a bonus tech 
+  /*
+   * Message displayed to the first player to get a bonus tech
    */
   char *bonus_message;
 
@@ -147,17 +146,31 @@ struct advance {
    * be right if game.info.tech_cost_style is TECH_COST_CIV1CIV2. */
   double cost;
 
-  /* 
+  /*
    * Number of requirements this technology has _including_
    * itself. Precalculated at server then send to client.
    */
   int num_reqs;
 };
 
-BV_DEFINE(bv_techs, A_LAST);
+BV_DEFINE(bv_techs, A_ARRAY_SIZE);
 
 /* General advance/technology accessor functions. */
-Tech_type_id advance_count(void);
+Tech_type_id advance_count_real(void);
+
+/**********************************************************************//**
+  Inline wrapper for advance_count_real() that makes it clear to
+  the compiler that the value returned never exceeds A_LAST.
+  Making actual advance_count_real() inline would be more
+  complicated due to header interdependencies.
+**************************************************************************/
+static inline Tech_type_id advance_count(void)
+{
+  Tech_type_id rc = advance_count_real();
+
+  return MIN(rc, A_LAST);
+}
+
 Tech_type_id advance_index(const struct advance *padvance);
 Tech_type_id advance_number(const struct advance *padvance);
 
@@ -189,11 +202,11 @@ struct tech_class *tech_class_by_rule_name(const char *name);
   }                                               \
 }
 
-#define tech_class_active_iterate(_p)                                  \
+#define tech_class_re_active_iterate(_p)                               \
   tech_class_iterate(_p) {                                             \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define tech_class_active_iterate_end                                  \
+#define tech_class_re_active_iterate_end                               \
     }                                                                  \
   } tech_class_iterate_end;
 
@@ -214,6 +227,7 @@ struct advance *advance_requires(const struct advance *padvance,
 bool techs_have_fixed_costs(void);
 
 bool is_future_tech(Tech_type_id tech);
+bool is_regular_advance(struct advance *padvance);
 
 /* Initialization */
 void techs_init(void);
@@ -223,40 +237,57 @@ void techs_precalc_data(void);
 
 /* Iteration */
 
-/* This iterates over almost all technologies.  It includes non-existent
+/* This iterates over almost all technologies. It includes non-existent
  * technologies, but not A_FUTURE. */
-#define advance_index_iterate(_start, _index)				\
-{									\
-  Tech_type_id _index = (_start);					\
-  for (; _index < advance_count(); _index++) {
+#define advance_index_iterate(_start, _index)                           \
+{                                                                       \
+  advance_index_iterate_max(_start, _index, advance_count())
 
-#define advance_index_iterate_end					\
-  }									\
+#define advance_index_iterate_end                                       \
+  advance_index_iterate_max_end                                         \
+}
+
+#define advance_index_iterate_max(_start, _index, _max)                 \
+{                                                                       \
+  Tech_type_id _index = (_start);                                       \
+  Tech_type_id _aco_##_index = (_max);                                  \
+  for (; _index < _aco_##_index; _index++) {
+
+#define advance_index_iterate_max_end                                   \
+  }                                                                     \
 }
 
 const struct advance *advance_array_last(void);
 
-#define advance_iterate(_start, _p)					\
-{									\
-  struct advance *_p = advance_by_number(_start);			\
-  if (NULL != _p) {							\
+#define advance_iterate_base(_start, _p)                                \
+{                                                                       \
+  struct advance *_p = advance_by_number(_start);                       \
+  if (NULL != _p) {                                                     \
     for (; _p <= advance_array_last(); _p++) {
 
-#define advance_iterate_end						\
-    }									\
-  }									\
+#define advance_iterate_base_end                                        \
+    }                                                                   \
+  }                                                                     \
 }
 
-#define advance_active_iterate(_p)                                      \
-  advance_iterate(A_FIRST, _p) {                                         \
+#define advance_iterate(_p) advance_iterate_base(A_FIRST, _p)
+#define advance_iterate_end advance_iterate_base_end
+
+#define advance_iterate_all(_p) advance_iterate_base(A_NONE, _p)
+#define advance_iterate_all_end advance_iterate_base_end
+
+#define advance_re_active_iterate(_p)                                    \
+  advance_iterate(_p) {                                                  \
     if (_p->require[AR_ONE] != A_NEVER) {
 
-#define advance_active_iterate_end                                      \
+#define advance_re_active_iterate_end                                   \
     }                                                                   \
   } advance_iterate_end;
 
 
-/* Advance requirements iterator. */
+/* Advance requirements iterator.
+ * Iterates over 'goal' and all its requirements (including root_reqs),
+ * recursively. */
 struct advance_req_iter;
 
 size_t advance_req_iter_sizeof(void);
@@ -269,8 +300,24 @@ struct iterator *advance_req_iter_init(struct advance_req_iter *it,
                   _goal)
 #define advance_req_iterate_end generic_iterate_end
 
+/* Iterates over all the root requirements of 'goal'.
+ * (Not including 'goal' itself, unless it is the special case of a
+ * self-root-req technology.) */
+struct advance_root_req_iter;
+
+size_t advance_root_req_iter_sizeof(void);
+struct iterator *advance_root_req_iter_init(struct advance_root_req_iter *it,
+                                            const struct advance *goal);
+
+#define advance_root_req_iterate(_goal, _padvance)                          \
+  generic_iterate(struct advance_root_req_iter, const struct advance *,     \
+                  _padvance, advance_root_req_iter_sizeof,                  \
+                  advance_root_req_iter_init,                               \
+                  _goal)
+#define advance_root_req_iterate_end generic_iterate_end
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__TECH_H */
+#endif /* FC__TECH_H */

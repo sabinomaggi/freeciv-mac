@@ -278,7 +278,7 @@ static void multiplier_dialog_update_values(bool set_positions)
     gtk_scale_add_mark(GTK_SCALE(multipliers_scale[multiplier]),
                        mult_to_scale(pmul, val), GTK_POS_BOTTOM,
                        /* TRANS: current value of policy in force */
-                       Q_("?multiplier:Cur"));
+                       Q_("?multiplier:Now"));
 
     if (set_positions) {
       gtk_range_set_value(GTK_RANGE(multipliers_scale[multiplier]),
@@ -290,7 +290,7 @@ static void multiplier_dialog_update_values(bool set_positions)
 /**********************************************************************//**
   Callback when server indicates multiplier values have changed
 **************************************************************************/
-void real_multipliers_dialog_update(void)
+void real_multipliers_dialog_update(void *unused)
 {
   if (!multiplier_dialog_shell) {
     return;
@@ -314,16 +314,16 @@ static GtkWidget *create_multiplier_dialog(void)
     shell = gtk_dialog_new_with_buttons(_("Change policies"),
                                         NULL,
                                         0,
-                                        _("Cancel"),
+                                        _("_Cancel"),
                                         GTK_RESPONSE_CANCEL,
-                                        _("OK"),
+                                        _("_OK"),
                                         GTK_RESPONSE_OK,
                                         NULL);
   } else {
     shell = gtk_dialog_new_with_buttons(_("Policies"),
                                         NULL,
                                         0,
-                                        _("Close"),
+                                        _("_Close"),
                                         GTK_RESPONSE_CLOSE,
                                         NULL);
   }
@@ -339,6 +339,7 @@ static GtkWidget *create_multiplier_dialog(void)
 
   multipliers_iterate(pmul) {
     Multiplier_type_id multiplier = multiplier_index(pmul);
+    int mscale;
 
     fc_assert(multiplier < ARRAY_SIZE(multipliers_scale));
     label = gtk_label_new(multiplier_name_translation(pmul));
@@ -348,8 +349,9 @@ static GtkWidget *create_multiplier_dialog(void)
                                      mult_to_scale(pmul, pmul->start),
                                      mult_to_scale(pmul, pmul->stop), 1);
     multipliers_scale[multiplier] = scale;
+    mscale = mult_to_scale(pmul, pmul->stop) / 10;
     gtk_range_set_increments(GTK_RANGE(multipliers_scale[multiplier]),
-                             1, MAX(2, mult_to_scale(pmul, pmul->stop) / 10));
+                             1, MAX(2, mscale));
     g_signal_connect(multipliers_scale[multiplier], "format-value",
                      G_CALLBACK(multiplier_value_callback), pmul);
     g_signal_connect(multipliers_scale[multiplier], "destroy",
@@ -407,9 +409,9 @@ static GtkWidget *create_rates_dialog(void)
   shell = gtk_dialog_new_with_buttons(_("Select tax, luxury and science rates"),
                                       NULL,
                                       0,
-                                      _("Cancel"),
+                                      _("_Cancel"),
                                       GTK_RESPONSE_CANCEL,
-                                      _("OK"),
+                                      _("_OK"),
                                       GTK_RESPONSE_OK,
                                       NULL);
   setup_dialog(shell, toplevel);
@@ -503,9 +505,9 @@ static GtkWidget *create_rates_dialog(void)
 
   gtk_widget_show_all(shell);
 
-  rates_tax_value=-1;
-  rates_lux_value=-1;
-  rates_sci_value=-1;
+  rates_tax_value = -1;
+  rates_lux_value = -1;
+  rates_sci_value = -1;
 
   rates_tax_sig =
     g_signal_connect_after(rates_tax_scale, "value-changed",

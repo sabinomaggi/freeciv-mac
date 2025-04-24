@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -51,6 +51,7 @@ tiles = { "row", "column", "tag"
   1,  3,  "e_treaty_ceasefire"
   1,  4,  "e_treaty_broken"
   1,  5,  "e_treaty_embassy"
+  1,  0,  "e_treaty_shared_tiles"
 
   1,  6, "e_imp_buy"
   1,  7, "e_imp_build"
@@ -73,18 +74,21 @@ tiles = { "row", "column", "tag"
   2,  5, "e_hut_settler"
   2,  6, "e_hut_tech"
   2,  7, "e_hut_barb_city_near"
+  4, 10, "e_hut_map"
 
   2,  8, "e_tech_gain"
   2,  9, "e_tech_learned"
   2, 10, "e_tech_lost"
   2, 11, "e_tech_embassy"
   2, 11, "e_tech_goal"
- 
+
   3,  0,  "e_unit_lost_att"
-  3,  1,  "e_unit_win_att"
+  3,  1,  "e_unit_win_att", "e_city_conquered"
+  3,  1,  "e_unit_action_actor_success"
   3,  2,  "e_unit_buy"
   3,  3,  "e_unit_built"
   3,  4,  "e_unit_lost_def"
+  3,  4,  "e_unit_action_target_hostile"
   3,  5,  "e_unit_lost_misc"
   3,  6,  "e_unit_became_vet"
   3,  7,  "e_unit_upgraded"
@@ -99,6 +103,8 @@ tiles = { "row", "column", "tag"
   3, 16,  "e_unit_action_failed"
   3, 17,  "e_my_unit_did_heal"
   3, 18,  "e_my_unit_was_healed"
+  3, 19,  "e_unit_action_target_other"
+  3, 20,  "e_unit_action_actor_failure"
 
   4,  0, "e_my_diplomat_escape" ; base sprite for my diplomats
   4,  1, "e_my_diplomat_bribe"
@@ -140,6 +146,8 @@ tiles = { "row", "column", "tag"
   6,  4, "e_setting"
   6,  4, "e_message_wall"
   6,  4, "e_connection"
+  6,  4, "e_multiplier"
+  6,  4, "e_infrapoints"
   6,  5, "e_destroyed"
   6,  6, "e_low_on_funds"
   6,  7, "e_pollution" ; copy from small.png

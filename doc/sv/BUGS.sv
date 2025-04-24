@@ -15,9 +15,9 @@ Så här gör man:
 
 - Ser efter att det inte är en känd bugg! Se listan vid:
 
-        http://www.freeciv.org/wiki/Known_Bugs
+        https://www.freeciv.org/wiki/Known_Bugs
 
-- Tittar på <http://www.freeciv.org> och försäkrar sig om att man har
+- Tittar på <https://www.freeciv.org> och försäkrar sig om att man har
   den nyaste versionen. (Vi kanske redan har rättat felet.)
 
 - Tittar på Freecivs system för spårning av buggar vid:
@@ -30,7 +30,7 @@ Så här gör man:
 
    Om du får några GDK/GTK-meddelanden, som t.ex.:
 
-     Gtk-CRITICAL **: file gtkobject.c: line 1163 (gtk_object_ref): 
+     Gtk-CRITICAL **: file gtkobject.c: line 1163 (gtk_object_ref):
      assertion oject->ref_count > 0' failed.
 
    v.g. starta om din klient och lägg till "-- --g-fatal-warnings" vid
@@ -83,4 +83,4 @@ YTTERLIGARE INFORMATION:
 
 Freecivs webbplats tillhandahåller mycket mer material:
 
-        http://www.freeciv.org/
+        https://www.freeciv.org/

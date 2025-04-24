@@ -28,14 +28,14 @@
 static const char **gfx_array_extensions = nullptr;
 
 /************************************************************************//**
-  Return a NULL-terminated, permanently allocated array of possible
+  Return a nullptr-terminated, permanently allocated array of possible
   graphics types extensions.  Extensions listed first will be checked
   first.
 ****************************************************************************/
 const char **gfx_fileextensions(void)
 {
   QList<QByteArray> gfx_ext;
-  QByteArray cp;
+  QList<QByteArray>::iterator iter;
   int j = 0;
 
   if (gfx_array_extensions != nullptr) {
@@ -44,29 +44,38 @@ const char **gfx_fileextensions(void)
 
   gfx_ext = QImageReader::supportedImageFormats();
 
-  gfx_array_extensions = new const char *[gfx_ext.count()];
-  while (gfx_ext.isEmpty() == false) {
+  gfx_array_extensions = new const char *[gfx_ext.count() + 1];
+  for (iter = gfx_ext.begin(); iter != gfx_ext.end(); iter++) {
     char *ext;
-    cp = gfx_ext.takeFirst();
-    ext = static_cast<char *>(fc_malloc(sizeof(cp.data())));
-    strncpy(ext, cp.data(), sizeof(cp));
+    int extlen = iter->size() + 1;
+
+    ext = static_cast<char *>(fc_malloc(extlen));
+    strncpy(ext, iter->data(), extlen);
     gfx_array_extensions[j] = ext;
     j++;
   }
+  gfx_array_extensions[j] = nullptr;
 
   return gfx_array_extensions;
 }
 
 /************************************************************************//**
-  Load the given graphics file into a sprite.  This function loads an
+  Load the given graphics file into a sprite. This function loads an
   entire image file, which may later be broken up into individual sprites
-  with crop_sprite.
+  with crop_sprite().
 ****************************************************************************/
-struct sprite *qtg_load_gfxfile(const char *filename)
+struct sprite *qtg_load_gfxfile(const char *filename, bool svgflag)
 {
   sprite *entire = new sprite;
+  QPixmap *pm = new QPixmap;
 
-  entire->pm = new QPixmap(filename);
+  if (QPixmapCache::find(QString(filename), pm)) {
+    entire->pm = pm;
+    return entire;
+  }
+  pm->load(QString(filename));
+  entire->pm = pm;
+  QPixmapCache::insert(QString(filename), *pm);
 
   return entire;
 }
@@ -106,10 +115,10 @@ struct sprite *qtg_crop_sprite(struct sprite *source,
   int heightzoom;
   int hex = 0;
 
-  fc_assert_ret_val(source, NULL);
+  fc_assert_ret_val(source, nullptr);
 
   if (!width || !height) {
-    return NULL;
+    return nullptr;
   }
   if (scale != 1.0f && (tileset_hex_height(tileset) > 0
       || tileset_hex_width(tileset) > 0)) {
@@ -178,4 +187,95 @@ struct sprite *qtg_create_sprite(int width, int height, struct color *pcolor)
   created->pm->fill(pcolor->qcolor);
 
   return created;
+}
+
+/************************************************************************//**
+  Creates a sprite with the number in it.
+****************************************************************************/
+struct sprite *qtg_load_gfxnumber(int num)
+{
+  struct sprite *spr = new sprite;
+  QString ns;
+  int w, h;
+  QPixmap *pm;
+  // FIXME: This should not depend on city_productions font setting
+  QFont *qf = fc_font::instance()->get_font(fonts::city_productions);
+
+  if (gui()->map_scale != 1.0f && gui()->map_font_scale) {
+    int ssize = ceil(gui()->map_scale * fc_font::instance()->prod_fontsize);
+
+    if (qf->pointSize() != ssize) {
+      qf->setPointSize(ssize);
+    }
+  }
+
+  QFontMetrics fm(*qf);
+
+  if (num > 20) {
+    ns = QString::number(num);
+  } else {
+#ifdef __cpp_char8_t
+    const char8_t
+#else
+    const char
+#endif
+        *numsbuf[21] = {
+      u8"\0xF0\0x9F\0x84\0x8C",
+      u8"\u278A",
+      u8"\u278B",
+      u8"\u278C",
+      u8"\u278D",
+      u8"\u278E",
+      u8"\u278F",
+      u8"\u2790",
+      u8"\u2791",
+      u8"\u2792",
+      u8"\u2793",
+      u8"\u24EB",
+      u8"\u24EC",
+      u8"\u24ED",
+      u8"\u24EE",
+      u8"\u24EF",
+      u8"\u24F0",
+      u8"\u24F1",
+      u8"\u24F2",
+      u8"\u24F3",
+      u8"\u24F4"
+    };
+
+    ns = QString(numsbuf[num]);
+  }
+
+  w = fm.horizontalAdvance(ns);
+  h = fm.height();
+  pm = new QPixmap(w, h);
+  pm->fill(Qt::transparent);
+
+  QPainter paint(pm);
+
+  paint.setFont(*qf);
+  paint.setBrush(Qt::transparent);
+  paint.setPen(QColor(Qt::black));
+  paint.drawText(QRect(0, 0, w, h), Qt::AlignLeft | Qt::AlignVCenter,
+                 QString(u8"\u26AB"));
+
+  if (num > 20) {
+    paint.setPen(QColor(Qt::yellow));
+    paint.drawText(QRect(-2, 0, w, h), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString(u8"\u2B24"));
+    paint.drawText(QRect(4, -2, w, h), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString(u8"\u2B24"));
+    paint.drawText(QRect(4, 2, w, h), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString(u8"\u2B24"));
+    paint.drawText(QRect(8, 0, w, h), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString(u8"\u2B24"));
+  }
+
+  paint.setPen(QColor((num > 20) ? Qt::black : Qt::yellow));
+  paint.drawText(QRect(0, 0, w, h), Qt::AlignLeft | Qt::AlignVCenter, ns);
+  paint.end();
+
+  spr->pm = pm;
+
+  return spr;
 }

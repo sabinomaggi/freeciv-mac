@@ -4,6 +4,7 @@
 pkgdatadir = $(datadir)/$(PACKAGE)/sandbox
 
 pkgdata_DATA =          \
+	actions.ruleset	\
 	buildings.ruleset \
 	cities.ruleset	\
 	effects.ruleset	\
@@ -12,6 +13,7 @@ pkgdata_DATA =          \
 	styles.ruleset	\
 	game.ruleset	\
 	governments.ruleset \
+	luadata.txt	\
 	nations.ruleset	\
 	techs.ruleset	\
 	terrain.ruleset	\

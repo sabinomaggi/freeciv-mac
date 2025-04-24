@@ -31,51 +31,52 @@ extern "C" {
 
 class QLabel;
 class QPushButton;
-class QSignalMapper;
 class QScrollArea;
 struct fc_shortcut;
 
-void qt_start_turn();
-
-/** used for indicating menu about current option - for renaming
+/** Used for indicating menu about current option - for renaming
  * and enabling, disabling */
 enum munit {
   STANDARD,
   EXPLORE,
-  LOAD,
-  UNLOAD,
+  BOARD,
+  DEBOARD,
   TRANSPORTER,
   DISBAND,
   CONVERT,
   MINE,
+  PLANT,
   IRRIGATION,
+  CULTIVATE,
   TRANSFORM,
+  PARADROP,
   PILLAGE,
   BUILD,
   ROAD,
   FORTIFY,
   FORTRESS,
   AIRBASE,
-  POLLUTION,
-  FALLOUT,
+  CLEAN,
   SENTRY,
   HOMECITY,
   WAKEUP,
-  AUTOSETTLER,
+  AUTOWORKER,
   CONNECT_ROAD,
   CONNECT_RAIL,
+  CONNECT_MAGLEV,
   CONNECT_IRRIGATION,
   GOTO_CITY,
   AIRLIFT,
   BUILD_WONDER,
   AUTOTRADEROUTE,
-  ORDER_TRADEROUTE,
+  ORDER_TRADE_ROUTE,
   ORDER_DIPLOMAT_DLG,
   UPGRADE,
   NOT_4_OBS,
   MULTIPLIERS,
   ENDGAME,
-  SAVE
+  SAVE,
+  TOP_CITIES
 };
 
 enum delay_order{
@@ -83,15 +84,6 @@ enum delay_order{
   D_NUKE,
   D_PARADROP,
   D_FORT
-};
-
-/**************************************************************************
-  Struct holding rally point for city
-**************************************************************************/
-struct qfc_rally
-{
-  struct city *pcity;
-  struct tile *ptile;
 };
 
 /**************************************************************************
@@ -104,10 +96,6 @@ public:
     hover_tile = false;
     hover_city = false;
   };
-  void add(qfc_rally* rally);
-  bool clear(struct city *rcity);
-  QList<qfc_rally*> rally_list;
-  void run();
   bool hover_tile;
   bool hover_city;
   struct city *rally_city;
@@ -155,7 +143,7 @@ public:
   bool done;
   int over_max;
   int poss_trade_num;
-  int trade_num; // already created + generated
+  unsigned trade_num; // already created + generated
   QList<struct city *> curr_tr_cities;
   QList<struct city *> new_tr_cities;
   QList<struct city *> pos_cities;
@@ -180,8 +168,8 @@ struct qtiles
   }
 };
 
-/**************************************************************************
-  Class trade generator, used for calulating possible trade routes
+/***************************************************************************
+  Class trade generator, used for calculating possible trade routes
 ***************************************************************************/
 class trade_generator
 {
@@ -205,11 +193,13 @@ private:
   bool discard_any(trade_city *tc, int freeroutes);
   bool discard_one(trade_city *tc);
   int find_over_max(struct city *pcity);
-  trade_city* find_most_free();
+  trade_city *find_most_free();
   void check_if_done(trade_city *tc1, trade_city *tc2);
   void discard();
   void discard_trade(trade_city *tc1, trade_city *tc2);
   void find_certain_routes();
+  void find_certain_routes_inner(trade_city *tc);
+  void calculate_inner(trade_city *tc);
 };
 
 
@@ -221,7 +211,6 @@ class gov_menu : public QMenu
   Q_OBJECT
   static QSet<gov_menu *> instances;
 
-  QSignalMapper *gov_mapper;
   QVector<QAction *> actions;
 
 public:
@@ -247,18 +236,17 @@ class go_act_menu : public QMenu
   Q_OBJECT
   static QSet<go_act_menu *> instances;
 
-  QSignalMapper *go_act_mapper;
   QMap<QAction *, int> items;
 
 public:
-  go_act_menu(QWidget* parent = 0);
+  go_act_menu(QWidget *parent = nullptr);
   virtual ~go_act_menu();
 
   static void reset_all();
   static void update_all();
 
 public slots:
-  void start_go_act(int action_id);
+  void start_go_act(int act_id, int sub_tgt_id);
 
   void reset();
   void create();
@@ -271,26 +259,30 @@ public slots:
 class mr_menu : public QMenuBar
 {
   Q_OBJECT
-  QMenu *menu;
   QMenu *airlift_menu;
+  QMenu *bases_menu;
   QMenu *multiplayer_menu;
+  QMenu *roads_menu;
   QActionGroup *airlift_type;
   QActionGroup *action_vs_city;
   QActionGroup *action_vs_unit;
   QMenu *action_unit_menu;
   QMenu *action_city_menu;
-  QHash<munit, QAction*> menu_list;
+  QMultiHash<munit, QAction*> menu_list;
   qfc_units_list units_list;
 public:
   mr_menu();
   void setup_menus();
   void menus_sensitive();
   void update_airlift_menu();
+  void update_roads_menu();
+  void update_bases_menu();
   void set_tile_for_order(struct tile *ptile);
   void execute_shortcut(int sid);
   QString shortcut_exist(fc_shortcut *fcs);
   QString shortcut_2_menustring(int sid);
   QAction *minimap_status;
+  QAction *scale_fonts_status;
   QAction *lock_status;
   QAction *osd_status;
   QAction *btlog_status;
@@ -300,7 +292,7 @@ public:
   bool quick_airlifting;
   Unit_type_id airlift_type_id;
 private slots:
-  /* game menu */
+  // Game menu
   void local_options();
   void shortcut_options();
   void server_options();
@@ -312,25 +304,30 @@ private slots:
   void tileset_custom_load();
   void load_new_tileset();
   void back_to_menu();
+  bool confirm_disruptive_selection();
   void quit_game();
 
-  /* help menu */
+  // Help menu
   void slot_help(const QString &topic);
 
-  /*used by work menu*/
+  // Used by work menu
+  void slot_build_path(int id);
+  void slot_build_base(int id);
   void slot_build_city();
-  void slot_auto_settler();
+  void slot_auto_worker();
   void slot_build_road();
   void slot_build_irrigation();
+  void slot_cultivate();
   void slot_build_mine();
+  void slot_plant();
   void slot_conn_road();
   void slot_conn_rail();
+  void slot_conn_maglev();
   void slot_conn_irrigation();
   void slot_transform();
-  void slot_clean_pollution();
-  void slot_clean_fallout();
+  void slot_clean();
 
-  /*used by unit menu */
+  // Used by unit menu
   void slot_unit_sentry();
   void slot_unit_explore();
   void slot_unit_goto();
@@ -338,22 +335,23 @@ private slots:
   void slot_return_to_city();
   void slot_patrol();
   void slot_unsentry();
-  void slot_load();
-  void slot_unload();
+  void slot_board();
+  void slot_deboard();
   void slot_unload_all();
   void slot_set_home();
   void slot_upgrade();
   void slot_convert();
   void slot_disband();
 
-  /*used by combat menu*/
+  // Used by combat menu
   void slot_unit_fortify();
   void slot_unit_fortress();
   void slot_unit_airbase();
+  void slot_paradrop();
   void slot_pillage();
   void slot_action();
 
-  /*used by view menu*/
+  // Used by view menu
   void slot_center_view();
   void slot_minimap_view();
   void slot_show_new_turn_text();
@@ -369,13 +367,15 @@ private slots:
   void slot_city_growth();
   void slot_city_production();
   void slot_city_buycost();
-  void slot_city_traderoutes();
+  void slot_city_trade_routes();
+  void slot_stack_size();
   void slot_city_names();
   void zoom_in();
+  void zoom_scale_fonts();
   void zoom_reset();
   void zoom_out();
 
-  /*used by select menu */
+  // Used by select menu
   void slot_select_one();
   void slot_select_all_tile();
   void slot_select_same_tile();
@@ -385,7 +385,7 @@ private slots:
   void slot_wait();
   void slot_unit_filter();
 
-  /* used by multiplayer menu */
+  // Used by multiplayer menu
   void slot_orders_clear();
   void slot_execute_orders();
   void slot_delayed_goto();
@@ -400,7 +400,7 @@ private slots:
   void slot_action_vs_unit();
   void slot_action_vs_city();
 
-  /*used by civilization menu */
+  // Used by civilization menu
   void slot_show_map();
   void calc_trade_routes();
   void slot_popup_tax_rates();
@@ -414,12 +414,28 @@ private slots:
   void slot_demographics();
   void slot_achievements();
   void slot_endgame();
-  void slot_top_five();
+  void slot_top_cities();
   void slot_traveler();
+  void slot_bg1select();
+  void slot_bg1assign();
+  void slot_bg1append();
+  void slot_bg2select();
+  void slot_bg2assign();
+  void slot_bg2append();
+  void slot_bg3select();
+  void slot_bg3assign();
+  void slot_bg3append();
+  void slot_bg4select();
+  void slot_bg4assign();
+  void slot_bg4append();
 
 private:
-  struct tile* find_last_unit_pos(struct unit* punit, int pos);
-  QSignalMapper *signal_help_mapper;
+  struct tile *find_last_unit_pos(struct unit *punit, int pos);
+  bool execute_shortcut_inner(const QMenu *m, QKeySequence seq);
+  bool shortcut_exist_inner(const QMenu *m, QKeySequence seq,
+                            fc_shortcut *fcs, QString *ret);
+  bool shortcut_2_menustring_inner(const QMenu *m, QKeySequence seq,
+                                   QString *ret);
 };
 
-#endif /* FC__MENU_H */
+#endif // FC__MENU_H

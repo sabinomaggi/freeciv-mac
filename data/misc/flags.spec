@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -23,6 +23,7 @@ artists = "
    Ainu			Daniel Markstedt
    Akwe			Dan Cottrell and Daniel Markstedt
    Aland		J.M. Maalderink
+   Alaska               (Wikimedia Commons)
    Albania		TigerTjäder (Wikimedia Commons)
    Aleut		Daniel Markstedt
    Algeria 		Lauris Kaplinski
@@ -84,7 +85,7 @@ artists = "
    Brasil		Cezary Biele
    Britannia		J.M. Maalderink
    Brittany		Lexicon
-   Brunei		Gustav Broberg 
+   Brunei		Gustav Broberg
    Bulgaria		Daniel McRae
    Burgundic		Andrzej G.
    Burgundy		Daniel Markstedt
@@ -101,7 +102,7 @@ artists = "
    Cantonese		Cezary Biele and J.M. Maalderink
    Cape Verde		Open Clip Art
    CAR			Vzb83 (Wikimedia Commons)
-   Carantanian		Andrzej M. Gorzym 
+   Carantanian		Andrzej M. Gorzym
    Cartago		Daniel Markstedt and Matt Jecrell
    Catalan		Xavier Conde Rueda
    Celtiberian		J.M. Maalderink
@@ -120,13 +121,14 @@ artists = "
    China		Stephen Silver
    Choctaw		Daniel Markstedt
    Chola		Dan Cottrell and Daniel Markstedt
-   Chrobatian		Andrzej M. Gorzym 
+   Chrobatian		Andrzej M. Gorzym
    Chumash		Daniel Markstedt
    Chuvashia		Urmas (Wikimedia Commons)
    Clatsop		Euku (Wikimedia Commons)
    Colombia		Lauris Kaplinski
    Comanche		Zachary Harden
    Comoros		Open Clip Art
+   Conch		Wikipedia
    Constantine		Nikos Mavrogiannopoulos
    Cornwall		Vasco Alexandre Da Silva Costa
    Corsica		Patricia Fidi
@@ -142,8 +144,9 @@ artists = "
    Cyrenaica		Daniel Markstedt and J.M. Maalderink
    Czech		Lauris Kaplinski
    Czechoslovakia	Tlusťa (Wikimedia Commons)
-   Dacian		Andrzej M. Gorzym 
-   Dahomey		Daniel Markstedt 
+   Dacian		Andrzej M. Gorzym
+   Dagestan             Wikimedia Commons
+   Dahomey		Daniel Markstedt
    Darfur		Daniel Markstedt
    DDR			Jwnabd (Wikimedia Commons)
    Denmark		Jens Bech Madsen
@@ -151,6 +154,7 @@ artists = "
    Djibouti		Open Clip Art
    Dominica		Caleb Moore and Christian Schaller
    Dominican Republic	Daniel Markstedt and capellan2000 (Open Clip Art)
+   Donetsk              Wikimedia Commons
    DR Congo		Drieskamp (Wikimedia Commons)
    Dryad		Ivan Alvarado
    East Timor		SKopp (Wikimedia Commons)
@@ -176,6 +180,7 @@ artists = "
    Finland		SKopp (Wikimedia Commons)
    Flanders		Cedric de Launois (Open Clip Art)
    Florence		Kanchelskis (Wikimedia Commons)
+   Florida              Smthngnw (Wikipedia Commons)
    Formosan		resodan
    France (old)		Patricia Fidi
    France		Tobias Jakobs
@@ -302,6 +307,9 @@ artists = "
    Lithuania		Christian Schaller
    Lombardy		Flanker (Wikimedia Commons)
    Lorraine		J.M. Maalderink
+   Louisiana            Fry1989 (Wikimedia Commons)
+   Luhansk              Wikimedia Commons
+   Luik			Jed (Wikimedia Commons)
    Luna			Daniel Markstedt
    Lusatia		J.M. Maalderink
    Luwian		Andrzej G.
@@ -338,6 +346,7 @@ artists = "
    Micronesia		SKopp (Wikimedia commons)
    Mikmaq		Daniel Markstedt
    Milan		Flanker (Wikimedia Commons)
+   Minnesota            Wikimedia Commons
    Miskito		Daniel Markstedt
    Mitanni		Snubcube (Wikimedia Commons) and J.M. Maalderink
    Mixtec		J.M. Maalderink
@@ -375,6 +384,7 @@ artists = "
    Niger		J.M. Maalderink
    Nigeria		Brett Roper
    Normandy		Syryatsu
+   North Ireland        Mamadou (Wikimedia Commons)
    North Korea		Zachary Harden
    Northumbria		J.M. Maalderink
    Norway		Christian Schaller
@@ -393,6 +403,7 @@ artists = "
    Oz			Daniel Markstedt
    Pakistan		Lauris Kaplinski
    Palatinate		Madden (Wikimedia Commons)
+   Palau		Gabbe (Wikimedia Commons)
    Palestine		J.M. Maalderink
    Palmyra		JB Grout
    Panama		J.M. Maalderink
@@ -414,6 +425,7 @@ artists = "
    Polynesian		Daniel Markstedt
    Pomerania		N3MO (Wikipedia)
    Portugal		Diogo Mamede
+   Poyaisian            Zscout370 (Wikimedia Commons)
    Prusai		Daniel Markstedt
    Prussia		Daniel Markstedt
    Puerto Rico		Lauris Kaplinski and J.M. Maalderink
@@ -443,7 +455,7 @@ artists = "
    Samoa		Vzb83 (Wikimedia Commons)
    Samogitia		Daniel Markstedt and Jarno Vasamaa
    San Marino		Tobias Jakobs
-   S. Tome and Principe	Vzb83 (Wikimedia Commons)	
+   S. Tome and Principe	Vzb83 (Wikimedia Commons)
    Sapmi		Dean Tersigni
    Sardinia		Patricia Fidi and J.M. Maalderink
    Sarmatia		Andrzej G.
@@ -478,7 +490,7 @@ artists = "
    Slovenia		Matthew Gatto
    Solomon Islands	SKopp (Wikimedia Commons)
    Somalia		J.M. Maalderink
-   Somaliland		Cezary Biele and J.M. Maalderink 
+   Somaliland		Cezary Biele and J.M. Maalderink
    Songhai		Daniel Markstedt
    South Africa		Farrel Lifson
    Southern Cross	Crotalus horridus
@@ -517,6 +529,7 @@ artists = "
    Timur		Daniel Markstedt
    Tocharian		Dan Cottrell and Daniel Markstedt
    Togo			Vzb83 and Madden (Wikimedia Commons)
+   Tokipona             Wikimedia Commons
    Toltec		J.M. Maalderink
    Tonga		Madden (Wikimedia Commons)
    Transnistria		Sigge Kotliar and J.M. Maalderink
@@ -594,6 +607,7 @@ sprites =
 		"f.ainu", "flags/ainu"
 		"f.akwe", "flags/akwe"
 		"f.aland", "flags/aland"
+		"f.alaska", "flags/alaska"
 		"f.albania", "flags/albania"
 		"f.aleut", "flags/aleut"
 		"f.algeria", "flags/algeria"
@@ -607,7 +621,7 @@ sprites =
 		"f.anhalt", "flags/anhalt"
 		"f.anishinaabe", "flags/anishinaabe"
 		"f.antarctica", "flags/antarctica"
-;		"f.antarctica_alt", "flags/antarctica_alt"
+		"f.antarctica_alt", "flags/antarctica_alt"
 		"f.antigua_and_barbuda", "flags/antigua_and_barbuda"
 		"f.apache", "flags/apache"
 		"f.arab", "flags/arab"
@@ -699,6 +713,7 @@ sprites =
 		"f.colombia", "flags/colombia"
 		"f.comanche", "flags/comanche"
 		"f.comoros", "flags/comoros"
+		"f.conch", "flags/conch"
 ;		"f.constantine", "flags/constantine"	; alt. Byzantine
 		"f.cornwall", "flags/cornwall"
 		"f.corsica", "flags/corsica"
@@ -715,6 +730,7 @@ sprites =
 		"f.czech", "flags/czech"
 		"f.czechoslovakia", "flags/czechoslovakia"
 		"f.dacian", "flags/dacian"
+		"f.dagestan", "flags/dagestan"
 		"f.dahomey", "flags/dahomey"
 		"f.darfur", "flags/darfur"
 		"f.ddr", "flags/ddr"
@@ -723,6 +739,7 @@ sprites =
 		"f.djibouti", "flags/djibouti"
 		"f.dominica", "flags/dominica"
 		"f.dominican_republic", "flags/dominican_republic"
+                "f.donetsk", "flags/donetsk"
 		"f.dr_congo", "flags/dr_congo"
 		"f.dryad", "flags/dryad"
 		"f.ecuador", "flags/ecuador"
@@ -748,6 +765,7 @@ sprites =
 		"f.finland", "flags/finland"
 		"f.flanders", "flags/flanders"
 		"f.florence", "flags/florence"
+		"f.florida", "flags/florida"
 		"f.formosan", "flags/formosan"
 		"f.france", "flags/france"
 		"f.france_old", "flags/france_old"
@@ -874,6 +892,9 @@ sprites =
 		"f.lithuania", "flags/lithuania"
 		"f.lombardy", "flags/lombardy"
 		"f.lorraine", "flags/lorraine"
+                "f.louisiana", "flags/louisiana"
+                "f.luhansk", "flags/luhansk"
+		"f.luik", "flags/luik"
 		"f.luna", "flags/luna"
 		"f.lusatia", "flags/lusatia"
 		"f.luwian", "flags/luwian"
@@ -910,6 +931,7 @@ sprites =
 		"f.micronesia", "flags/micronesia"
 		"f.mikmaq", "flags/mikmaq"
 		"f.milan", "flags/milan"
+		"f.minnesota", "flags/minnesota"
 		"f.miskito", "flags/miskito"
 		"f.mitanni", "flags/mitanni"
 		"f.mixtec", "flags/mixtec"
@@ -928,6 +950,7 @@ sprites =
 		"f.muskogee", "flags/muskogee"
 		"f.mwiska", "flags/mwiska"
 		"f.myanmar", "flags/myanmar"
+		"f.myanmar_old", "flags/myanmar_old"
 		"f.nagorno_karabakh", "flags/nagorno_karabakh"
 		"f.namibia", "flags/namibia"
 		"f.naples", "flags/naples"
@@ -946,6 +969,7 @@ sprites =
 		"f.niger", "flags/niger"
 		"f.nigeria", "flags/nigeria"
 		"f.normandy", "flags/normandy"
+                "f.northernireland", "flags/northernireland"
 		"f.north_korea", "flags/north_korea"
 		"f.northumbria", "flags/northumbria"
 		"f.norway", "flags/norway"
@@ -965,6 +989,7 @@ sprites =
 		"f.paeonia", "flags/paeonia"
 		"f.pakistan", "flags/pakistan"
 		"f.palatinate", "flags/palatinate"
+		"f.palau", "flags/palau"
 		"f.palestine", "flags/palestine"
 		"f.palmyra", "flags/palmyra"
 		"f.panama", "flags/panama"
@@ -985,6 +1010,7 @@ sprites =
 		"f.polynesian", "flags/polynesian"
 		"f.pomerania", "flags/pomerania"
 		"f.portugal", "flags/portugal"
+                "f.poyais", "flags/poyais"
 		"f.prusai", "flags/prusai"
 		"f.prussia", "flags/prussia"
 		"f.puerto_rico", "flags/puerto_rico"
@@ -1060,7 +1086,7 @@ sprites =
 		"f.spain", "flags/spain"
 		"f.srilanka", "flags/srilanka"
 		"f.srivijaya", "flags/srivijaya"
-;		"f.stpatrick", "flags/stpatrick"	; Alternate Irish 
+;		"f.stpatrick", "flags/stpatrick"	; Alternate Irish
 		"f.sudan", "flags/sudan"
 		"f.suebian", "flags/suebian"
 		"f.sumeria", "flags/sumeria"
@@ -1089,6 +1115,7 @@ sprites =
 		"f.timur", "flags/timur"
 		"f.tocharian", "flags/tocharian"
 		"f.togo", "flags/togo"
+                "f.tokipona", "flags/tokipona"
 		"f.toltec", "flags/toltec"
 		"f.tonga", "flags/tonga"
 		"f.transnistria", "flags/transnistria"
@@ -1101,6 +1128,7 @@ sprites =
 		"f.tupi", "flags/tupi"
 		"f.turkey", "flags/turkey"
 		"f.turkmenistan", "flags/turkmenistan"
+		"f.tuvalu", "flags/tuvalu"
 		"f.tyrol", "flags/tyrol"
 		"f.uae", "flags/uae"
 		"f.uganda", "flags/uganda"
@@ -1150,6 +1178,7 @@ sprites =
 		"f.zhuang", "flags/zhuang"
 		"f.zimbabwe", "flags/zimbabwe"
 		"f.zulu", "flags/zulu"
-	}
 
 *include "override/flags.spec"
+
+	}

@@ -18,6 +18,7 @@
 // Qt
 #include <QFontMetrics>
 #include <QPainter>
+#include <QPainterPath>
 
 // qt-client
 #include "canvas.h"
@@ -28,6 +29,7 @@
 #include "sprite.h"
 
 static QFont *get_font(enum client_font font);
+
 /************************************************************************//**
   Create a canvas of the given size.
 ****************************************************************************/
@@ -53,7 +55,7 @@ void qtg_canvas_free(struct canvas *store)
 ****************************************************************************/
 void qtg_canvas_set_zoom(struct canvas *store, float zoom)
 {
-  /* Qt-client has no zoom support */
+  // Qt-client has no zoom support
 }
 
 /************************************************************************//**
@@ -62,6 +64,13 @@ void qtg_canvas_set_zoom(struct canvas *store, float zoom)
 bool qtg_has_zoom_support()
 {
   return FALSE;
+}
+
+/************************************************************************//**
+  Initialize canvas as mapview.
+****************************************************************************/
+void qtg_canvas_mapview_init(struct canvas *store)
+{
 }
 
 /************************************************************************//**
@@ -109,7 +118,7 @@ void pixmap_copy(QPixmap *dest, QPixmap *src, int src_x, int src_y,
   Copies an area from the source image to the destination image.
 ****************************************************************************/
 void image_copy(QImage *dest, QImage *src, int src_x, int src_y,
-                 int dest_x, int dest_y, int width, int height)
+                int dest_x, int dest_y, int width, int height)
 {
   QRectF source_rect(src_x, src_y, width, height);
   QRectF dest_rect(dest_x, dest_y, width, height);
@@ -151,6 +160,25 @@ void qtg_canvas_put_sprite_full(struct canvas *pcanvas,
   get_sprite_dimensions(sprite, &width, &height);
   canvas_put_sprite(pcanvas, canvas_x, canvas_y, sprite,
                     0, 0, width, height);
+}
+
+/************************************************************************//**
+  Draw a full sprite onto the canvas, scaled to the canvas size.
+****************************************************************************/
+void qtg_canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                       int canvas_x, int canvas_y,
+                                       int canvas_w, int canvas_h,
+                                       struct sprite *sprite)
+{
+  QPainter p;
+  int width, height;
+
+  get_sprite_dimensions(sprite, &width, &height);
+
+  p.begin(&pcanvas->map_pixmap);
+  p.drawPixmap(canvas_x, canvas_y, canvas_w, canvas_h,
+               *sprite->pm, 0, 0, width, height);
+  p.end();
 }
 
 /************************************************************************//**
@@ -296,12 +324,12 @@ void qtg_canvas_put_curved_line(struct canvas *pcanvas, struct color *pcolor,
 }
 
 /************************************************************************//**
-  Return the size of the given text in the given font.  This size should
-  include the ascent and descent of the text.  Either of width or height
-  may be NULL in which case those values simply shouldn't be filled out.
+  Return the size of the given text in the given font. This size should
+  include the ascent and descent of the text. Either of width or height
+  may be nullptr in which case those values simply shouldn't be filled out.
 ****************************************************************************/
 void qtg_get_text_size(int *width, int *height,
-                        enum client_font font, const char *text)
+                       enum client_font font, const char *text)
 {
   QFont *afont;
   QFontMetrics *fm;
@@ -309,7 +337,7 @@ void qtg_get_text_size(int *width, int *height,
   afont = get_font(font);
   fm = new QFontMetrics(*afont);
   if (width) {
-    *width = fm->width(QString::fromUtf8(text));
+    *width = fm->horizontalAdvance(QString::fromUtf8(text));
   }
 
   if (height) {
@@ -319,9 +347,9 @@ void qtg_get_text_size(int *width, int *height,
 }
 
 /************************************************************************//**
-  Draw the text onto the canvas in the given color and font.  The canvas
+  Draw the text onto the canvas in the given color and font. The canvas
   position does not account for the ascent of the text; this function must
-  take care of this manually.  The text will not be NULL but may be empty.
+  take care of this manually. The text will not be nullptr but may be empty.
 ****************************************************************************/
 void qtg_canvas_put_text(struct canvas *pcanvas, int canvas_x, int canvas_y,
                          enum client_font font, struct color *pcolor,
@@ -352,11 +380,11 @@ QFont *get_font(client_font font)
 {
   QFont *qf;
   int ssize;
-  
+
   switch (font) {
   case FONT_CITY_NAME:
   qf = fc_font::instance()->get_font(fonts::city_names);
-    if (gui()->map_scale != 1.0f) {
+    if (gui()->map_scale != 1.0f && gui()->map_font_scale) {
      ssize = ceil(gui()->map_scale * fc_font::instance()->city_fontsize);
       if (qf->pointSize() != ssize) {
         qf->setPointSize(ssize);
@@ -365,7 +393,7 @@ QFont *get_font(client_font font)
     break;
   case FONT_CITY_PROD:
     qf = fc_font::instance()->get_font(fonts::city_productions);
-    if (gui()->map_scale != 1.0f) {
+    if (gui()->map_scale != 1.0f && gui()->map_font_scale) {
       ssize = ceil(gui()->map_scale * fc_font::instance()->prod_fontsize);
       if (qf->pointSize() != ssize) {
         qf->setPointSize(ssize);
@@ -376,10 +404,10 @@ QFont *get_font(client_font font)
     qf = fc_font::instance()->get_font(fonts::reqtree_text);
     break;
   case FONT_COUNT:
-    qf = NULL;
+    qf = nullptr;
     break;
   default:
-    qf = NULL;
+    qf = nullptr;
     break;
   }
   return qf;
@@ -392,6 +420,7 @@ QRect zealous_crop_rect(QImage &p)
 {
   int r, t, b, l;
   int oh, ow;
+  QRgb *row;
 
   ow = p.width();
   l = ow;
@@ -399,8 +428,10 @@ QRect zealous_crop_rect(QImage &p)
   oh = p.height();
   t = oh;
   b = 0;
+
+  row = (QRgb *)fc_malloc(sizeof(QRgb) * ow);
+
   for (int y = 0; y < oh; y++) {
-    QRgb row[ow];
     bool row_filled = false;
     int x;
 
@@ -423,6 +454,8 @@ QRect zealous_crop_rect(QImage &p)
       b = y;
     }
   }
-  return QRect(l, t, r - l, b - t);
-}
 
+  free(row);
+
+  return QRect(l, t, qMax(0, r - l + 1), qMax(0, b - t + 1));
+}

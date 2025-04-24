@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -24,6 +24,7 @@ sprites =
 		"f.shield.ainu", "flags/ainu-shield-large"
 		"f.shield.akwe", "flags/akwe-shield-large"
 		"f.shield.aland", "flags/aland-shield-large"
+		"f.shield.alaska", "flags/alaska-shield-large"
 		"f.shield.albania", "flags/albania-shield-large"
 		"f.shield.aleut", "flags/aleut-shield-large"
 		"f.shield.algeria", "flags/algeria-shield-large"
@@ -37,7 +38,7 @@ sprites =
                 "f.shield.animals", "flags/animals-shield-large"
 		"f.shield.anishinaabe", "flags/anishinaabe-shield-large"
 		"f.shield.antarctica", "flags/antarctica-shield-large"
-;		"f.shield.antarctica_alt", "flags/antarctica_alt-shield-large"
+		"f.shield.antarctica_alt", "flags/antarctica_alt-shield-large"
 		"f.shield.antigua_and_barbuda", "flags/antigua_and_barbuda-shield-large"
 		"f.shield.apache", "flags/apache-shield-large"
 		"f.shield.arab", "flags/arab-shield-large"
@@ -129,6 +130,7 @@ sprites =
 		"f.shield.colombia", "flags/colombia-shield-large"
 		"f.shield.comanche", "flags/comanche-shield-large"
 		"f.shield.comoros", "flags/comoros-shield-large"
+		"f.shield.conch", "flags/conch-shield-large"
 ;		"f.shield.constantine", "flags/constantine-shield-large"
 		"f.shield.cornwall", "flags/cornwall-shield-large"
 		"f.shield.corsica", "flags/corsica-shield-large"
@@ -145,6 +147,7 @@ sprites =
 		"f.shield.czech", "flags/czech-shield-large"
 		"f.shield.czechoslovakia", "flags/czechoslovakia-shield-large"
 		"f.shield.dacian", "flags/dacian-shield-large"
+		"f.shield.dagestan", "flags/dagestan-shield-large"
 		"f.shield.dahomey", "flags/dahomey-shield-large"
 		"f.shield.darfur", "flags/darfur-shield-large"
 		"f.shield.ddr", "flags/ddr-shield-large"
@@ -153,6 +156,7 @@ sprites =
 		"f.shield.djibouti", "flags/djibouti-shield-large"
 		"f.shield.dominica", "flags/dominica-shield-large"
 		"f.shield.dominican_republic", "flags/dominican_republic-shield-large"
+                "f.shield.donetsk", "flags/donetsk-shield-large"
 		"f.shield.dr_congo", "flags/dr_congo-shield-large"
 		"f.shield.dryad", "flags/dryad-shield-large"
 		"f.shield.east_timor", "flags/east_timor-shield-large"
@@ -178,6 +182,7 @@ sprites =
 		"f.shield.finland", "flags/finland-shield-large"
 		"f.shield.flanders", "flags/flanders-shield-large"
 		"f.shield.florence", "flags/florence-shield-large"
+		"f.shield.florida", "flags/florida-shield-large"
 		"f.shield.formosan", "flags/formosan-shield-large"
 		"f.shield.france", "flags/france-shield-large"
 		"f.shield.france_old", "flags/france_old-shield-large"
@@ -304,6 +309,9 @@ sprites =
 		"f.shield.lippe", "flags/lippe-shield-large"
 		"f.shield.lithuania", "flags/lithuania-shield-large"
 		"f.shield.lorraine", "flags/lorraine-shield-large"
+                "f.shield.louisiana", "flags/louisiana-shield-large"
+                "f.shield.luhansk", "flags/luhansk-shield-large"
+		"f.shield.luik", "flags/luik-shield-large"
 		"f.shield.luna", "flags/luna-shield-large"
 		"f.shield.lusatia", "flags/lusatia-shield-large"
 		"f.shield.luwian", "flags/luwian-shield-large"
@@ -340,6 +348,7 @@ sprites =
 		"f.shield.micronesia", "flags/micronesia-shield-large"
 		"f.shield.mikmaq", "flags/mikmaq-shield-large"
 		"f.shield.milan", "flags/milan-shield-large"
+		"f.shield.minnesota", "flags/minnesota-shield-large"
 		"f.shield.miskito", "flags/miskito-shield-large"
 		"f.shield.mitanni", "flags/mitanni-shield-large"
 		"f.shield.mixtec", "flags/mixtec-shield-large"
@@ -358,6 +367,7 @@ sprites =
 		"f.shield.muskogee", "flags/muskogee-shield-large"
 		"f.shield.mwiska", "flags/mwiska-shield-large"
 		"f.shield.myanmar", "flags/myanmar-shield-large"
+		"f.shield.myanmar_old", "flags/myanmar_old-shield-large"
 		"f.shield.nagorno_karabakh", "flags/nagorno_karabakh-shield-large"
 		"f.shield.namibia", "flags/namibia-shield-large"
 		"f.shield.naples", "flags/naples-shield-large"
@@ -376,6 +386,7 @@ sprites =
 		"f.shield.niger", "flags/niger-shield-large"
 		"f.shield.nigeria", "flags/nigeria-shield-large"
 		"f.shield.normandy", "flags/normandy-shield-large"
+                "f.shield.northernireland", "flags/northernireland-shield-large"
 		"f.shield.north_korea", "flags/north_korea-shield-large"
 		"f.shield.northumbria", "flags/northumbria-shield-large"
 		"f.shield.norway", "flags/norway-shield-large"
@@ -395,6 +406,7 @@ sprites =
 		"f.shield.paeonia", "flags/paeonia-shield-large"
 		"f.shield.pakistan", "flags/pakistan-shield-large"
 		"f.shield.palatinate", "flags/palatinate-shield-large"
+		"f.shield.palau", "flags/palau-shield-large"
 		"f.shield.palestine", "flags/palestine-shield-large"
 		"f.shield.palmyra", "flags/palmyra-shield-large"
 		"f.shield.panama", "flags/panama-shield-large"
@@ -415,6 +427,7 @@ sprites =
 		"f.shield.polynesian", "flags/polynesian-shield-large"
 		"f.shield.pomerania", "flags/pomerania-shield-large"
 		"f.shield.portugal", "flags/portugal-shield-large"
+                "f.shield.poyais", "flags/poyais-shield-large"
 		"f.shield.prusai", "flags/prusai-shield-large"
 		"f.shield.prussia", "flags/prussia-shield-large"
 		"f.shield.puerto_rico", "flags/puerto_rico-shield-large"
@@ -519,6 +532,7 @@ sprites =
 		"f.shield.timur", "flags/timur-shield-large"
 		"f.shield.tocharian", "flags/tocharian-shield-large"
 		"f.shield.togo", "flags/togo-shield-large"
+                "f.shield.tokipona", "flags/tokipona-shield-large"
 		"f.shield.toltec", "flags/toltec-shield-large"
 		"f.shield.tonga", "flags/tonga-shield-large"
 		"f.shield.transnistria", "flags/transnistria-shield-large"
@@ -531,6 +545,7 @@ sprites =
 		"f.shield.tupi", "flags/tupi-shield-large"
 		"f.shield.turkey", "flags/turkey-shield-large"
 		"f.shield.turkmenistan", "flags/turkmenistan-shield-large"
+		"f.shield.tuvalu", "flags/tuvalu-shield-large"
 		"f.shield.tyrol", "flags/tyrol-shield-large"
 		"f.shield.uae", "flags/uae-shield-large"
 		"f.shield.uganda", "flags/uganda-shield-large"
@@ -580,6 +595,7 @@ sprites =
 		"f.shield.zhuang", "flags/zhuang-shield-large"
 		"f.shield.zimbabwe", "flags/zimbabwe-shield-large"
 		"f.shield.zulu", "flags/zulu-shield-large"
-	}
 
 *include "override/shields-large.spec"
+
+	}

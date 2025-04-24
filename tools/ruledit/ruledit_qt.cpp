@@ -36,15 +36,18 @@
 #include "version.h"
 
 // server
-#include "ruleset.h"
+#include "ruleload.h"
 
 // ruledit
 #include "conversion_log.h"
 #include "effect_edit.h"
 #include "requirers_dlg.h"
 #include "req_edit.h"
+#include "req_vec_fix.h"
 #include "ruledit.h"
+#include "tab_achievement.h"
 #include "tab_building.h"
+#include "tab_counters.h"
 #include "tab_enablers.h"
 #include "tab_extras.h"
 #include "tab_good.h"
@@ -104,8 +107,6 @@ void ruledit_qt_display_requirers(const char *msg, void *data)
 void ruledit_gui::setup(QWidget *central_in)
 {
   QVBoxLayout *full_layout = new QVBoxLayout();
-  QVBoxLayout *preload_layout = new QVBoxLayout();
-  QWidget *preload_widget = new QWidget();
   QVBoxLayout *edit_layout = new QVBoxLayout();
   QWidget *edit_widget = new QWidget();
   QPushButton *ruleset_accept;
@@ -113,46 +114,55 @@ void ruledit_gui::setup(QWidget *central_in)
   QLabel *version_label;
   char verbuf[2048];
   const char *rev_ver;
+  const char *mode;
 
-  data.nationlist = NULL;
-  data.nationlist_saved = NULL;
+  data.nationlist = nullptr;
+  data.nationlist_saved = nullptr;
 
   central = central_in;
 
   rev_ver = fc_git_revision();
 
-  if (rev_ver == NULL) {
-    fc_snprintf(verbuf, sizeof(verbuf), "%s%s", word_version(), VERSION_STRING);
+#if defined(FC_QT6X_MODE)
+  mode = R__("built in Qt6x mode.");
+#else  // FC_QT6X_MODE
+  mode = R__("built in Qt6 mode.");
+#endif // FC_QT6X_MODE
+
+  if (rev_ver == nullptr) {
+    fc_snprintf(verbuf, sizeof(verbuf), "%s%s\n%s", word_version(),
+                VERSION_STRING, mode);
   } else {
-    fc_snprintf(verbuf, sizeof(verbuf), _("%s%s\ncommit: %s"),
-                word_version(), VERSION_STRING, rev_ver);
+    fc_snprintf(verbuf, sizeof(verbuf), R__("%s%s\ncommit: %s\n%s"),
+                word_version(), VERSION_STRING, rev_ver, mode);
   }
 
   main_layout = new QStackedLayout();
 
-  preload_layout->setSizeConstraint(QLayout::SetMaximumSize);
-  version_label = new QLabel(verbuf);
-  version_label->setAlignment(Qt::AlignHCenter);
-  version_label->setParent(central);
-  preload_layout->addWidget(version_label);
-  rs_label = new QLabel(QString::fromUtf8(R__("Give ruleset to use as starting point.")));
-  rs_label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-  preload_layout->addWidget(rs_label);
-  ruleset_select = new QLineEdit(central);
-  if (reargs.ruleset) {
-    ruleset_select->setText(reargs.ruleset);
-  } else {
-    ruleset_select->setText(GAME_DEFAULT_RULESETDIR);
-  }
-  connect(ruleset_select, SIGNAL(returnPressed()),
-          this, SLOT(launch_now()));
-  preload_layout->addWidget(ruleset_select);
-  ruleset_accept = new QPushButton(QString::fromUtf8(R__("Start editing")));
-  connect(ruleset_accept, SIGNAL(pressed()), this, SLOT(launch_now()));
-  preload_layout->addWidget(ruleset_accept);
+  if (reargs.ruleset == nullptr) {
+    QVBoxLayout *preload_layout = new QVBoxLayout();
+    QWidget *preload_widget = new QWidget();
 
-  preload_widget->setLayout(preload_layout);
-  main_layout->addWidget(preload_widget);
+    preload_layout->setSizeConstraint(QLayout::SetMaximumSize);
+    version_label = new QLabel(verbuf);
+    version_label->setAlignment(Qt::AlignHCenter);
+    version_label->setParent(central);
+    preload_layout->addWidget(version_label);
+    rs_label = new QLabel(QString::fromUtf8(R__("Give ruleset to use as starting point.")));
+    rs_label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    preload_layout->addWidget(rs_label);
+    ruleset_select = new QLineEdit(central);
+    ruleset_select->setText(GAME_DEFAULT_RULESETDIR);
+    connect(ruleset_select, SIGNAL(returnPressed()),
+            this, SLOT(rulesetdir_given()));
+    preload_layout->addWidget(ruleset_select);
+    ruleset_accept = new QPushButton(QString::fromUtf8(R__("Start editing")));
+    connect(ruleset_accept, SIGNAL(pressed()), this, SLOT(rulesetdir_given()));
+    preload_layout->addWidget(ruleset_accept);
+
+    preload_widget->setLayout(preload_layout);
+    main_layout->addWidget(preload_widget);
+  }
 
   stack = new QTabWidget(central);
 
@@ -164,6 +174,8 @@ void ruledit_gui::setup(QWidget *central_in)
   stack->addTab(bldg, QString::fromUtf8(R__("Buildings")));
   unit = new tab_unit(this);
   stack->addTab(unit, QString::fromUtf8(R__("Units")));
+  ach = new tab_achievement(this);
+  stack->addTab(ach, QString::fromUtf8(R__("Achievements")));
   good = new tab_good(this);
   stack->addTab(good, QString::fromUtf8(R__("Goods")));
   gov = new tab_gov(this);
@@ -176,6 +188,8 @@ void ruledit_gui::setup(QWidget *central_in)
   stack->addTab(terrains, QString::fromUtf8(R__("Terrains")));
   multipliers = new tab_multiplier(this);
   stack->addTab(multipliers, QString::fromUtf8(R__("Multipliers")));
+  counter = new tab_counter(this);
+  stack->addTab(counter, QString::fromUtf8(R__("Counters")));
   nation = new tab_nation(this);
   stack->addTab(nation, QString::fromUtf8(R__("Nations")));
 
@@ -196,7 +210,13 @@ void ruledit_gui::setup(QWidget *central_in)
   central->setLayout(full_layout);
 
   req_edits = req_edit_list_new();
+  this->req_vec_fixers = req_vec_fix_list_new();
   effect_edits = effect_edit_list_new();
+
+  if (reargs.ruleset != nullptr) {
+    sz_strlcpy(game.server.rulesetdir, reargs.ruleset);
+    launch_now();
+  }
 }
 
 /**********************************************************************//**
@@ -208,26 +228,40 @@ static void conversion_log_cb(const char *msg)
 }
 
 /**********************************************************************//**
-  User entered savedir
+  User entered rulesetdir to load.
+**************************************************************************/
+void ruledit_gui::rulesetdir_given()
+{
+  QByteArray rn_bytes;
+
+  rn_bytes = ruleset_select->text().toUtf8();
+  sz_strlcpy(game.server.rulesetdir, rn_bytes.data());
+
+  launch_now();
+}
+
+/**********************************************************************//**
+  Launch the main page.
+
+  game.server.rulesetdir must be correctly set beforehand.
 **************************************************************************/
 void ruledit_gui::launch_now()
 {
-  convlog = new conversion_log();
+  convlog = new conversion_log(QString::fromUtf8(R__("Old ruleset to a new format")));
 
-  sz_strlcpy(game.server.rulesetdir, ruleset_select->text().toUtf8().data());
-
-  if (load_rulesets(NULL, TRUE, conversion_log_cb, FALSE, TRUE)) {
+  if (load_rulesets(nullptr, nullptr, TRUE, conversion_log_cb, FALSE, TRUE, TRUE)) {
     display_msg(R__("Ruleset loaded"));
 
-    /* Make freeable copy */
-    if (game.server.ruledit.nationlist != NULL) {
+    // Make freeable copy
+    if (game.server.ruledit.nationlist != nullptr) {
       data.nationlist = fc_strdup(game.server.ruledit.nationlist);
     } else {
-      data.nationlist = NULL;
+      data.nationlist = nullptr;
     }
 
+    ach->refresh();
     bldg->refresh();
-    misc->refresh();
+    misc->ruleset_loaded();
     nation->refresh();
     tech->refresh();
     unit->refresh();
@@ -237,10 +271,20 @@ void ruledit_gui::launch_now()
     extras->refresh();
     multipliers->refresh();
     terrains->refresh();
+    counter->refresh();
     main_layout->setCurrentIndex(1);
   } else {
     display_msg(R__("Ruleset loading failed!"));
   }
+}
+
+/**********************************************************************//**
+  A requirement vector may have been changed.
+  @param vec the requirement vector that may have been changed.
+**************************************************************************/
+void ruledit_gui::incoming_req_vec_change(const requirement_vector *vec)
+{
+  emit req_vec_may_have_changed(vec);
 }
 
 /**********************************************************************//**
@@ -281,6 +325,7 @@ void ruledit_gui::show_required(requirers_dlg *requirers, const char *msg)
 **************************************************************************/
 void ruledit_gui::flush_widgets()
 {
+  misc->flush_widgets();
   nation->flush_widgets();
 }
 
@@ -302,15 +347,55 @@ void ruledit_gui::open_req_edit(QString target, struct requirement_vector *preqs
 
   redit->show();
 
+  connect(redit,
+          SIGNAL(req_vec_may_have_changed(const requirement_vector *)),
+          this, SLOT(incoming_req_vec_change(const requirement_vector *)));
+
   req_edit_list_append(req_edits, redit);
 }
 
 /**********************************************************************//**
-  Unregisted closed req_edit dialog
+  Unregister closed req_edit dialog
 **************************************************************************/
 void ruledit_gui::unregister_req_edit(class req_edit *redit)
 {
   req_edit_list_remove(req_edits, redit);
+}
+
+/**********************************************************************//**
+  Open req_vec_fix dialog.
+**************************************************************************/
+void ruledit_gui::open_req_vec_fix(req_vec_fix_item *item_info)
+{
+  req_vec_fix *fixer;
+
+  req_vec_fix_list_iterate(req_vec_fixers, old_fixer) {
+    if (old_fixer->item() == item_info->item()) {
+      item_info->close();
+
+      // Already open
+      return;
+    }
+  } req_vec_fix_list_iterate_end;
+
+  fixer = new req_vec_fix(this, item_info);
+
+  fixer->refresh();
+  fixer->show();
+
+  connect(fixer,
+          SIGNAL(rec_veq_may_have_changed(const requirement_vector *)),
+          this, SLOT(incoming_req_vec_change(const requirement_vector *)));
+
+  req_vec_fix_list_append(req_vec_fixers, fixer);
+}
+
+/**********************************************************************//**
+  Unregister closed req_vec_fix dialog.
+**************************************************************************/
+void ruledit_gui::unregister_req_vec_fix(req_vec_fix *fixer)
+{
+  req_vec_fix_list_remove(req_vec_fixers, fixer);
 }
 
 /**********************************************************************//**
@@ -343,7 +428,7 @@ void ruledit_gui::open_effect_edit(QString target, struct universal *uni,
 }
 
 /**********************************************************************//**
-  Unregisted closed effect_edit dialog
+  Unregister closed effect_edit dialog
 **************************************************************************/
 void ruledit_gui::unregister_effect_edit(class effect_edit *e_edit)
 {
@@ -365,12 +450,31 @@ void ruledit_gui::refresh_effect_edits()
 **************************************************************************/
 ruledit_main::ruledit_main(QApplication *qapp_in, QWidget *central_in) : QMainWindow()
 {
+  QPixmap *pm = new QPixmap;
+  const char *full_icon_path = fileinfoname(get_data_dirs(), "freeciv-ruledit.png");
   const QString title = QString::fromUtf8(R__("Freeciv Ruleset Editor"));
+  const QString fip = QString(full_icon_path);
+  QSize old_size;
+  int width;
+  int height;
+
+  pm->load(fip);
+  qapp_in->setWindowIcon(QIcon(*pm));
 
   qapp = qapp_in;
   central = central_in;
 
   setWindowTitle(title);
+
+  // Adjust Window size
+  old_size = size();
+  width = old_size.width();
+  height = old_size.height();
+
+  width = MAX(width, RULEDIT_WINWIDTH);
+  height = MAX(height, RULEDIT_WINHEIGHT);
+
+  resize(width, height);
 }
 
 /**********************************************************************//**

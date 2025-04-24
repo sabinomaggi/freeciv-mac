@@ -17,12 +17,19 @@
 
 /* client */
 #include "gui_main_g.h"
+#include "options.h"
+
+#define GUI_NAME_FULL "gui-gtk-4.0"
+#define GUI_NAME_SHORT "gtk4"
 
 #define GUI_GTK_OPTION(optname) gui_options.gui_gtk4_##optname
 #define GUI_GTK_OPTION_STR(optname) "gui_gtk4_" #optname
 #define GUI_GTK_DEFAULT_THEME_NAME FC_GTK4_DEFAULT_THEME_NAME
 
-/* network string charset conversion */
+void main_message_area_resize(void *data);
+void animation_idle_cb(void *data);
+
+/* Network string charset conversion */
 gchar *ntoh_str(const gchar *netstr);
 
 extern PangoFontDescription *city_names_style;
@@ -31,7 +38,7 @@ extern PangoFontDescription *reqtree_text_style;
 
 #define single_tile_pixmap (mapview.single_tile->pixmap)
 
-extern GtkTextView *	main_message_area;
+extern GtkTextView *    main_message_area;
 extern GtkWidget *      text_scrollbar;
 extern GtkWidget *      toplevel;
 extern GtkWidget *      top_vbox;
@@ -42,11 +49,7 @@ extern GtkWidget *      bulb_label;
 extern GtkWidget *      sun_label;
 extern GtkWidget *      flake_label;
 extern GtkWidget *      government_label;
-extern GtkWidget *	econ_ebox;
-extern GtkWidget *	bulb_ebox;
-extern GtkWidget *	sun_ebox;
-extern GtkWidget *	flake_ebox;
-extern GtkWidget *	government_ebox;
+extern GtkWidget *      econ_widget;
 extern GtkWidget *      map_canvas;             /* GtkDrawingArea */
 extern GtkWidget *      overview_canvas;        /* GtkDrawingArea */
 extern GtkWidget *      overview_scrolled_window;        /* GtkScrolledWindow */
@@ -57,20 +60,16 @@ extern GtkWidget *      unit_info_label;
 extern GtkWidget *      unit_info_frame;
 extern GtkWidget *      map_horizontal_scrollbar;
 extern GtkWidget *      map_vertical_scrollbar;
-extern GdkWindow *      root_window;
 
-extern GtkWidget *	toplevel_tabs;
-extern GtkWidget *	top_notebook;
+extern GtkWidget *      toplevel_tabs;
+extern GtkWidget *      top_notebook;
 extern GtkWidget *      map_widget;
-extern GtkWidget *	bottom_notebook;
-extern GtkWidget *	right_notebook;
-extern GtkTextBuffer *	message_buffer;
+extern GtkWidget *      bottom_notebook;
+extern GtkWidget *      right_notebook;
+extern GtkTextBuffer *  message_buffer;
 
 extern int overview_canvas_store_width;
 extern int overview_canvas_store_height;
-
-
-void enable_menus(bool enable);
 
 gboolean map_canvas_focus(void);
 
@@ -83,6 +82,19 @@ int screen_width(void);
 int screen_height(void);
 struct video_mode *resolution_request_get(void);
 
+void fullscreen_opt_refresh(struct option *poption);
+
+GtkApplication *gui_app(void);
 bool is_gui_up(void);
 
-#endif  /* FC__GUI_MAIN_H */
+gboolean terminate_signal_processing(GtkEventControllerFocus *controller,
+                                     gpointer data);
+
+gboolean fc_lost_focus(GtkEventControllerFocus *controller,
+                       gpointer data);
+gboolean fc_gained_focus(GtkEventControllerFocus *controller,
+                         gpointer data);
+
+void update_turn_done_tooltip(void);
+
+#endif /* FC__GUI_MAIN_H */

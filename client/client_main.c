@@ -53,6 +53,7 @@
 #include "idex.h"
 #include "map.h"
 #include "mapimg.h"
+#include "modpack.h"
 #include "netintf.h"
 #include "packets.h"
 #include "player.h"
@@ -88,12 +89,14 @@
 #include "control.h" 
 #include "editor.h"
 #include "global_worklist.h"
+#include "gui_properties.h"
 #include "helpdata.h"           /* boot_help_texts() */
 #include "mapview_common.h"
 #include "music.h"
 #include "options.h"
 #include "overview_common.h"
 #include "packhand.h"
+#include "svgflag.h"
 #include "tilespec.h"
 #include "themes_common.h"
 #include "update_queue.h"
@@ -130,6 +133,8 @@ static struct rgbcolor *mapimg_client_plrcolor_get(int i);
 
 static void fc_interface_init_client(void);
 
+static void cache_tilesets(void);
+
 char *logfile = NULL;
 char *scriptfile = NULL;
 char *savefile = NULL;
@@ -139,7 +144,7 @@ char sound_set_name[512] = "\0";
 char music_set_name[512] = "\0";
 char server_host[512] = "\0";
 char user_name[512] = "\0";
-char password[MAX_LEN_PASSWORD] = "\0";
+char fc_password[MAX_LEN_PASSWORD] = "\0";
 char metaserver[512] = "\0";
 int  server_port = -1;
 bool auto_connect = FALSE; /* TRUE = skip "Connect to Freeciv Server" dialog */
@@ -317,9 +322,37 @@ static void client_game_reset(void)
 }
 
 /**********************************************************************//**
+  Do the initial default tileset selection.
+**************************************************************************/
+int default_tileset_select(void)
+{
+  fill_topo_ts_default();
+
+  if (forced_tileset_name[0] != '\0') {
+    if (!tilespec_try_read(forced_tileset_name, TRUE, -1, TRUE)) {
+      log_error(_("Can't load requested tileset %s!"), forced_tileset_name);
+      client_exit(EXIT_FAILURE);
+      return EXIT_FAILURE;
+    }
+  } else {
+    if (gui_options.default_tileset_name[0] == '\0') {
+      /* Use topology by default */
+      tilespec_try_read(tileset_name_for_topology(index_ts_topology(gui_options.default_topology)),
+                        FALSE, -1, TRUE);
+    } else {
+      tilespec_try_read(gui_options.default_tileset_name, FALSE, -1, TRUE);
+    }
+  }
+
+  editor_init();
+
+  return EXIT_SUCCESS;
+}
+
+/**********************************************************************//**
   Entry point for common client code.
 **************************************************************************/
-int client_main(int argc, char *argv[])
+int client_main(int argc, char *argv[], bool postpone_tileset)
 {
   int i;
   enum log_level loglevel = LOG_NORMAL;
@@ -328,8 +361,9 @@ int client_main(int argc, char *argv[])
   char *option = NULL;
   int fatal_assertions = -1;
   int aii;
+  int uret;
 
-  /* Load win32 post-crash debugger */
+  /* Load Windows post-crash debugger */
 #ifdef FREECIV_MSWINDOWS
 # ifndef FREECIV_NDEBUG
   if (LoadLibrary("exchndl.dll") == NULL) {
@@ -340,9 +374,12 @@ int client_main(int argc, char *argv[])
 # endif /* FREECIV_NDEBUG */
 #endif /* FREECIV_MSWINDOWS */
 
-  i_am_client(); /* Tell to libfreeciv that we are client */
-
+  /* fc_interface_init_client() includes low level support like
+   * guaranteeing that fc_vsnprintf() will work after it,
+   * so this need to be early. */
   fc_interface_init_client();
+
+  i_am_client(); /* Tell to libfreeciv that we are client */
 
   game.client.ruleset_init = FALSE;
 
@@ -355,7 +392,6 @@ int client_main(int argc, char *argv[])
     init_ai(ai);
   }
 
-  init_nls();
 #ifdef ENABLE_NLS
   (void) bindtextdomain("freeciv-nations", get_locale_dir());
 #endif
@@ -366,6 +402,8 @@ int client_main(int argc, char *argv[])
 #ifdef ENABLE_NLS
   bind_textdomain_codeset("freeciv-nations", get_internal_encoding());
 #endif
+
+  gui_properties_init();
 
   i = 1;
 
@@ -389,15 +427,13 @@ int client_main(int argc, char *argv[])
       cmdhelp_add(help, "d",
                   /* TRANS: "debug" is exactly what user must type, do not translate. */
                   _("debug LEVEL"),
-                  _("Set debug log level (%d to %d, or "
-                    "%d:file1,min,max:...)"), LOG_FATAL, LOG_DEBUG,
-                  LOG_DEBUG);
+                  _("Set debug log level (one of f,e,w,n,v,d, or "
+                    "d:file1,min,max:...)"));
 #else  /* FREECIV_DEBUG */
       cmdhelp_add(help, "d",
                   /* TRANS: "debug" is exactly what user must type, do not translate. */
                   _("debug LEVEL"),
-                  _("Set debug log level (%d to %d)"),
-                  LOG_FATAL, LOG_VERBOSE);
+                  _("Set debug log level (one of f,e,w,n,v)"));
 #endif /* FREECIV_DEBUG */
 #ifndef FREECIV_NDEBUG
       cmdhelp_add(help, "F",
@@ -413,7 +449,7 @@ int client_main(int argc, char *argv[])
                   _("Print a summary of the options"));
 #ifdef FREECIV_DEBUG
       cmdhelp_add(help, "H", "Hackless",
-                  _("Do not request hack access to local, but not spawned, server"));
+                  _("Do not request hack access to local server"));
 #endif /* FREECIV_DEBUG */
       cmdhelp_add(help, "l",
                   /* TRANS: "log" is exactly what user must type, do not translate. */
@@ -536,12 +572,12 @@ int client_main(int argc, char *argv[])
       sz_strlcpy(forced_tileset_name, option);
       free(option);
     } else if ((option = get_option_malloc("--Announce", argv, &i, argc, FALSE))) {
-      if (!strcasecmp(option, "ipv4")) {
+      if (!fc_strcasecmp(option, "ipv4")) {
         announce = ANNOUNCE_IPV4;
-      } else if (!strcasecmp(option, "none")) {
+      } else if (!fc_strcasecmp(option, "none")) {
         announce = ANNOUNCE_NONE;
 #ifdef FREECIV_IPV6_SUPPORT
-      } else if (!strcasecmp(option, "ipv6")) {
+      } else if (!fc_strcasecmp(option, "ipv6")) {
         announce = ANNOUNCE_IPV6;
 #endif /* IPv6 support */
       } else {
@@ -571,13 +607,13 @@ int client_main(int argc, char *argv[])
   argv[1 + ui_options] = NULL;
   argc = 1 + ui_options;
 
-  /* disallow running as root -- too dangerous */
+  /* Disallow running as root -- too dangerous */
   dont_run_as_root(argv[0], "freeciv_client");
 
   log_init(logfile, loglevel, NULL, NULL, fatal_assertions);
   backtrace_init();
 
-  /* after log_init: */
+  /* After log_init: */
 
   (void)user_username(gui_options.default_user_name, MAX_LEN_NAME);
   if (!is_valid_username(gui_options.default_user_name)) {
@@ -593,7 +629,7 @@ int client_main(int argc, char *argv[])
     }
   }
 
-  /* initialization */
+  /* Initialization */
 
   game.all_connections = conn_list_new();
   game.est_connections = conn_list_new();
@@ -605,7 +641,7 @@ int client_main(int argc, char *argv[])
 
   fc_init_ow_mutex();
 
-  /* register exit handler */ 
+  /* Register exit handler */
   atexit(at_exit);
   fc_at_quick_exit(emergency_exit);
 
@@ -636,17 +672,6 @@ int client_main(int argc, char *argv[])
     sz_strlcpy(user_name, gui_options.default_user_name); 
   }
   if (metaserver[0] == '\0') {
-    /* FIXME: Find a cleaner way to achieve this. */
-    /* www.cazfi.net/freeciv/metaserver/ was default metaserver
-     * over one release when meta.freeciv.org was unavailable. */
-    const char *oldaddr = "http://www.cazfi.net/freeciv/metaserver/";
-
-    if (0 == strcmp(gui_options.default_metaserver, oldaddr)) {
-      log_normal(_("Updating old metaserver address \"%s\"."), oldaddr);
-      sz_strlcpy(gui_options.default_metaserver, DEFAULT_METASERVER_OPTION);
-      log_normal(_("Default metaserver has been set to value \"%s\"."),
-                 DEFAULT_METASERVER_OPTION);
-    }
     if (0 == strcmp(gui_options.default_metaserver, DEFAULT_METASERVER_OPTION)) {
       sz_strlcpy(metaserver, FREECIV_META_URL);
     } else {
@@ -665,30 +690,29 @@ int client_main(int argc, char *argv[])
   helpdata_init();
   boot_help_texts();
 
-  fill_topo_ts_default();
-
-  if (forced_tileset_name[0] != '\0') {
-    if (!tilespec_try_read(forced_tileset_name, TRUE, -1, TRUE)) {
-      log_error(_("Can't load requested tileset %s!"), forced_tileset_name);
-      client_exit();
-      return EXIT_FAILURE;
-    }
-  } else {
-    tilespec_try_read(gui_options.default_tileset_name, FALSE, -1, TRUE);
-  }
+  modpacks_init();
+  cache_tilesets();
 
   audio_real_init(sound_set_name, music_set_name, sound_plugin_name);
   start_menu_music("music_menu", NULL);
 
-  editor_init();
+  if (!postpone_tileset) {
+    int tsret = default_tileset_select();
 
-  /* run gui-specific client */
-  ui_main(argc, argv);
+    if (tsret != EXIT_SUCCESS) {
+      return tsret;
+    }
+  }
 
-  /* termination */
-  client_exit();
+  /* Run gui-specific client */
+  uret = ui_main(argc, argv);
 
-  /* not reached */
+  modpacks_free();
+
+  /* Termination */
+  client_exit(uret);
+
+  /* Not reached */
   return EXIT_SUCCESS;
 }
 
@@ -708,7 +732,7 @@ static void log_option_save_msg(enum log_level lvl, const char *msg, ...)
   Main client execution stop function. This calls ui_exit() and not the
   other way around.
 **************************************************************************/
-void client_exit(void)
+void fc__noreturn client_exit(int return_value)
 {
   if (client_state() >= C_S_PREPARING) {
     attribute_flush();
@@ -720,9 +744,17 @@ void client_exit(void)
   }
 
   overview_free();
-  tileset_free(tileset);
+  if (unscaled_tileset != NULL) {
+    tileset_free(unscaled_tileset);
+  }
+  if (tileset != NULL) {
+    tileset_free(tileset);
+  }
 
   ui_exit();
+
+  /* Play the exit sound while audio system dependencies still up. */
+  audio_shutdown(TRUE);
 
   script_client_free();
 
@@ -736,17 +768,16 @@ void client_exit(void)
   conn_list_destroy(game.all_connections);
   conn_list_destroy(game.est_connections);
 
+  free_svg_flag_API();
   registry_module_close();
-  free_libfreeciv();
-  free_nls();
+  libfreeciv_free();
 
   backtrace_deinit();
   log_close();
   cmdline_option_values_free();
 
-  exit(EXIT_SUCCESS);
+  exit(return_value);
 }
-
 
 /**********************************************************************//**
   Handle packet received from server.
@@ -761,18 +792,19 @@ void client_packet_input(void *packet, int type)
       && PACKET_AUTHENTICATION_REQ != type
       && PACKET_SERVER_SHUTDOWN != type
       && PACKET_CONNECT_MSG != type
-      && PACKET_EARLY_CHAT_MSG != type) {
+      && PACKET_EARLY_CHAT_MSG != type
+      && PACKET_SERVER_INFO != type) {
     log_error("Received packet %s (%d) before establishing connection!",
               packet_name(type), type);
-    disconnect_from_server();
+    disconnect_from_server(FALSE);
   } else if (!client_handle_packet(type, packet)) {
     log_error("Received unknown packet (type %d) from server!", type);
-    disconnect_from_server();
+    disconnect_from_server(FALSE);
   }
 }
 
 /**********************************************************************//**
-  Handle user ending his/her turn.
+  Handle user ending their turn.
 **************************************************************************/
 void user_ended_turn(void)
 {
@@ -780,7 +812,7 @@ void user_ended_turn(void)
 }
 
 /**********************************************************************//**
-  Send information about player having finished his/her turn to server.
+  Send information about player having finished their turn to server.
 **************************************************************************/
 void send_turn_done(void)
 {
@@ -917,7 +949,7 @@ void set_client_state(enum client_states newstate)
   case C_S_RUNNING:
     if (oldstate == C_S_PREPARING) {
       popdown_races_dialog();
-      stop_menu_music();     /* stop intro sound loop. */
+      stop_menu_music();     /* Stop intro sound loop. */
     }
 
     init_city_report_game_data();
@@ -927,7 +959,7 @@ void set_client_state(enum client_states newstate)
       research_update(research_get(pplayer));
     }
     role_unit_precalcs();
-    boot_help_texts();   /* reboot with player */
+    boot_help_texts();   /* Reboot with player */
     global_worklists_build();
     can_slide = FALSE;
     unit_focus_update();
@@ -935,14 +967,13 @@ void set_client_state(enum client_states newstate)
     set_client_page(PAGE_GAME);
     /* Find something sensible to display instead of the intro gfx. */
     center_on_something();
-    free_intro_radar_sprites();
     agents_game_start();
     editgui_tileset_changed();
     voteinfo_gui_update();
 
     refresh_overview_canvas();
 
-    update_info_label();        /* get initial population right */
+    update_info_label();        /* Get initial population right */
     unit_focus_update();
     update_unit_info_label(get_units_in_focus());
 
@@ -950,6 +981,7 @@ void set_client_state(enum client_states newstate)
       center_on_something();
     }
     start_style_music();
+    audio_play_sound("e_enter_game", NULL, NULL);
     break;
 
   case C_S_OVER:
@@ -1043,7 +1075,7 @@ void client_remove_all_cli_conn(void)
 /**********************************************************************//**
   Send attribute block.
 **************************************************************************/
-void send_attribute_block_request()
+void send_attribute_block_request(void)
 {
   send_packet_player_attribute_block(&client.conn);
 }
@@ -1091,12 +1123,13 @@ void set_seconds_to_turndone(double seconds)
 {
   if (current_turn_timeout() > 0) {
     seconds_to_turndone = seconds;
-    turndone_timer = timer_renew(turndone_timer, TIMER_USER, TIMER_ACTIVE);
+    turndone_timer = timer_renew(turndone_timer, TIMER_USER, TIMER_ACTIVE,
+                                 turndone_timer != NULL ? NULL : "turndone");
     timer_start(turndone_timer);
 
     /* Maybe we should do an update_timeout_label here, but it doesn't
      * seem to be necessary. */
-    seconds_shown_to_turndone = ceil(seconds) + 0.1;
+    seconds_shown_to_turndone = ceil(seconds + 0.1);
   }
 }
 
@@ -1113,8 +1146,9 @@ bool is_waiting_turn_change(void)
 **************************************************************************/
 void start_turn_change_wait(void)
 {
-  seconds_shown_to_new_turn = ceil(game.tinfo.last_turn_change_time) + 0.1;
-  between_turns = timer_renew(between_turns, TIMER_USER, TIMER_ACTIVE);
+  seconds_shown_to_new_turn = ceil(game.tinfo.last_turn_change_time + 0.1);
+  between_turns = timer_renew(between_turns, TIMER_USER, TIMER_ACTIVE,
+                              between_turns != NULL ? NULL : "between turns");
   timer_start(between_turns);
 
   waiting_turn_change = TRUE;
@@ -1144,7 +1178,7 @@ int get_seconds_to_turndone(void)
 }
 
 /**********************************************************************//**
-  Return the number of seconds until turn-done.  Don't call this unless
+  Return the number of seconds until turn-done. Don't call this unless
   current_turn_timeout() != 0.
 **************************************************************************/
 int get_seconds_to_new_turn(void)
@@ -1180,6 +1214,11 @@ double real_timer_callback(void)
     time_until_next_call = MIN(time_until_next_call, blink_time);
   }
 
+  if (gui_properties.animations) {
+    advance_global_anim_state();
+    time_until_next_call = MIN(time_until_next_call, 0.1);
+  }
+
   if (get_num_units_in_focus() > 0) {
     double blink_time = blink_active_unit();
 
@@ -1188,9 +1227,9 @@ double real_timer_callback(void)
 
   /* It is possible to have current_turn_timeout() > 0 but !turndone_timer,
    * in the first moments after the timeout is set. */
-  if (current_turn_timeout() > 0 && turndone_timer) {
+  if (current_turn_timeout() > 0 && turndone_timer != NULL) {
     double seconds = seconds_to_turndone - timer_read_seconds(turndone_timer);
-    int iseconds = ceil(seconds) + 0.1; /* Turn should end right on 0. */
+    int iseconds = ceil(seconds + 0.1); /* Turn should end right on 0. */
 
     if (iseconds < seconds_shown_to_turndone) {
       seconds_shown_to_turndone = iseconds;
@@ -1202,7 +1241,7 @@ double real_timer_callback(void)
   }
   if (waiting_turn_change) {
     double seconds = game.tinfo.last_turn_change_time - timer_read_seconds(between_turns);
-    int iseconds = ceil(seconds) + 0.1; /* Turn should end right on 0. */
+    int iseconds = ceil(seconds + 0.1); /* Turn should end right on 0. */
 
     if (iseconds < game.tinfo.last_turn_change_time) {
       seconds_shown_to_new_turn = iseconds;
@@ -1263,8 +1302,23 @@ bool can_meet_with_player(const struct player *pplayer)
 bool can_intel_with_player(const struct player *pplayer)
 {
   return (client_is_observer()
-	  || (NULL != client.conn.playing
-	      && could_intel_with_player(client.conn.playing, pplayer)));
+          || (NULL != client.conn.playing
+              && could_intel_with_player(client_player(), pplayer)));
+}
+
+/**********************************************************************//**
+  Fill best possible title for the player to the given buffer, and
+  return that buffer.
+**************************************************************************/
+const char *title_for_player(const struct player *pplayer,
+                             char *buf, size_t buf_len)
+{
+  if (client_player() == pplayer || can_intel_with_player(pplayer)) {
+    /* Knows the government to construct correct title */
+    return ruler_title_for_player(pplayer, buf, buf_len);
+  }
+
+  return default_title_for_player(pplayer, buf, buf_len);
 }
 
 /**********************************************************************//**
@@ -1307,7 +1361,7 @@ bool is_server_busy(void)
 **************************************************************************/
 bool client_is_global_observer(void)
 {
-  return client.conn.playing == NULL && client.conn.observer == TRUE;
+  return client.conn.playing == NULL && client.conn.observer;
 }
 
 /**********************************************************************//**
@@ -1330,20 +1384,12 @@ bool client_has_player(void)
 }
 
 /**********************************************************************//**
-  Either controlling or observing.
-**************************************************************************/
-struct player *client_player(void)
-{
-  return client.conn.playing;
-}
-
-/**********************************************************************//**
   Return the vision of the player on a tile. Client version of
   ./server/maphand/map_is_known_and_seen().
 **************************************************************************/
-static bool client_map_is_known_and_seen(const struct tile *ptile,
-                                         const struct player *pplayer,
-                                         enum vision_layer vlayer)
+bool client_map_is_known_and_seen(const struct tile *ptile,
+                                  const struct player *pplayer,
+                                  enum vision_layer vlayer)
 {
   return dbv_isset(&pplayer->client.tile_vision[vlayer], tile_index(ptile));
 }
@@ -1451,6 +1497,36 @@ static bool client_ss_val_bool_get(server_setting_id id)
 }
 
 /**********************************************************************//**
+  Returns the value of the integer server setting with the specified id.
+**************************************************************************/
+static int client_ss_val_int_get(server_setting_id id)
+{
+  struct option *pset = optset_option_by_number(server_optset, id);
+
+  if (pset) {
+    return option_int_get(pset);
+  } else {
+    log_error("No server setting with the id %d exists.", id);
+    return 0;
+  }
+}
+
+/**********************************************************************//**
+  Returns the value of the bitwise server setting with the specified id.
+**************************************************************************/
+static unsigned int client_ss_val_bitwise_get(server_setting_id id)
+{
+  struct option *pset = optset_option_by_number(server_optset, id);
+
+  if (pset) {
+    return option_bitwise_get(pset);
+  } else {
+    log_error("No server setting with the id %d exists.", id);
+    return FALSE;
+  }
+}
+
+/**********************************************************************//**
   Initialize client specific functions.
 **************************************************************************/
 static void fc_interface_init_client(void)
@@ -1461,15 +1537,18 @@ static void fc_interface_init_client(void)
   funcs->server_setting_name_get = client_ss_name_get;
   funcs->server_setting_type_get = client_ss_type_get;
   funcs->server_setting_val_bool_get = client_ss_val_bool_get;
+  funcs->server_setting_val_int_get = client_ss_val_int_get;
+  funcs->server_setting_val_bitwise_get = client_ss_val_bitwise_get;
   funcs->create_extra = NULL;
   funcs->destroy_extra = NULL;
+  funcs->destroy_city = NULL;
   funcs->player_tile_vision_get = client_map_is_known_and_seen;
   funcs->player_tile_city_id_get = client_plr_tile_city_id_get;
   funcs->gui_color_free = color_free;
 
   /* Keep this function call at the end. It checks if all required functions
      are defined. */
-  fc_interface_init();
+  libfreeciv_init(TRUE);
 }
 
 /**********************************************************************//**
@@ -1582,4 +1661,27 @@ bool is_client_quitting(void)
 void start_quitting(void)
 {
   client_quitting = TRUE;
+}
+
+/************************************************************************//**
+  Create cache of available tilesets.
+****************************************************************************/
+static void cache_tilesets(void)
+{
+  struct fileinfo_list *tileset_choices;
+
+  tileset_choices = get_modpacks_list();
+
+  fileinfo_list_iterate(tileset_choices, pfile) {
+    struct section_file *sf;
+
+    sf = secfile_load(pfile->fullname, FALSE);
+
+    if (sf != NULL) {
+      modpack_cache_tileset(sf);
+      secfile_destroy(sf);
+    }
+  } fileinfo_list_iterate_end;
+
+  fileinfo_list_destroy(tileset_choices);
 }

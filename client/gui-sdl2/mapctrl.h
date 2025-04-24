@@ -37,7 +37,7 @@
 
 #include "mapctrl_g.h"
 
-#ifdef SMALL_SCREEN
+#ifdef GUI_SDL2_SMALL_SCREEN
 
 #define BLOCKM_W                28
 #define BLOCKU_W                15
@@ -46,7 +46,7 @@
 #define DEFAULT_UNITS_W         (78 + BLOCKU_W)
 #define DEFAULT_UNITS_H         52
 
-#else /* SMALL_SCREEN */
+#else /* GUI_SDL2_SMALL_SCREEN */
 
 #define BLOCKM_W                52
 #define BLOCKU_W                28
@@ -55,7 +55,7 @@
 #define DEFAULT_UNITS_W         (158 + BLOCKU_W)
 #define DEFAULT_UNITS_H         104
 
-#endif /* SMALL_SCREEN */
+#endif /* GUI_SDL2_SMALL_SCREEN */
 
 extern int overview_w;
 extern int overview_h;
@@ -91,7 +91,10 @@ void enable_and_redraw_find_city_button(void);
 void enable_and_redraw_revolution_button(void);
 void enable_main_widgets(void);
 void disable_main_widgets(void);
-bool map_event_handler(SDL_Keysym Key);
+bool map_event_handler(SDL_Keysym key);
+
+void finger_down_on_map(struct finger_behavior *finger_behavior);
+void finger_up_on_map(struct finger_behavior *finger_behavior);
 
 void button_down_on_map(struct mouse_button_behavior *button_behavior);
 void button_up_on_map(struct mouse_button_behavior *button_behavior);

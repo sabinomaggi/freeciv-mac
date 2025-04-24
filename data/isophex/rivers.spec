@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -28,7 +28,7 @@ pixel_border = 1
 
 tiles = { "row", "column","tag"
 
-; Rivers (as special type), and whether north, south, east, west 
+; Rivers (as special type), and whether north, south, east, west
 ; also has river or is ocean:
 
  0,  0, "road.river_s_n0e0se0s0w0nw0"

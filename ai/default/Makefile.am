@@ -11,47 +11,50 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/server/advisors \
 	-I$(top_srcdir)/ai \
 	-I$(top_srcdir)/server/generator \
-	-I$(top_srcdir)/dependencies/tinycthread
+	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums
 
 libdefaultai_la_SOURCES = \
-		aiair.c		\
-		aiair.h		\
-		aicity.c	\
-		aicity.h	\
-		aidata.c	\
-		aidata.h	\
 		aiferry.c	\
 		aiferry.h	\
 		aiguard.c	\
 		aiguard.h	\
-		aihand.c	\
-		aihand.h	\
-		aihunt.c	\
-		aihunt.h	\
-		ailog.c		\
-		ailog.h		\
-		aiparatrooper.c \
-		aiparatrooper.h \
-		aiplayer.c	\
-		aiplayer.h	\
-		aisettler.c	\
-		aisettler.h	\
-		aitech.c	\
-		aitech.h	\
-		aitools.c	\
-		aitools.h	\
-		aiunit.c	\
-		aiunit.h	\
-		aidiplomat.c	\
-		aidiplomat.h	\
+		daiair.c	\
+		daiair.h	\
+		daiactions.c	\
+		daiactions.h	\
+		daicity.c	\
+		daicity.h	\
+		daidata.c	\
+		daidata.h	\
 		daidiplomacy.c	\
 		daidiplomacy.h	\
+		daidiplomat.c	\
+		daidiplomat.h	\
 		daidomestic.c	\
 		daidomestic.h	\
 		daieffects.c	\
 		daieffects.h	\
+		daihand.c	\
+		daihand.h	\
+		daihunter.c	\
+		daihunter.h	\
+		dailog.c	\
+		dailog.h	\
 		daimilitary.c	\
-		daimilitary.h
+		daimilitary.h	\
+		daiparadrop.c	\
+		daiparadrop.h	\
+		daiplayer.c	\
+		daiplayer.h	\
+		daisettler.c	\
+		daisettler.h	\
+		daitech.c	\
+		daitech.h	\
+		daitools.c	\
+		daitools.h	\
+		daiunit.c	\
+		daiunit.h
 
 
 libdefaultai_la_LIBADD = -lm

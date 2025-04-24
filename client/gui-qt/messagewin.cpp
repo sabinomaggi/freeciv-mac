@@ -25,6 +25,7 @@
 
 // gui-qt
 #include "fc_client.h"
+#include "gui_main.h"
 #include "messagewin.h"
 #include "qtg_cxxside.h"
 #include "sprite.h"
@@ -80,7 +81,6 @@ void info_tab::maximize_chat()
   chtwdg->scroll_to_bottom();
 }
 
-
 /***********************************************************************//**
   Checks if info_tab can be moved
 ***************************************************************************/
@@ -89,34 +89,41 @@ void info_tab::mousePressEvent(QMouseEvent *event)
   if (gui()->interface_locked) {
     return;
   }
+
   if (event->button() == Qt::LeftButton) {
-    cursor = event->globalPos() - geometry().topLeft();
-    if (event->y() > 0 && event->y() < 25 && event->x() > width() - 25
-        && event->x() < width()) {
+    QPoint pos = event->pos();
+    int x = pos.x();
+    int y = pos.y();
+
+    cursor = event->globalPosition().toPoint() - geometry().topLeft();
+    if (y > 0 && y < 25 && x > width() - 25 && x < width()) {
       resize_mode = true;
       resxy = true;
       return;
     }
-    if (event->y() > 0 && event->y() < 5){
+    if (y > 0 && y < 5) {
       resize_mode = true;
       resy = true;
-    } else if (event->x() > width() - 5 && event->x() < width()){
+    } else if (x > width() - 5 && x < width()) {
       resize_mode = true;
       resx = true;
     }
   }
+
   event->setAccepted(true);
 }
 
 /***********************************************************************//**
   Restores cursor when resizing is done
 ***************************************************************************/
-void info_tab::mouseReleaseEvent(QMouseEvent* event)
+void info_tab::mouseReleaseEvent(QMouseEvent *event)
 {
   QPoint p;
+
   if (gui()->interface_locked) {
     return;
   }
+
   if (resize_mode) {
     resize_mode = false;
     resx = false;
@@ -141,37 +148,48 @@ void info_tab::mouseReleaseEvent(QMouseEvent* event)
 ***************************************************************************/
 void info_tab::mouseMoveEvent(QMouseEvent *event)
 {
+  QPoint pos;
+  int ex, ey;
+
   if (gui()->interface_locked) {
     return;
   }
+
+  pos = event->pos();
+  ex = pos.x();
+  ey = pos.y();
+
   if ((event->buttons() & Qt::LeftButton) && resize_mode && resy) {
     QPoint to_move;
-    int newheight = event->globalY() - cursor.y() - geometry().y();
+    int newheight = event->globalPosition().y() - cursor.y() - geometry().y();
+
     resize(width(), this->geometry().height()-newheight);
-    to_move = event->globalPos() - cursor;
+    to_move = event->globalPosition().toPoint() - cursor;
     move(this->x(), to_move.y());
     setCursor(Qt::SizeVerCursor);
     restore_chat();
-  } else if (event->x() > width() - 9 && event->y() > 0 && event->y() < 9) {
+  } else if (ex > width() - 9 && ey > 0 && ey < 9) {
     setCursor(Qt::SizeBDiagCursor);
   } else if ((event->buttons() & Qt::LeftButton) && resize_mode && resx) {
-    resize(event->x(), height());
+    resize(ex, height());
     setCursor(Qt::SizeHorCursor);
-  } else if (event->x() > width() - 5 && event->x() < width()) {
+  } else if (ex > width() - 5 && ex < width()) {
     setCursor(Qt::SizeHorCursor);
-  } else if (event->y() > 0 && event->y() < 5) {
+  } else if (ey > 0 && ey < 5) {
     setCursor(Qt::SizeVerCursor);
   } else if (resxy && (event->buttons() & Qt::LeftButton)) {
     QPoint to_move;
-    int newheight = event->globalY() - cursor.y() - geometry().y();
-    resize(event->x(), this->geometry().height()- newheight);
-    to_move = event->globalPos() - cursor;
+    int newheight = event->globalPosition().y() - cursor.y() - geometry().y();
+
+    resize(ex, this->geometry().height()- newheight);
+    to_move = event->globalPosition().toPoint() - cursor;
     move(this->x(), to_move.y());
     setCursor(Qt::SizeBDiagCursor);
     restore_chat();
   } else {
     setCursor(Qt::ArrowCursor);
   }
+
   event->setAccepted(true);
 }
 
@@ -202,7 +220,7 @@ messagewdg::messagewdg(QWidget *parent): QWidget(parent)
   layout->setContentsMargins(0, 0, 3, 3);
   setLayout(layout);
 
-  /* dont highlight show current cell - set the same colors*/
+  // Dont highlight show current cell - set the same colors
   palette.setColor(QPalette::Highlight, QColor(0, 0, 0, 0));
   palette.setColor(QPalette::HighlightedText, QColor(205, 206, 173));
   palette.setColor(QPalette::Text, QColor(205, 206, 173));
@@ -235,7 +253,7 @@ void messagewdg::item_selected(const QItemSelection &sl,
   index = indexes.at(0);
   i = index.row();
   pmsg = meswin_get_message(i);
-  if (i > -1 && pmsg != NULL) {
+  if (i > -1 && pmsg != nullptr) {
     if (QApplication::mouseButtons() == Qt::LeftButton
         || QApplication::mouseButtons() == Qt::RightButton) {
       meswin_set_visited_state(i, true);
@@ -262,7 +280,7 @@ void messagewdg::item_selected(const QItemSelection &sl,
 /***********************************************************************//**
   Mouse entered messagewdg
 ***************************************************************************/
-void messagewdg::enterEvent(QEvent *event)
+void messagewdg::enterEvent(QEnterEvent *event)
 {
   setCursor(Qt::ArrowCursor);
 }
@@ -325,7 +343,7 @@ void messagewdg::msg(const struct message *pmsg)
     item->setFont(f);
   }
   icon = get_event_sprite(tileset, pmsg->event);
-  if (icon != NULL) {
+  if (icon != nullptr) {
     pix = icon->pm;
     item->setIcon(QIcon(*pix));
   }
@@ -352,12 +370,11 @@ void messagewdg::resizeEvent(QResizeEvent* event)
 }
 
 /***********************************************************************//**
-  Display the message dialog.  Optionally raise it.
-  Typically triggered by F10.
+  Display the message dialog. Optionally raise it.
 ***************************************************************************/
 void meswin_dialog_popup(bool raise)
 {
-  /* PORTME */
+  // PORTME
 }
 
 /***********************************************************************//**
@@ -365,19 +382,19 @@ void meswin_dialog_popup(bool raise)
 ***************************************************************************/
 bool meswin_dialog_is_open(void)
 {
-  /* PORTME */
+  // PORTME
   return true;
 }
 
 /***********************************************************************//**
   Do the work of updating (populating) the message dialog.
 ***************************************************************************/
-void real_meswin_dialog_update(void)
+void real_meswin_dialog_update(void *unused)
 {
-  int  i, num;
+  int i, num;
   const struct message *pmsg;
 
-  if (gui()->infotab == NULL) {
+  if (gui()->infotab == nullptr) {
     return;
   }
   gui()->infotab->msgwdg->clr();

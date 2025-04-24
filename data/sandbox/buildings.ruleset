@@ -1,9 +1,9 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes,
+; for other "maintenance". If you want to make custom changes,
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
@@ -11,9 +11,22 @@
 ; than minor changes.
 
 [datafile]
-description="Sandbox buildings data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Sandbox buildings data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
+
+[control]
+
+; Names for custom building flags. There can be up to 8 of these.
+; name          = rule name; In some circumstances user may see this
+;                 as part of some sentences, so try to make it descriptive
+;                 and sensible.
+; helptxt       = displayed in the help for building types with this flag
+;                 (optional)
+building_flags =
+  { "name", "helptxt"
+    "Barracks"
+  }
 
 ; /* <-- avoid gettext warnings
 ;
@@ -33,15 +46,20 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; genus	        = genus; one of:
-;                 "GreatWonder", "SmallWonder", "Improvement", "Special".
+;                 "GreatWonder", "SmallWonder", "Improvement", "Special",
+;                 or "Convert".
 ; reqs		= requirements to build the building (see effects.ruleset
 ;		  and README.effects for help on requirements)
-; graphic	= icon of improvement (used in city dialog)
-; graphic_alt	= alternate icon of improvement
+; graphic       = icon of improvement (used in city dialog)
+; graphic_alt   = alternate icon of improvement
+; graphic_alt2  = second alternative icon.
 ; obsolete_by	= requirements for the building to become obsolete
 ; build_cost	= production shields required to build
 ; upkeep	= monetary upkeep value
 ; sabotage	= percent chance of diplomat sabotage being successful
+; sound         = tag of the sound to play when building finished
+; sound_alt     = alternate sound tag
+; sound_alt2    = second alternative sound tag
 ; flags         = special flag strings
 ;
 ; ** Building flags **
@@ -54,10 +72,13 @@ format_version=20
 ;                      Should only be used with genus "SmallWonder".
 ; "Gold"             = Not a real building; production turned into gold
 ;                      indefinitely (capitalization/coinage).
-;                      Genus should be "Special".
+;                      Genus should be "Convert".
+; "Infra"            = Not a real building; production turned into infrapoints
+;                      indefinitely. Genus should be "Convert".
 ; "DisasterProof"    = Disasters never destroy this building. Is meaningful
 ;                      only for genus "Improvement" buildings as others are
 ;                      automatically disaster proof.
+; "Indestructible"   = Surgical strike can never destroy this building.
 ;
 ; */ <-- avoid gettext warnings
 
@@ -68,8 +89,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Radio", "Player"
     }
-graphic	= "b.airport"
-graphic_alt	= "-"
+graphic         = "b.airport"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -78,12 +100,14 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_airport"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
-Allows a city to produce veteran air units (including helicopters). \
+Allows a city to produce veteran air units (including helicopters and\
+ missiles).\
  Also, damaged air units (again, including helicopters) which stay in\
  town for one full turn without moving are completely restored.\
 "), _("\
-A city with an Airport can airlift an extra unit per turn. Airlifting \
+A city with an Airport can airlift an extra unit per turn. Airlifting\
  instantly transports the unit from one city\
  to another and will use all of the unit's movement points. A unit\
  must have some movement points left to be airlifted, and cannot\
@@ -102,8 +126,9 @@ reqs	=
       "Extra", "River", "Adjacent", FALSE
       "Terrain", "Lake", "Adjacent", FALSE
     }
-graphic	= "b.aqueduct"
-graphic_alt	= "-"
+graphic         = "b.aqueduct"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -112,6 +137,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_aqueduct"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Allows a city to grow larger than size 8. (A Sewer System is required \
 for a city to grow larger than size 16.)\
@@ -138,8 +164,9 @@ reqs	=
     { "type", "name", "range"
       "Terrain", "Lake", "Adjacent"
     }
-graphic	= "b.aqueduct"
-graphic_alt	= "-"
+graphic         = "b.aqueduct"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -148,6 +175,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_aqueduct"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Allows a city to grow larger than size 8. (A Sewer System is required \
 for a city to grow larger than size 16.)\
@@ -175,8 +203,9 @@ reqs	=
       "Extra", "River", "Adjacent", TRUE
       "Terrain", "Lake", "Adjacent", FALSE
     }
-graphic	= "b.aqueduct"
-graphic_alt	= "-"
+graphic         = "b.aqueduct"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -185,6 +214,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_aqueduct"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Allows a city to grow larger than size 8. (A Sewer System is required \
 for a city to grow larger than size 16.)\
@@ -212,8 +242,9 @@ reqs	=
       "Tech", "Banking", "Player"
       "Building", "Marketplace", "City"
     }
-graphic	= "b.bank"
-graphic_alt	= "-"
+graphic         = "b.bank"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -222,6 +253,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_bank"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the luxury and tax output in a city by an additional 50%. \
@@ -233,10 +265,10 @@ name		= _("Barracks")
 genus		= "Improvement"
 reqs	=
     { "type", "name", "range"
-
     }
-graphic	= "b.barracks_i"
-graphic_alt	= "-"
+graphic         = "b.barracks_i"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
       "Tech", "Gunpowder", "Player"
@@ -248,13 +280,16 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_i"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
-With a Barracks, each new land unit built in a city will\
+With a Barracks, each new military land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_barracks_ii]
@@ -264,8 +299,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Gunpowder", "Player"
     }
-graphic	= "b.barracks_ii"
-graphic_alt	= "b.barracks_i"
+graphic         = "b.barracks_ii"
+graphic_alt     = "b.barracks_i"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
       "Tech", "Mobile Warfare", "Player"
@@ -276,13 +312,16 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_ii"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
-With a Barracks, each new land unit built in a city will\
+With a Barracks, each new military land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_barracks_iii]
@@ -292,8 +331,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Mobile Warfare", "Player"
     }
-graphic	= "b.barracks_iii"
-graphic_alt	= "b.barracks_i"
+graphic         = "b.barracks_iii"
+graphic_alt     = "b.barracks_i"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -302,13 +342,16 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_barracks_iii"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
+flags           = "Barracks"
 ; /* xgettext:no-c-format */
 helptext	= _("\
-With a Barracks, each new land unit built in a city will\
+With a Barracks, each new military land unit built in a city will\
  automatically have Veteran status, which means that its attack and\
- defense strengths are increased by 50%.  Also, damaged land units\
- which stay in town for one full turn without moving are completely\
- restored.\
+ defense strengths are increased by 50%.\
+"), _("\
+Also, damaged land units which stay in town for one full turn\
+ without moving are completely restored.\
 ")
 
 [building_cathedral]
@@ -319,8 +362,9 @@ reqs	=
       "Tech", "Monotheism", "Player"
       "Building", "Temple", "City"
     }
-graphic	= "b.cathedral"
-graphic_alt	= "-"
+graphic         = "b.cathedral"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -329,6 +373,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_cathedral"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 A Cathedral makes 3 unhappy citizens content in a city, making it \
 easier to maintain order in that city; however, it does not affect \
@@ -345,8 +390,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Masonry", "Player"
     }
-graphic	= "b.city_walls"
-graphic_alt	= "-"
+graphic         = "b.city_walls"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -355,6 +401,7 @@ upkeep		= 0
 sabotage	= 50
 sound		= "b_city_walls"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 City Walls make it easier to defend a city. They add a +100% bonus to the \
@@ -373,8 +420,9 @@ reqs	=
       "Tech", "Navigation", "Player"
       "TerrainClass", "Oceanic", "Adjacent"
     }
-graphic	= "b.coastal_defense"
-graphic_alt	= "-"
+graphic         = "b.coastal_defense"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -383,6 +431,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_coastal_defense"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Gives a +100% bonus to the intrinsic defense strength of units within \
@@ -399,8 +448,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Construction", "Player"
     }
-graphic	= "b.colosseum"
-graphic_alt	= "-"
+graphic         = "b.colosseum"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -409,6 +459,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_colosseum"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Entertains the citizens of a city, making 3 unhappy citizens content. \
  (Four after the discovery of Electricity.)  However, it does not\
@@ -422,8 +473,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Code of Laws", "Player"
     }
-graphic	= "b.courthouse"
-graphic_alt	= "-"
+graphic         = "b.courthouse"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -432,6 +484,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_courthouse"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Halves all kinds of waste in a city (corruption, production waste, and \
 food waste). In your capital, corruption and production waste is \
@@ -439,8 +492,9 @@ eliminated. A Granary together with a Courthouse in a city will \
 eliminate food waste.\
 "), _("\
 Also makes one unhappy citizen content (unless that citizen is unhappy \
-about military activity), and makes the revolt cost of the city 4 times \
-bigger.\
+about military activity).\
+"), _("\
+A city with a Courthouse cannot be incited to revolt.\
 ")
 
 [building_factory]
@@ -450,8 +504,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Industrialization", "Player"
     }
-graphic	= "b.factory"
-graphic_alt	= "-"
+graphic         = "b.factory"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -460,6 +515,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_factory"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the shield production in a city by 25%, or 50% with an \
@@ -477,8 +533,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Pottery", "Player"
     }
-graphic	= "b.granary"
-graphic_alt	= "-"
+graphic         = "b.granary"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -487,6 +544,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_granary"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 When any small city grows or shrinks, 10 food points are saved; this \
 helps cities to grow faster and more easily withstand famine. With a \
@@ -501,7 +559,7 @@ TIP: to maximise the speed with which a city grows, you should build a \
 Granary before it grows larger than size 4.\
 ")
 
-[building_harbour]
+[building_harbor]
 name            = _("Harbor")
 rule_name       = "Harbour"     ; en_GB spelling used originally
 genus		= "Improvement"
@@ -510,16 +568,18 @@ reqs	=
       "Tech", "Seafaring", "Player"
       "TerrainFlag", "Sea", "Adjacent"
     }
-graphic	= "b.harbour"
-graphic_alt	= "-"
+graphic         = "b.harbor"
+graphic_alt     = "b.harbour"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
 build_cost	= 40
 upkeep		= 1
 sabotage	= 100
-sound		= "b_harbour"
-sound_alt	= "b_generic"
+sound           = "b_harbor"
+sound_alt       = "b_harbour"
+sound_alt2      = "b_generic"
 helptext	= _("\
 Gives one extra food resource on all Ocean or Deep Ocean tiles (but \
 not Lakes). The city needs to be coastal (next to one of these tiles) \
@@ -535,8 +595,9 @@ reqs	=
       "Building", "Factory", "City"
       "Extra", "River", "Adjacent"
     }
-graphic	= "b.hydro_plant"
-graphic_alt	= "-"
+graphic         = "b.hydro_plant"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -545,6 +606,7 @@ upkeep		= 4
 sabotage	= 100
 sound		= "b_hydro_plant"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Any kind of electrical plant increases the shield production \
@@ -576,8 +638,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Writing", "Player"
     }
-graphic	= "b.library"
-graphic_alt	= "-"
+graphic         = "b.library"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -586,10 +649,10 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_library"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
-Increases the science output in a city by 50%, or by 100% once the \
-Great Library has been built by any player.\
+Increases the science output in a city by 50%.\
 ")
 
 [building_marketplace]
@@ -599,8 +662,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Currency", "Player"
     }
-graphic	= "b.marketplace"
-graphic_alt	= "-"
+graphic         = "b.marketplace"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -609,6 +673,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_marketplace"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the luxury and tax output in a city by 50%.\
@@ -621,8 +686,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Mass Production", "Player"
     }
-graphic	= "b.mass_transit"
-graphic_alt	= "-"
+graphic         = "b.mass_transit"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -631,6 +697,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_mass_transit"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Reduces the pollution generated by the population in a city; this \
 building counteracts the additional pollution associated with any \
@@ -645,8 +712,9 @@ reqs	=
       "Tech", "Plastics", "Player"
       "Building", "Factory", "City"
     }
-graphic	= "b.mfg_plant"
-graphic_alt	= "-"
+graphic         = "b.mfg_plant"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -655,6 +723,7 @@ upkeep		= 4
 sabotage	= 100
 sound		= "b_mfg_plant"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the shield production in a city by an additional 25%, or \
@@ -681,8 +750,9 @@ reqs	=
       "Tech", "Nuclear Power", "Player"
       "Building", "Factory", "City"
     }
-graphic	= "b.nuclear_plant"
-graphic_alt	= "-"
+graphic         = "b.nuclear_plant"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -691,6 +761,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_nuclear_plant"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Any kind of electrical plant increases the shield production \
@@ -723,8 +794,9 @@ reqs	=
       "Tech", "Miniaturization", "Player"
       "TerrainClass", "Oceanic", "Adjacent"
     }
-graphic	= "b.offshore_platform"
-graphic_alt	= "-"
+graphic         = "b.offshore_platform"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -733,6 +805,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_offshore_platform"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Every Ocean or Lake tile worked by the city yields one extra shield resource, \
 as well as any Deep Ocean tile containing an oil platform. The city needs \
@@ -746,8 +819,12 @@ of the city.\
 name		= _("Palace")
 genus		= "SmallWonder"
 flags		= "SaveSmallWonder"
-graphic	= "b.palace"
-graphic_alt	= "-"
+reqs	=
+    { "type", "name", "range"
+    }
+graphic         = "b.palace"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -756,6 +833,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "b_palace"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Makes a city the capital and the center of your government. \
 Waste in other cities (corruption, production waste, and food waste) \
@@ -792,8 +870,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Theology", "Player"
     }
-graphic	= "b.ecclesiastical_palace"
-graphic_alt	= "b.palace"
+graphic         = "b.ecclesiastical_palace"
+graphic_alt     = "b.palace"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -802,6 +881,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "b_palace"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Makes a city the ecclesiastical capital, that acts as a second center \
 of government.\
@@ -822,6 +902,35 @@ Under Despotism the city containing the palace gains a +75% \
 gold bonus, and under Monarchy a +50% gold bonus.\
 ")
 
+; "Amêzârâk taught all the conjurers and root-cutters," Book of Enok 8:3a
+; (The Tewahedo Orthodox view The Book of Enok as a part of the Bible.)
+[building_mystery_school]
+name            = _("Amêzârâkian Mysteries")
+rule_name       = "Mysteries"
+genus           = "SmallWonder"
+reqs            =
+    { "type", "name",       "range"
+      "Tech", "Polytheism", "Player"
+    }
+graphic	        = "b.mystery_school"
+graphic_alt     = "b.temple"
+graphic_alt2    = "-"
+obsolete_by     =
+    { "type", "name", "range"
+    }
+build_cost      = 400
+upkeep          = 0
+sabotage        = 0
+sound           = "b_mystery_school"
+sound_alt       = "b_temple"
+sound_alt2      = "-"
+helptext        = _("\
+Initiates of The School of Amêzârâk knows how to operate an \
+Ancient Transport Hub.\
+"), _("\
+Initiates of The School of Amêzârâk know how to heal wounded flesh.\
+")
+
 [building_police_station]
 name		= _("Police Station")
 genus		= "Improvement"
@@ -829,8 +938,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Communism", "Player"
     }
-graphic	= "b.police_station"
-graphic_alt	= "-"
+graphic         = "b.police_station"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -839,6 +949,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_police_station"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 A Police Station neutralizes any unhappiness caused by one military \
 unit in its city. It also makes up to 2 more unhappy citizens content \
@@ -853,8 +964,9 @@ reqs	=
       "Tech", "Amphibious Warfare", "Player"
       "TerrainClass", "Oceanic", "Adjacent"
     }
-graphic	= "b.port_facility"
-graphic_alt	= "-"
+graphic         = "b.port_facility"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -863,6 +975,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_port_facility"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Allows a city to build veteran sea units.  Also, damaged sea units\
  which stay in town for one full turn without moving are completely\
@@ -879,8 +992,9 @@ reqs	=
       "Tech", "Refining", "Player"
       "Building", "Factory", "City"
     }
-graphic	= "b.power_plant"
-graphic_alt	= "-"
+graphic         = "b.power_plant"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -889,6 +1003,7 @@ upkeep		= 4
 sabotage	= 100
 sound		= "b_power_plant"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Any kind of electrical plant increases the shield production \
@@ -911,8 +1026,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Recycling", "Player"
     }
-graphic	= "b.recycling_center"
-graphic_alt	= "-"
+graphic         = "b.recycling_center"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -921,6 +1037,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_recycling_center"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Building a Recycling Center reduces the amount of pollution \
@@ -937,8 +1054,9 @@ reqs	=
       "Tech", "Computers", "Player"
       "Building", "University", "City"
     }
-graphic	= "b.research_lab"
-graphic_alt	= "-"
+graphic         = "b.research_lab"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -947,6 +1065,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_research_lab"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the science output in a city by an additional 50%, or \
@@ -955,9 +1074,9 @@ by 100% once the Internet wonder has been built by any player.\
 ; /* xgettext:no-c-format */
 _("\
 The total bonus is 150% if a Library, a University and a \
-Research Lab are all present in the same city, increasing to 300% \
-once the Great Library, Isaac Newton's College, and the Internet have \
-all been built.\
+Research Lab are all present in the same city, increasing to 250% \
+once Isaac Newton's College, and the Internet have \
+both been built.\
 ")
 
 [building_sam_battery]
@@ -967,8 +1086,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Rocketry", "Player"
     }
-graphic	= "b.sam_battery"
-graphic_alt	= "-"
+graphic         = "b.sam_battery"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -977,6 +1097,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_sam_battery"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Doubles the intrinsic defense strength of units within a city \
 when defending against aircraft (including helicopters).\
@@ -989,8 +1110,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Laser", "Player"
     }
-graphic	= "b.sdi_defense"
-graphic_alt	= "-"
+graphic         = "b.sdi_defense"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -999,6 +1121,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_sdi_defense"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Protects a city and its environs (up to 2 tiles away) from attacks \
 by other nations' Nuclear units. A Nuclear unit not owned by you or a \
@@ -1016,8 +1139,9 @@ reqs	=
       "Tech", "Sanitation", "Player"
       "MinSize", "9", "City"
     }
-graphic	= "b.sewer_system"
-graphic_alt	= "-"
+graphic         = "b.sewer_system"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1026,6 +1150,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_sewer_system"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Together with an Aqueduct, allows a city to grow larger than size 16, \
@@ -1040,8 +1165,9 @@ reqs	=
       "Tech", "Environmentalism", "Player"
       "Building", "Factory", "City"
     }
-graphic	= "b.solar_plant"
-graphic_alt	= "-"
+graphic         = "b.solar_plant"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1050,6 +1176,7 @@ upkeep		= 4
 sabotage	= 100
 sound		= "b_solar_plant"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Any kind of electrical plant increases the shield production \
@@ -1082,8 +1209,9 @@ reqs	=
       "Building", "University", "City"
       "Building", "Research Lab", "City"
     }
-graphic	= "b.space_component"
-graphic_alt	= "-"
+graphic         = "b.space_component"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1092,6 +1220,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_space_component"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Space Components can be differentiated into Propulsion and Fuel\
  Components.  Each pair of them reduces your spaceship's travel\
@@ -1099,6 +1228,43 @@ Space Components can be differentiated into Propulsion and Fuel\
 "), _("\
 Before you can build any spaceship parts, the Apollo Program wonder\
  must have been built by any player.\
+")
+
+[building_space_elevator_tether]
+name            = _("Space Elevator Tether")
+genus           = "Improvement"
+reqs            =
+    { "type",         "name",           "range",     "present"
+      "Tech",         "Nanomaterials",  "Player",    TRUE
+      "Building",     "Space Elevator", "Continent", TRUE
+      "Building",     "Space Elevator", "City",      FALSE
+    }
+graphic         = "b.space_elevator_tether"
+graphic_alt     = "b.space_modules"
+graphic_alt2    = "-"
+obsolete_by     =
+    { "type", "name", "range"
+    }
+build_cost      = 400
+upkeep          = 4
+sabotage        = 100
+sound           = "b_space_elevator_tether"
+sound_alt       = "b_generic"
+sound_alt2      = "-"
+helptext        = _("\
+Each tile around the city that is already generating some trade, produces \
+one extra trade resource.\
+"), _("\
+Adds 3 trade route slots to the city.\
+"), _("\
+Increases the radius of the city.\
+"), _("\
+Increases the vision radius of the city.\
+"), _("\
+A Space Elevator is too easy for an enemy to destroy to leave operational \
+and fully assembled during war. \
+It is therefore shut down and without any effect if its owner is at war \
+with anyone at all.\
 ")
 
 [building_space_module]
@@ -1112,8 +1278,9 @@ reqs	=
       "Building", "University", "City"
       "Building", "Research Lab", "City"
     }
-graphic	= "b.space_modules"
-graphic_alt	= "-"
+graphic         = "b.space_modules"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1122,6 +1289,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_space_module"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Space Modules are the most expensive parts of spaceships.  There\
  are three different types of Space Module:\
@@ -1151,8 +1319,9 @@ reqs	=
       "Building", "University", "City"
       "Building", "Research Lab", "City"
     }
-graphic	= "b.space_structural"
-graphic_alt	= "-"
+graphic         = "b.space_structural"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1161,6 +1330,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_space_structural"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Space Structurals form the base of your spaceship.  All other\
  spaceship parts need to be connected to Structurals in order to\
@@ -1178,8 +1348,9 @@ reqs	=
       "Tech", "Economics", "Player"
       "Building", "Bank", "City"
     }
-graphic	= "b.stock_exchange"
-graphic_alt	= "-"
+graphic         = "b.stock_exchange"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1188,6 +1359,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_stock_exchange"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the luxury and tax output in a city by an additional 50%, \
@@ -1203,8 +1375,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Automobile", "Player"
     }
-graphic	= "b.super_highways"
-graphic_alt	= "-"
+graphic         = "b.super_highways"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1213,6 +1386,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_super_highways"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Each tile around the city with roads and without farmland, that\
  is already generating some trade, produces one extra trade resource.\
@@ -1235,8 +1409,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Refrigeration", "Player"
     }
-graphic	= "b.supermarket"
-graphic_alt	= "-"
+graphic         = "b.supermarket"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1245,6 +1420,7 @@ upkeep		= 3
 sabotage	= 100
 sound		= "b_supermarket"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the food resources by 50% on each farmland tile which\
@@ -1259,8 +1435,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Ceremonial Burial", "Player"
     }
-graphic	= "b.temple"
-graphic_alt	= "-"
+graphic         = "b.temple"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1269,6 +1446,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_temple"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Makes one unhappy citizen content. The Mysticism advance doubles \
 this effect (except under a Communist government). With both Mysticism \
@@ -1284,8 +1462,9 @@ reqs	=
       "Tech", "University", "Player"
       "Building", "Library", "City"
     }
-graphic	= "b.university"
-graphic_alt	= "-"
+graphic         = "b.university"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1294,6 +1473,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_university"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the science output in a city by an additional 50%, or \
@@ -1302,8 +1482,38 @@ by 100% once Isaac Newton's College has been built by any player.\
 ; /* xgettext:no-c-format */
 _("\
 The total bonus is 100% if a Library and a University are present \
-together in the same city, increasing to 200% once the Great Library and \
-Isaac Newton's College have both been built.\
+together in the same city, increasing to 150% once \
+Isaac Newton's College has been built.\
+")
+
+; The consensus among the wise men you have licensed and granted a generous
+; regular allowance is that you are divine or that the commoners should
+; believe that you are divine. What better way to honor this consensus than
+; to build an altar to yourself?
+[building_altar_to_the_divine_ruler]
+name            = _("Altar to The Divine Ruler")
+genus           = "GreatWonder"
+reqs            =
+    { "type", "name",             "range"
+      "Tech", "Ruler Apotheosis", "Player"
+    }
+graphic         = "b.altar"
+graphic_alt     = "b.oracle"
+graphic_alt2    = "-"
+obsolete_by     =
+    { "type", "name",     "range"
+      "Tech", "Theology", "Player"
+    }
+build_cost      = 300
+upkeep          = 0
+sabotage        = 0
+sound           = "w_altar"
+sound_alt       = "w_generic"
+sound_alt2      = "-"
+helptext        = _("\
+Makes it possible to receive sacrifices from your subjects.\
+ A Sacrifice of Work makes the unit unhomed and therefore without material\
+ or happiness upkeep.\
 ")
 
 [building_apollo_program]
@@ -1313,8 +1523,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Space Flight", "Player"
     }
-graphic	= "b.apollo_program"
-graphic_alt	= "-"
+graphic         = "b.apollo_program"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1323,6 +1534,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_apollo_program"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 The entire map becomes permanently visible to the player who owns it \
 -- the player always has up-to-date knowledge of all terrain and \
@@ -1344,8 +1556,9 @@ reqs	=
       "Tech", "Economics", "Player"
       "Building", "Stock Exchange", "City"
     }
-graphic	= "b.asmiths_trading_co"
-graphic_alt	= "-"
+graphic         = "b.asmiths_trading_co"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1354,6 +1567,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_asmiths_trading_co"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 In every city with a Stock Exchange, city improvements which would \
 normally have an upkeep of 1 become free of upkeep. (Communist \
@@ -1364,6 +1578,31 @@ Upon completion of this wonder, tax collector specialists' gold output \
 increases to 3 permanently for every nation.\
 ")
 
+[building_chichen_itza]
+name		= _("Chichen Itza")
+genus		= "GreatWonder"
+reqs	=
+    { "type", "name", "range"
+      "Tech", "Warrior Code", "Player"
+    }
+graphic         = "b.chichen_itza"
+graphic_alt     = "b.pyramids"
+graphic_alt2    = "-"
+obsolete_by	=
+    { "type", "name", "range", "survives"
+      "Tech", "Metallurgy", "Player", FALSE
+    }
+build_cost	= 300
+upkeep		= 0
+sabotage	= 0
+sound		= "w_chichen_itza"
+sound_alt	= "w_generic"
+sound_alt2      = "-"
+helptext	= _("\
+In a city with Chichen Itza, settlers can be built without\
+ size of the city shrinking.\
+")
+
 [building_colossus]
 name		= _("Colossus")
 genus		= "GreatWonder"
@@ -1371,8 +1610,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Bronze Working", "Player"
     }
-graphic	= "b.colossus"
-graphic_alt	= "-"
+graphic         = "b.colossus"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Automobile", "Player", FALSE
@@ -1382,6 +1622,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_colossus"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Each tile around the city where this wonder is built that is already\
  generating some trade produces one extra trade resource.\
@@ -1394,8 +1635,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Astronomy", "Player"
     }
-graphic	= "b.copernicus_observatory"
-graphic_alt	= "-"
+graphic         = "b.copernicus_observatory"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Computers", "Player", FALSE
@@ -1405,6 +1647,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_copernicus_observatory"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Each tile worked by the city where this wonder is built produces \
 one extra research point.\
@@ -1417,8 +1660,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Genetic Engineering", "Player"
     }
-graphic	= "b.cure_for_cancer"
-graphic_alt	= "-"
+graphic         = "b.cure_for_cancer"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1427,13 +1671,14 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_cure_for_cancer"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 This stunning technological achievement makes one content citizen \
 happy in each of your cities (2 extra luxury per city). It further \
-reduces the risk of plague in the city (by 10% of the base chance); \
-together with an Aqueduct, a Sewer System, and knowledge of Medicine, \
-it entirely eliminates the risk of plague.\
+reduces your risk of plague (by 10% of the base chance); with \
+knowledge of Medicine, any of your cities with an Aqueduct and a \
+Sewer System will be entirely free of plague.\
 ")
 
 [building_darwins_voyage]
@@ -1443,8 +1688,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Steam Engine", "Player"
     }
-graphic	= "b.darwins_voyage"
-graphic_alt	= "-"
+graphic         = "b.darwins_voyage"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1453,6 +1699,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_darwins_voyage"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Charles Darwin's voyage sparked the discovery of the evolution \
 of the species, which inspired greater confidence in science. \
@@ -1469,8 +1716,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Railroad", "Player"
     }
-graphic	= "b.eiffel_tower"
-graphic_alt	= "-"
+graphic         = "b.eiffel_tower"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1479,11 +1727,42 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_eiffel_tower"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 AI nations are more inclined to be friendly and forgiving toward the \
 owner of this wonder (until the Apollo Program is completed). It also \
 reduces the pollution caused by the population; it counteracts the \
 pollution associated with a single building in each of your cities.\
+")
+
+; This is in no way, shape or form an accusation that the USA was behind
+; the COVID-19 pandemic. I had planned this rule as a part of a new ruleset,
+; "Too Much Detail", long before the Corona pandemic. The rule was inspired
+; by conspiracy theories.
+; I delayed introducing this rule until 2021 because of COVID-19.
+; -- Sveinung
+[building_georgia_guidestones]
+name            = _("Guidestones")
+genus           = "GreatWonder"
+reqs            =
+    { "type", "name",             "range"
+      "Tech", "Environmentalism", "Player"
+    }
+graphic         = "b.georgia_guidestones"
+graphic_alt     = "b.port_facility"
+graphic_alt2    = "-"
+obsolete_by     =
+    { "type", "name",      "range"
+    }
+build_cost      = 400
+upkeep          = 0
+sabotage        = 0
+sound           = "w_georgia_guidestones"
+sound_alt       = "w_generic"
+sound_alt2      = "-"
+helptext        = _("\
+Allows releasing plague against any city as this helps maintain humanity \
+under 500,000,000.\
 ")
 
 [building_great_library]
@@ -1494,8 +1773,9 @@ reqs	=
       "Tech", "Literacy", "Player"
       "Building", "Library", "City"
     }
-graphic	= "b.great_library"
-graphic_alt	= "-"
+graphic         = "b.great_library"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1504,12 +1784,15 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_great_library"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Gives an immediate technology advance to the player that builds it, \
 and thereafter 4 extra research points every turn to its city.\
-"), _("\
-Completion of this wonder permanently doubles the effect of Libraries \
-for every player.\
+"),
+; /* xgettext:no-c-format */
+_("\
+Completion of this wonder starts permanent tech sharing so that once \
+a tech is known by 30% of players, also all the others get it.\
 ")
 
 [building_great_wall]
@@ -1519,8 +1802,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Construction", "Player"
     }
-graphic	= "b.great_wall"
-graphic_alt	= "-"
+graphic         = "b.great_wall"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Machine Tools", "Player", FALSE
@@ -1530,6 +1814,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_great_wall"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the defense of all your cities by adding a +50% bonus to \
@@ -1545,8 +1830,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Pottery", "Player"
     }
-graphic	= "b.hanging_gardens"
-graphic_alt	= "-"
+graphic         = "b.hanging_gardens"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Electricity", "Player", FALSE
@@ -1556,6 +1842,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_hanging_gardens"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Makes one unhappy citizen content in every city of the player that \
 owns it (not including citizens unhappy about aggression). This wonder \
@@ -1572,8 +1859,9 @@ reqs	=
       "Extra", "River", "Adjacent"
       "Building", "Factory", "City"
     }
-graphic	= "b.hoover_dam"
-graphic_alt	= "-"
+graphic         = "b.hoover_dam"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1582,6 +1870,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_hoover_dam"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Acts as a Hydro Plant in the city where it is built, and reduces \
@@ -1597,8 +1886,9 @@ reqs	=
       "Tech", "Theory of Gravity", "Player"
       "Building", "University", "City"
     }
-graphic	= "b.isaac_newtons_college"
-graphic_alt	= "-"
+graphic         = "b.isaac_newtons_college"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1607,6 +1897,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_isaac_newtons_college"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Gives an immediate technology advance to the player that builds it, \
 and thereafter 6 extra research points every turn to its city.\
@@ -1622,8 +1913,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Theology", "Player"
     }
-graphic	= "b.js_bachs_cathedral"
-graphic_alt	= "-"
+graphic         = "b.js_bachs_cathedral"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1632,6 +1924,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_js_bachs_cathedral"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Makes one content citizen happy in every city of the player that owns \
 it (2 extra luxury points per city).\
@@ -1644,8 +1937,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Chivalry", "Player"
     }
-graphic	= "b.king_richards_crusade"
-graphic_alt	= "-"
+graphic         = "b.king_richards_crusade"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Communism", "Player", FALSE
@@ -1655,6 +1949,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_king_richards_crusade"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Reduces the unhappiness caused by aggressively deployed military \
 units owned by the city by 1 -- in other words, it neutralizes the \
@@ -1671,8 +1966,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Invention", "Player"
     }
-graphic	= "b.leonardos_workshop"
-graphic_alt	= "-"
+graphic         = "b.leonardos_workshop"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Combustion", "Player", FALSE
@@ -1682,6 +1978,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_leonardos_workshop"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Upgrades one obsolete unit per game turn.\
 ")
@@ -1694,8 +1991,9 @@ reqs	=
       "Tech", "Map Making", "Player"
       "TerrainFlag", "Sea", "Adjacent"
     }
-graphic	= "b.lighthouse"
-graphic_alt	= "-"
+graphic         = "b.lighthouse"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Engineering", "Player", FALSE
@@ -1705,6 +2003,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_lighthouse"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Gives all your sea units 1 additional movement point (except Triremes \
 while moving on rivers). Makes all your new sea units veterans (for all \
@@ -1719,8 +2018,9 @@ reqs	=
       "Tech", "Magnetism", "Player"
       "TerrainFlag", "Sea", "Adjacent"
     }
-graphic	= "b.magellans_expedition"
-graphic_alt	= "-"
+graphic         = "b.magellans_expedition"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Nuclear Power", "Player", FALSE
@@ -1730,6 +2030,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_magellans_expedition"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Gives all your sea units 1 additional movement point. The chance\
  of a sea unit getting the next veteran level after a battle\
@@ -1743,8 +2044,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Nuclear Fission", "Player"
     }
-graphic	= "b.manhattan_project"
-graphic_alt	= "-"
+graphic         = "b.manhattan_project"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1753,6 +2055,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_manhattan_project"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ;helptext is set in client/helpdata.c:helptext_wonder()
 ;helptext	=
 
@@ -1763,8 +2066,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Trade", "Player"
     }
-graphic	= "b.marco_polos_embassy"
-graphic_alt	= "-"
+graphic         = "b.marco_polos_embassy"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Democracy", "Player", FALSE
@@ -1774,6 +2078,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_marco_polos_embassy"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 The player who owns it gets an embassy with all players.\
 "), _("\
@@ -1789,8 +2094,9 @@ reqs	=
       "Tech", "Monotheism", "Player"
       "Building", "Cathedral", "City"
     }
-graphic	= "b.michelangelos_chapel"
-graphic_alt	= "-"
+graphic         = "b.michelangelos_chapel"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1799,6 +2105,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_michelangelos_chapel"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Doubles the base effect of Cathedrals. This makes 3 additional unhappy \
 citizens content in each city with a Cathedral; however, it does \
@@ -1814,6 +2121,7 @@ reqs	=
     }
 graphic         = "b.mausoleum"
 graphic_alt     = "b.oracle"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Sanitation", "Player", FALSE
@@ -1823,6 +2131,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_oracle"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 With this wonder, City Walls and Courthouses each make one unhappy \
 citizen content in their city, unless that citizen is unhappy about \
@@ -1838,6 +2147,7 @@ reqs	=
     }
 graphic         = "b.statue_of_zeus"
 graphic_alt     = "b.oracle"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Conscription", "Player", FALSE
@@ -1847,12 +2157,13 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_oracle"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
-Reduces the unhappiness caused by aggressively deployed military \
-units owned by the city by 1 -- in other words, it neutralizes the \
-unhappiness caused by a single military unit (except under Democracy, \
-where a single unit makes two citizens unhappy). Each city also avoids \
-one shield of upkeep for units.\
+Reduces by 1 the unhappiness caused by one aggressively deployed \
+military unit per city -- in other words, in each city it neutralizes \
+the unhappiness caused by a single military unit (except under \
+Democracy, where it just halves the unhappiness from that unit). \
+Each city also avoids one shield of upkeep for units.\
 ")
 
 [building_temple_of_artemis]
@@ -1865,6 +2176,7 @@ reqs	=
     }
 graphic         = "b.temple_of_artemis"
 graphic_alt     = "b.oracle"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Theology", "Player", FALSE
@@ -1874,6 +2186,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_oracle"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Makes 2 additional unhappy citizens content in every city with \
 a Temple. Does not affect citizens made unhappy by aggression.\
@@ -1886,8 +2199,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Masonry", "Player"
     }
-graphic	= "b.pyramids"
-graphic_alt	= "-"
+graphic         = "b.pyramids"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Railroad", "Player", FALSE
@@ -1897,6 +2211,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_pyramids"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Each tile around the city where this wonder is built that is already \
 generating some shield output produces one extra shield resource. \
@@ -1915,6 +2230,7 @@ reqs	=
     }
 graphic		= "b.internet"
 graphic_alt	= "b.seti_program"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1923,6 +2239,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_seti_program"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Gives an immediate technology advance to the player that builds it, \
 and thereafter all cities on the map are continuously visible to its \
@@ -1940,8 +2257,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Sanitation", "Player"
     }
-graphic	= "b.shakespeares_theatre"
-graphic_alt	= "-"
+graphic         = "b.shakespeares_theatre"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1950,12 +2268,53 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_shakespeares_theatre"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Gives 1 additional luxury to every city, and 6 luxuries to the city \
 where it is located.\
 "), _("\
 Upon completion of this wonder, entertainer specialists' luxury \
 output increases to 3 permanently for every nation.\
+")
+
+[building_space_elevator]
+name            = _("Space Elevator")
+genus           = "SmallWonder"
+reqs            =
+    { "type",         "name",           "range", "present"
+      "Tech",         "Nanomaterials",  "Player", TRUE
+      "Building",     "Apollo Program", "World",  TRUE
+      "Building",     "Space Elevator", "Player", FALSE
+      "TerrainClass", "Oceanic",        "City",   TRUE
+      "MaxLatitude",  "150",            "Tile",   TRUE
+      "MinLatitude",  "-150",           "Tile",   TRUE
+    }
+graphic	        = "b.space_elevator"
+graphic_alt     = "b.space_structural"
+graphic_alt2    = "-"
+obsolete_by     =
+    { "type", "name", "range"
+    }
+build_cost      = 800
+upkeep          = 0
+sabotage        = 0
+sound           = "w_space_elevator"
+sound_alt       = "w_generic"
+sound_alt2      = "-"
+helptext        = _("\
+Each tile around the city that is already generating some trade, produces \
+one extra trade resource.\
+"), _("\
+Adds 3 trade route slots to the city.\
+"), _("\
+Increases the radius of the city.\
+"), _("\
+Increases the vision radius of the city.\
+"), _("\
+A Space Elevator is too easy for an enemy to destroy to leave operational \
+and fully assembled during war. \
+It is therefore shut down and without any effect if its owner is at war \
+with anyone at all.\
 ")
 
 [building_statue_of_liberty]
@@ -1965,8 +2324,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Democracy", "Player"
     }
-graphic	= "b.statue_of_liberty"
-graphic_alt	= "-"
+graphic         = "b.statue_of_liberty"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -1975,6 +2335,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_statue_of_liberty"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Allows you to choose any government, including those that have not yet \
 been researched by your civilization, and without the transition \
@@ -1990,8 +2351,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Feudalism", "Player"
     }
-graphic	= "b.sun_tzus_war_academy"
-graphic_alt	= "-"
+graphic         = "b.sun_tzus_war_academy"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range", "survives"
       "Tech", "Mobile Warfare", "Player", FALSE
@@ -2001,10 +2363,57 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_sun_tzus_war_academy"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 All your new military land units start with an additional veteran level \
 (this is cumulative with any Barracks building in a city; with both, units \
 are created as Hardened).\
+")
+
+; This is the "It Is Just A Game" version. I have been working on "Pax Dei",
+; a version for more "serious" rulesets, since 2015. It will only ban its
+; owner (and perhaps their allies) from violence against civilians in return
+; for increased trade. (Merchants and their goods were protected.) I could
+; replace "Treuga Dei" with "Pax Dei" in sandbox when it is done.
+; A historian will object and say that there were around 80 days each year
+; when fighting was allowed. I reply that this rule is far more accurate
+; than most fiction about the "dark and oppressive" middle ages.
+; For why Communism changes its effect see the attitude behind the poem
+; "Rent flagg" ("Clean flag" - he commands or requests - in Norwegian the
+; imperative mood can be a request - the reader to remove the Christian
+; crosses from their (Norwegian) flag) by the Norwegian communist (fellow
+; traveler) Arnulf Øverland where he says `let no one offer you the deceit /
+; that "the savior" is born` and that you have to `liberate yourself`.
+; Combine this attitude with the attitude behind Pax et treuga Dei and
+; you get a Casus Belli for everyone once anyone does anything violent.
+; -- Sveinung
+[building_treuga_dei]
+name            = _("Treuga Dei")
+genus           = "GreatWonder"
+reqs            =
+    { "type", "name",     "range"
+      "Tech", "Theology", "Player"
+    }
+graphic         = "b.treuga_dei"
+graphic_alt     = "b.michelangelos_chapel"
+graphic_alt2    = "-"
+obsolete_by     =
+    { "type", "name",      "range"
+    }
+build_cost      = 600
+upkeep          = 0
+sabotage        = 0
+sound           = "w_treuga_dei"
+sound_alt       = "w_generic"
+sound_alt2      = "-"
+helptext        = _("\
+Historical note: The real Treuga Dei was far less extreme. \
+Fighting was allowed around 80 days each year. \
+It also both began and ended during the middle ages \
+- long before communism.\
+"), _("\
+Makes violence impossible before Communism is discovered. \
+Makes every violent action a Casus Belli after Communism is discovered.\
 ")
 
 [building_united_nations]
@@ -2014,8 +2423,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Communism", "Player"
     }
-graphic	= "b.united_nations"
-graphic_alt	= "-"
+graphic         = "b.united_nations"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -2024,6 +2434,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_united_nations"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Creates a world senate that prevents unprovoked declaration of war by \
 any nuclear-capable nation (that is, any nation with knowledge of \
@@ -2044,8 +2455,9 @@ reqs	=
     { "type", "name", "range"
       "Tech", "Conscription", "Player"
     }
-graphic	= "b.womens_suffrage"
-graphic_alt	= "-"
+graphic         = "b.womens_suffrage"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -2054,6 +2466,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_womens_suffrage"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Neutralizes the unhappiness caused by one aggressively \
 deployed military unit per city. Under Democracy, it additionally \
@@ -2063,14 +2476,15 @@ same level as a Republic).\
 
 [building_capitalization]
 name		= _("Coinage")
-genus		= "Special"
+genus		= "Convert"
 flags		= "Gold"
 reqs	=
     { "type", "name", "range"
 
     }
-graphic	= "b.capitalization"
-graphic_alt	= "-"
+graphic         = "b.capitalization"
+graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -2080,13 +2494,13 @@ sabotage	= 0
 ; FIXME: this is the real helptext; restore when have a subordnate analogue
 ; /* (ignore for gettext until fixed)
 ;helptext	= _("\
-;This is not a normal improvement.  Instead, setting a city's\
+;This is not a normal improvement. Instead, setting a city's\
 ; production to Capitalization means its shield production is\
 ; converted to tax output (money).\
 ;")
 ; */
 helptext	= _("\
-This is not a normal improvement.  Instead, setting a city's\
+This is not a normal improvement. Instead, setting a city's\
  production to Coinage means its shield production is\
  converted to tax output (money, coins!).\
 ")

@@ -15,7 +15,6 @@
 #include <fc_config.h>
 #endif
 
-
 // Qt
 #include <QApplication>
 #include <QGridLayout>
@@ -29,9 +28,10 @@
 
 // gui-qt
 #include "fc_client.h"
+#include "gui_main.h"
+
 #include "messagedlg.h"
 
-extern QApplication *qapp;
 /**********************************************************************//**
   Message widget constructor
 **************************************************************************/
@@ -83,8 +83,8 @@ message_dlg::message_dlg()
   fill_data();
   margins = msgtab->contentsMargins();
   len = msgtab->horizontalHeader()->length() + margins.left()
-        + margins.right()
-        + qapp->style()->pixelMetric(QStyle::PM_ScrollBarExtent);
+    + margins.right()
+    + current_app()->style()->pixelMetric(QStyle::PM_ScrollBarExtent);
   msgtab->setFixedWidth(len);
   msgtab->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   but1->setFixedWidth(len / 3);
@@ -139,8 +139,9 @@ void message_dlg::apply_changes()
   int i, j;
   QTableWidgetItem *item;
   Qt::CheckState state;
+
   for (i = 0; i <= event_type_max(); i++) {
-    /* Include possible undefined messages. */
+    // Include possible undefined messages.
     messages_where[i] = 0;
   }
   i = 0;
@@ -171,22 +172,23 @@ void message_dlg::cancel_changes()
 /**********************************************************************//**
   Popup a window to let the user edit their message options.
 **************************************************************************/
-void popup_messageopt_dialog(void)
+void popup_messageopt_dialog()
 {
-  message_dlg *mdlg;
   int i;
   QWidget *w;
 
   if (!gui()->is_repo_dlg_open("MSD")) {
-    mdlg = new message_dlg;
+    new message_dlg;
   } else {
     i = gui()->gimme_index_of("MSD");
+
     fc_assert(i != -1);
+
     if (gui()->game_tab_widget->currentIndex() == i) {
       return;
     }
+
     w = gui()->game_tab_widget->widget(i);
-    mdlg = reinterpret_cast<message_dlg *>(w);
-    gui()->game_tab_widget->setCurrentWidget(mdlg);
+    gui()->game_tab_widget->setCurrentWidget(w);
   }
 }

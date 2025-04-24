@@ -29,7 +29,6 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QSignalMapper>
 #include <QSpinBox>
 
 // utility
@@ -42,6 +41,7 @@
 
 // gui-qt
 #include "fc_client.h"
+
 #include "optiondlg.h"
 
 enum {
@@ -53,7 +53,7 @@ enum {
   RESPONSE_SAVE
 };
 
-/* global value to store pointers to opened config dialogs */
+// Global value to store pointers to opened config dialogs
 QMap<const struct option_set *, option_dialog *> dialog_list;
 
 /************************************************************************//**
@@ -69,7 +69,7 @@ QString split_text(QString text, bool cut)
   sl = text.split("\n");
   foreach (const QString &s, sl) {
     st = s;
-    while (st.count() >= 80) {
+    while (st.length() >= 80) {
       str = st.left(80);
       i = str.lastIndexOf(' ');
       if (i == -1) {
@@ -85,8 +85,8 @@ QString split_text(QString text, bool cut)
       }
     }
     str = st;
-    if (str.left(str.count()) != "") {
-      result = result + str.left(str.count()) + '\n';
+    if (str.left(str.length()) != "") {
+      result = result + str.left(str.length()) + '\n';
     }
     j++;
     if (j >= 12 && cut) {
@@ -95,6 +95,7 @@ QString split_text(QString text, bool cut)
     }
   }
   result.remove(result.lastIndexOf('\n'), 1);
+
   return result;
 }
 
@@ -106,10 +107,10 @@ QString cut_helptext(QString text)
   QStringList sl;
   QString ret_str;
 
-  /* Remove all lines from help which has '*' in first 3 chars */
+  // Remove all lines from help which has '*' in first 3 chars
   sl = text.split('\n');
-  foreach (const QString & s, sl) {
-    if (s.count() > 2) {
+  foreach (const QString &s, sl) {
+    if (s.length() > 2) {
       if (s.at(0) != '*' && s.at(1) != '*' && s.at(2) != '*') {
         ret_str = ret_str + s + '\n';
       }
@@ -120,56 +121,61 @@ QString cut_helptext(QString text)
   return ret_str;
 }
 
-
 /************************************************************************//**
   Constructor for options dialog.
 ****************************************************************************/
-option_dialog::option_dialog(const QString & name,
-                             const option_set *options, QWidget *parent)
-  : qfc_dialog(parent)
+option_dialog::option_dialog(const QString &name,
+                             const option_set *options, bool client_set,
+                             QWidget *parent)
+  : qfc_dialog(parent), client_settings(client_set)
 {
   QPushButton *but;
 
   curr_options = options;
   setWindowTitle(name);
   tab_widget = new QTabWidget;
-  signal_map = new QSignalMapper;
 
   button_box = new QDialogButtonBox();
   but = new QPushButton(style()->standardIcon(QStyle::SP_DialogCancelButton),
                         _("Cancel"));
   button_box->addButton(but, QDialogButtonBox::ActionRole);
-  connect(but, SIGNAL(clicked()), signal_map, SLOT(map()));
-  signal_map->setMapping(but, RESPONSE_CANCEL);
+  QObject::connect(but, &QPushButton::clicked, [this]() {
+    apply_option(RESPONSE_CANCEL);
+  });
 
   but = new QPushButton(style()->standardIcon(QStyle::SP_DialogResetButton),
                         _("Reset"));
   button_box->addButton(but, QDialogButtonBox::ResetRole);
-  connect(but, SIGNAL(clicked()), signal_map, SLOT(map()));
-  signal_map->setMapping(but, RESPONSE_RESET);
+  QObject::connect(but, &QPushButton::clicked, [this]() {
+    apply_option(RESPONSE_RESET);
+  });
 
   but = new QPushButton(QIcon::fromTheme("view-refresh"), _("Refresh"));
   button_box->addButton(but, QDialogButtonBox::ActionRole);
-  connect(but, SIGNAL(clicked()), signal_map, SLOT(map()));
-  signal_map->setMapping(but, RESPONSE_REFRESH);
+  QObject::connect(but, &QPushButton::clicked, [this]() {
+    apply_option(RESPONSE_REFRESH);
+  });
 
   but = new QPushButton(style()->standardIcon(QStyle::SP_DialogApplyButton),
                         _("Apply"));
   button_box->addButton(but, QDialogButtonBox::ActionRole);
-  connect(but, SIGNAL(clicked()), signal_map, SLOT(map()));
-  signal_map->setMapping(but, RESPONSE_APPLY);
+  QObject::connect(but, &QPushButton::clicked, [this]() {
+    apply_option(RESPONSE_APPLY);
+  });
 
   but = new QPushButton(style()->standardIcon(QStyle::SP_DialogSaveButton),
                         _("Save"));
   button_box->addButton(but, QDialogButtonBox::ActionRole);
-  connect(but, SIGNAL(clicked()), signal_map, SLOT(map()));
-  signal_map->setMapping(but, RESPONSE_SAVE);
+  QObject::connect(but, &QPushButton::clicked, [this]() {
+    apply_option(RESPONSE_SAVE);
+  });
 
   but = new QPushButton(style()->standardIcon(QStyle::SP_DialogOkButton),
                         _("Ok"));
   button_box->addButton(but, QDialogButtonBox::ActionRole);
-  connect(but, SIGNAL(clicked()), signal_map, SLOT(map()));
-  signal_map->setMapping(but, RESPONSE_OK);
+  QObject::connect(but, &QPushButton::clicked, [this]() {
+    apply_option(RESPONSE_OK);
+  });
 
   main_layout = new QVBoxLayout;
   main_layout->addWidget(tab_widget);
@@ -178,7 +184,6 @@ option_dialog::option_dialog(const QString & name,
   main_layout->addWidget(button_box);
   setLayout(main_layout);
 
-  connect(signal_map, SIGNAL(mapped(int)), this, SLOT(apply_option(int)));
   setAttribute(Qt::WA_DeleteOnClose);
 }
 
@@ -213,7 +218,7 @@ void option_dialog::apply_option(int response)
     break;
   case RESPONSE_SAVE:
     desired_settable_options_update();
-    options_save(NULL);
+    options_save(nullptr);
     break;
   case RESPONSE_RESET:
     full_reset();
@@ -225,7 +230,7 @@ void option_dialog::apply_option(int response)
 }
 
 /************************************************************************//**
-  Return selected colors (for highlighting chat).
+  Return selected colors
 ****************************************************************************/
 void option_dialog::get_color(struct option *poption, QByteArray &a1,
                               QByteArray &a2)
@@ -233,7 +238,7 @@ void option_dialog::get_color(struct option *poption, QByteArray &a1,
   QPalette pal;
   QColor col1, col2;
   QWidget *w;
-  QPushButton* but;
+  QPushButton *but;
 
   w = reinterpret_cast<QPushButton *>(option_get_gui_data(poption));
   but = w->findChild<QPushButton *>("text_color");
@@ -274,7 +279,7 @@ void option_dialog::apply_options()
       option_font_set(poption, get_button_font(poption).constData());
       break;
     case OT_COLOR:
-      get_color(poption,  ba1,  ba2);
+      get_color(poption, ba1, ba2);
       option_color_set(poption, ft_color_construct(ba1.data(), ba2.data()));
       break;
     case OT_VIDEO_MODE:
@@ -295,7 +300,7 @@ void option_dialog::set_bool(struct option *poption, bool value)
   QCheckBox *c;
 
   c = reinterpret_cast<QCheckBox *>(option_get_gui_data(poption));
-  if (value == true) {
+  if (value) {
     c->setCheckState(Qt::Checked);
   } else {
     c->setCheckState(Qt::Unchecked);
@@ -330,10 +335,10 @@ void option_dialog::set_int(struct option *poption, int value)
 
 /************************************************************************//**
   Sets desired font name in button text and sets global font for that option
-  That function is not executed when user changes font, but when applying or 
+  That function is not executed when user changes font, but when applying or
   resetting options.
 ****************************************************************************/
-void option_dialog::set_font(struct option* poption, QString s)
+void option_dialog::set_font(struct option *poption, QString s)
 {
   QStringList ql;
   QPushButton *qp;
@@ -344,7 +349,7 @@ void option_dialog::set_font(struct option* poption, QString s)
   qApp->processEvents();
   qp = reinterpret_cast<QPushButton *>(option_get_gui_data(poption));
   ql = s.split(",");
-  if (s.isEmpty() == false) {
+  if (!s.isEmpty()) {
     qp->setText(ql[0] + " " + ql[1]);
     qp->setFont(*fp);
   }
@@ -370,7 +375,7 @@ void option_dialog::set_string(struct option *poption, const char *string)
   QComboBox *cb;
   QLineEdit *le;
 
-  if (option_str_values(poption) != NULL) {
+  if (option_str_values(poption) != nullptr) {
     cb = reinterpret_cast<QComboBox *>(option_get_gui_data(poption));
     i = cb->findText(string);
     if (i != -1) {
@@ -390,7 +395,7 @@ QByteArray option_dialog::get_string(struct option *poption)
   QComboBox *cb;
   QLineEdit *le;
 
-  if (option_str_values(poption) != NULL) {
+  if (option_str_values(poption) != nullptr) {
     cb = reinterpret_cast<QComboBox *>(option_get_gui_data(poption));
     return cb->currentText().toUtf8();
   } else {
@@ -464,16 +469,23 @@ unsigned int option_dialog::get_bitwise(struct option *poption)
 }
 
 /************************************************************************//**
-  Find option indicating colors.
+  Update color button stylesheet to show new color
 ****************************************************************************/
-struct option* option_dialog::get_color_option()
+void option_dialog::set_button_color(QPushButton *button,
+                                     const char *colorname)
 {
-  options_iterate(curr_options, poption) {
-    if (option_type(poption) == OT_COLOR) {
-      return poption;
-    }
-  } options_iterate_end;
-  return NULL;
+  if (button != nullptr && colorname != nullptr && colorname[0] != '\0') {
+    QString s1 = "QPushButton { background-color: ";
+    QString s2 = ";}";
+    QColor col;
+
+#ifdef FC_QT6X_MODE
+    col = QColor::fromString(colorname);
+#else  // FC_QT6X_MODE
+    col.setNamedColor(colorname);
+#endif // FC_QT6X_MODE
+    button->setStyleSheet(s1 + col.name() + s2);
+  }
 }
 
 /************************************************************************//**
@@ -481,26 +493,15 @@ struct option* option_dialog::get_color_option()
 ****************************************************************************/
 void option_dialog::set_color(struct option *poption, struct ft_color color)
 {
-  QPalette pal, pal2;
-  QColor col;
   QWidget *w;
   QPushButton *but;
-  QString s1 = "QPushButton { background-color: ";
-  QString s2 = ";}";
 
   w = reinterpret_cast<QPushButton *>(option_get_gui_data(poption));
   but = w->findChild<QPushButton *>("text_color");
-  if (NULL != but && NULL != color.foreground 
-      && '\0' != color.foreground[0]) {
-    col.setNamedColor(color.foreground);
-    but->setStyleSheet(s1 + col.name() + s2);
-  }
+  set_button_color(but, color.foreground);
+
   but = w->findChild<QPushButton *>("text_background");
-  if (NULL != but && NULL != color.background
-      && '\0' != color.background[0]) {
-    col.setNamedColor(color.background);
-    but->setStyleSheet(s1 + col.name() + s2);
-  }
+  set_button_color(but, color.background);
 }
 
 /************************************************************************//**
@@ -508,7 +509,6 @@ void option_dialog::set_color(struct option *poption, struct ft_color color)
 ****************************************************************************/
 void option_dialog::option_dialog_refresh(struct option *poption)
 {
-
   switch (option_type(poption)) {
   case OT_BOOLEAN:
     set_bool(poption, option_bool_get(poption));
@@ -629,9 +629,11 @@ void option_dialog::add_option(struct option *poption)
   QPalette pal;
   int min, max, i;
   unsigned int j;
+  struct ft_color ft_color;
+  QColor c;
 
   category_name = option_category_name(poption);
-  widget = NULL;
+  widget = nullptr;
 
   if (!categories.contains(category_name)) {
     twidget = new QWidget();
@@ -669,7 +671,7 @@ void option_dialog::add_option(struct option *poption)
 
   case OT_STRING:
     values = option_str_values(poption);
-    if (NULL != values) {
+    if (values != nullptr) {
       combo = new QComboBox();
       strvec_iterate(values, value) {
         combo->addItem(value);
@@ -685,7 +687,7 @@ void option_dialog::add_option(struct option *poption)
     combo = new QComboBox();
 
     for (i = 0; (str = option_enum_int_to_str(poption, i)); i++) {
-      /* we store enum value in QVariant */
+      // We store enum value in QVariant
       combo->addItem(_(str), i);
     }
     widget = combo;
@@ -711,17 +713,26 @@ void option_dialog::add_option(struct option *poption)
     qlist = qstr.split(",");
     button->setFont(qf);
     button->setText(qlist[0] + " " + qlist[1]);
-    connect(button, SIGNAL(clicked()), this, SLOT(set_font()));
+    connect(button, SIGNAL(clicked()), this, SLOT(select_font()));
     widget = button;
     break;
 
   case OT_COLOR:
+    ft_color = option_color_get(poption);
     button = new QPushButton();
     button->setToolTip(_("Select the text color"));
     button->setObjectName("text_color");
     button->setAutoFillBackground(true);
     button->setAutoDefault(false);
-    connect(button, SIGNAL(clicked()), this, SLOT(set_color()));
+#ifdef FC_QT6X_MODE
+    c = QColor::fromString(ft_color.foreground);
+#else  // FC_QT6X_MODE
+    c.setNamedColor(ft_color.foreground);
+#endif // FC_QT6X_MODE
+    pal = button->palette();
+    pal.setColor(QPalette::Button, c);
+    button->setPalette(pal);
+    connect(button, SIGNAL(clicked()), this, SLOT(select_color()));
     hbox_layout = new QHBoxLayout();
     hbox_layout->addWidget(button);
     button = new QPushButton();
@@ -729,9 +740,18 @@ void option_dialog::add_option(struct option *poption)
     button->setObjectName("text_background");
     button->setAutoFillBackground(true);
     button->setAutoDefault(false);
-    connect(button, SIGNAL(clicked()), this, SLOT(set_color()));
+#ifdef FC_QT6X_MODE
+    c = QColor::fromString(ft_color.background);
+#else  // FC_QT6X_MODE
+    c.setNamedColor(ft_color.background);
+#endif // FC_QT6X_MODE
+    pal = button->palette();
+    pal.setColor(QPalette::Button, c);
+    button->setPalette(pal);
+    connect(button, SIGNAL(clicked()), this, SLOT(select_color()));
     hbox_layout->addWidget(button);
     widget = new QWidget();
+    widget->setObjectName(option_name(poption));
     widget->setLayout(hbox_layout);
     break;
 
@@ -741,7 +761,7 @@ void option_dialog::add_option(struct option *poption)
     break;
   }
 
-  if (widget != NULL) {
+  if (widget != nullptr) {
     hbox_layout = new QHBoxLayout();
     hbox_layout->setAlignment(Qt::AlignRight);
     label = new QLabel(description);
@@ -753,35 +773,39 @@ void option_dialog::add_option(struct option *poption)
     lwidget->setLayout(hbox_layout);
     twidget_layout = qobject_cast < QVBoxLayout * >(twidget->layout());
     twidget_layout->addWidget(lwidget);
+
+    widget->setEnabled(option_is_changeable(poption));
+    widget->setToolTip(split_text(option_help_text(poption), false));
   }
 
-  widget->setEnabled(option_is_changeable(poption));
-  widget->setToolTip(split_text(option_help_text(poption), false));
-  option_set_gui_data(poption, widget);
+  option_set_gui_data(poption, widget); // May set nullptr as the gui_data
   option_dialog_refresh(poption);
 }
 
 /************************************************************************//**
   Popup the option dialog for the option set.
 ****************************************************************************/
-void option_dialog_popup(const char *name, const struct option_set *poptset)
+void option_dialog_popup(QString name, const struct option_set *poptset,
+                         bool client_set)
 {
   option_dialog *opt_dialog;
 
   if (::dialog_list.contains(poptset)) {
     opt_dialog = dialog_list[poptset];
+    opt_dialog->reactivate();
     opt_dialog->show();
   } else {
-    opt_dialog = new option_dialog(name, poptset, gui()->central_wdg);
+    opt_dialog = new option_dialog(name, poptset, client_set,
+                                   gui()->central_wdg);
     ::dialog_list.insert(poptset, opt_dialog);
     opt_dialog->show();
   }
 }
 
 /************************************************************************//**
-  Sets font and text in pushbutton (user just chosen font)
+  Ask user for the font option value
 ****************************************************************************/
-void option_dialog::set_font()
+void option_dialog::select_font()
 {
   QStringList ql;
   bool ok;
@@ -790,10 +814,12 @@ void option_dialog::set_font()
 
   pb = (QPushButton *) QObject::sender();
   qf = pb->font();
-  qf = QFontDialog::getFont(&ok, qf, this);
+  qf = QFontDialog::getFont(&ok, qf, this,
+                            _("Select Font"));
   pb->setFont(qf);
   ql = qf.toString().split(",");
   pb->setText(ql[0] + " " + ql[1]);
+  raise();
 }
 
 /************************************************************************//**
@@ -823,34 +849,66 @@ QByteArray option_dialog::get_button_font(struct option *poption)
 }
 
 /************************************************************************//**
-  Set color of buttons (user just changed colors).
+  Ask user for the color option value
 ****************************************************************************/
-void option_dialog::set_color()
+void option_dialog::select_color()
 {
   QPushButton *but;
-  QColor color, c;
-  struct option *color_option;
-  struct ft_color ft_color;
+  QColor color;
   QPalette pal;
 
-  color_option = get_color_option();
-  ft_color = option_color_get(color_option);
   but = qobject_cast<QPushButton *>(QObject::sender());
 
-  if (but->objectName() == "text_color") {
-    c.setNamedColor(ft_color.foreground);
-    color = QColorDialog::getColor(c, this);
-    if (color.isValid()) {
-      pal.setColor(QPalette::Button, color);
-      but->setPalette(pal);
+  pal = but->palette();
+  color = QColorDialog::getColor(pal.color(QPalette::Button), this,
+                                 _("Select Color"));
+  if (color.isValid()) {
+    pal.setColor(QPalette::Button, color);
+    but->setPalette(pal);
+
+    set_button_color(but, color.name().toUtf8());
+  }
+
+  raise();
+}
+
+/************************************************************************//**
+  Show event for options dialog
+****************************************************************************/
+void option_dialog::showEvent(QShowEvent *event)
+{
+  if (client_settings) {
+    if (!gui()->qt_settings.options_client_geometry.isNull()) {
+      restoreGeometry(gui()->qt_settings.options_client_geometry);
     }
-  } else if (but->objectName() == "text_background") {
-    c.setNamedColor(ft_color.background);
-    color = QColorDialog::getColor(c, this);
-    if (color.isValid()) {
-      pal.setColor(QPalette::Button, color);
-      but->setPalette(pal);
+  } else {
+    if (!gui()->qt_settings.options_server_geometry.isNull()) {
+      restoreGeometry(gui()->qt_settings.options_server_geometry);
     }
+  }
+}
+
+/************************************************************************//**
+  Hide event for options dialog
+****************************************************************************/
+void option_dialog::hideEvent(QHideEvent *event)
+{
+  if (client_settings) {
+    gui()->qt_settings.options_client_geometry = saveGeometry();
+  } else {
+    gui()->qt_settings.options_server_geometry = saveGeometry();
+  }
+}
+
+/************************************************************************//**
+  Close event for options dialog
+****************************************************************************/
+void option_dialog::closeEvent(QCloseEvent *event)
+{
+  if (client_settings) {
+    gui()->qt_settings.options_client_geometry = saveGeometry();
+  } else {
+    gui()->qt_settings.options_server_geometry = saveGeometry();
   }
 }
 
@@ -896,7 +954,7 @@ void option_gui_update(struct option *poption)
 void option_gui_add(struct option *poption)
 {
   /**
-   * That function is unneeded cause dialog is not being hided/restored
+   * That function is unneeded cause dialog is not being hid/restored
    * and options are populated while creating
    */
 }
@@ -907,7 +965,7 @@ void option_gui_add(struct option *poption)
 void option_gui_remove(struct option *poption)
 {
   /**
-   * That function is unneeded cause dialog is not being hided/restored
+   * That function is unneeded cause dialog is not being hid/restored
    * and options are populated while creating
    */
 }

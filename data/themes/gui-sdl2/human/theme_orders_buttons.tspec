@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-2.6-sdl2-spec"
+options = "+Freeciv-sdl2-3.3-spec-Devel-2023-Jun-10"
 
 [info]
 
@@ -26,20 +26,19 @@ dx = 120
 dy = 30
 pixel_border = 1
 
-tiles = { "row", "column","tag"
+tiles = { "row", "column", "tag"
 
-; terrain
-  0,    0,  "theme.order_auto_attack"
+; Terrain
   1,    0,  "theme.order_auto_connect"
   2,    0,  "theme.order_auto_explorer"
-  3,    0,  "theme.order_auto_settler"
+  3,    0,  "theme.order_auto_worker"
   4,    0,  "theme.order_build_city"
   5,    0,  "theme.order_cutdown_forest"
   6,    0,  "theme.order_plant_forest"
   7,    0,  "theme.order_build_mining"
-  8,    0,  "theme.order_irrigation"    
+  8,    0,  "theme.order_irrigation"
   9,    0,  "theme.order_done"
-  10,   0,  "theme.order_disband"  
+  10,   0,  "theme.order_disband"
   11,   0,  "theme.order_fortify"
   12,   0,  "theme.order_goto"
   13,   0,  "theme.order_goto_city"
@@ -54,8 +53,7 @@ tiles = { "row", "column","tag"
   22,   0,  "theme.order_unload"
   23,   0,  "theme.order_wait"
   24,   0,  "theme.order_build_fortress"
-  25,   0,  "theme.order_clean_fallout"
-  26,   0,  "theme.order_clean_pollution"
+  26,   0,  "theme.order_clean"
   27,   0,  "theme.order_build_airbase"
   28,   0,  "theme.order_transform"
   29,   0,  "theme.order_add_to_city"
@@ -69,5 +67,4 @@ tiles = { "row", "column","tag"
 ; 37,   0,  "theme.order_"
 ; 38,   0,  "theme.order_"
   39,   0,  "theme.order_empty"
- 
 }

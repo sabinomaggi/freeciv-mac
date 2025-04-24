@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,8 +23,9 @@ extern "C" {
 /* common */
 #include "fc_types.h"
 #include "name_translation.h"
-#include "rgbcolor.h"
 #include "terrain.h"            /* MAX_NUM_TERRAINS */
+
+struct rgbcolor;
 
 #define NO_NATION_SELECTED (NULL)
 
@@ -334,8 +335,15 @@ struct iterator *nation_iter_init(struct nation_iter *it);
                   NAME_pnation, nation_iter_sizeof, nation_iter_init)
 #define nations_iterate_end generic_iterate_end
 
+/* Deletion of nations not supported */
+#define nations_re_active_iterate(_pnat_) \
+  nations_iterate(_pnat_)
+
+#define nations_re_active_iterate_end \
+  nations_iterate_end;
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__NATION_H */
+#endif /* FC__NATION_H */

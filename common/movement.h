@@ -17,11 +17,16 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/* common */
 #include "fc_types.h"
-#include "tile.h"
+#include "map.h"
+
+struct tile;
 
 #define SINGLE_MOVE     (terrain_control.move_fragments)
 #define MOVE_COST_IGTER (terrain_control.igter_cost)
+/* packets.def MOVEFRAGS */
+#define MAX_MOVE_FRAGS  65535
 
 struct unit_type;
 struct terrain;
@@ -44,6 +49,7 @@ enum unit_move_result {
   MR_NON_NATIVE_MOVE,  /* Usually RMM_RELAXED road diagonally without link */
   MR_ANIMAL_DISALLOWED,
   MR_UNIT_STAY,
+  MR_RANDOM_ONLY,
   MR_NOT_ALLOWED
 };
 
@@ -54,10 +60,12 @@ int unit_move_rate(const struct unit *punit);
 int utype_unknown_move_cost(const struct unit_type *utype);
 
 bool unit_can_defend_here(const struct civ_map *nmap, const struct unit *punit);
+bool can_attack_non_native_hard_reqs(const struct unit_type *utype);
 bool can_attack_non_native(const struct unit_type *utype);
 bool can_attack_from_non_native(const struct unit_type *utype);
 
-bool is_city_channel_tile(const struct unit_class *punitclass,
+bool is_city_channel_tile(const struct civ_map *nmap,
+                          const struct unit_class *punitclass,
                           const struct tile *ptile,
                           const struct tile *pexclude);
 
@@ -80,7 +88,8 @@ static inline bool is_native_tile_to_class(const struct unit_class *punitclass,
                             tile_extras(ptile));
 }
 
-bool is_native_move(const struct unit_class *punitclass,
+bool is_native_move(const struct civ_map *nmap,
+                    const struct unit_class *punitclass,
                     const struct tile *src_tile,
                     const struct tile *dst_tile);
 bool is_native_near_tile(const struct civ_map *nmap,
@@ -99,13 +108,17 @@ bool can_step_taken_wrt_to_zoc(const struct unit_type *punittype,
                                const struct tile *src_tile,
                                const struct tile *dst_tile,
                                const struct civ_map *zmap);
-bool zoc_ok_move(const struct unit *punit, const struct tile *ptile,
-                 const struct civ_map *zmap);
 bool unit_can_move_to_tile(const struct civ_map *nmap,
                            const struct unit *punit,
                            const struct tile *ptile,
                            bool igzoc,
+                           bool enter_transport,
                            bool enter_enemy_city);
+bool unit_can_teleport_to_tile(const struct civ_map *nmap,
+                               const struct unit *punit,
+                               const struct tile *ptile,
+                               bool enter_transport,
+                               bool enter_enemy_city);
 enum unit_move_result
 unit_move_to_tile_test(const struct civ_map *nmap,
                        const struct unit *punit,
@@ -113,8 +126,16 @@ unit_move_to_tile_test(const struct civ_map *nmap,
                        const struct tile *src_tile,
                        const struct tile *dst_tile,
                        bool igzoc,
-                       struct unit *embark_to,
+                       bool enter_transport, struct unit *embark_to,
                        bool enter_enemy_city);
+enum unit_move_result
+unit_teleport_to_tile_test(const struct civ_map *nmap,
+                           const struct unit *punit,
+                           enum unit_activity activity,
+                           const struct tile *src_tile,
+                           const struct tile *dst_tile,
+                           bool enter_transport, struct unit *embark_to,
+                           bool enter_enemy_city);
 bool can_unit_transport(const struct unit *transporter, const struct unit *transported);
 bool can_unit_type_transport(const struct unit_type *transporter,
                              const struct unit_class *transported);
@@ -130,4 +151,4 @@ const char *move_points_text(int mp, bool reduce);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__MOVEMENT_H */
+#endif /* FC__MOVEMENT_H */

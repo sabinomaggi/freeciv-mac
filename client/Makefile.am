@@ -3,70 +3,57 @@
 ## Must be set before adding anything
 GUI_SUBDIRS =
 
-desktopfiledir = @DESKTOPDIR@
-appdatafiledir = @APPDATADIR@
-
-desktopfile_DATA =
-appdatafile_DATA =
-
 if CLIENT_GUI_SDL2
 GUI_SUBDIRS += gui-sdl2
-desktopfile_DATA += \
-	freeciv-sdl2.desktop
-appdatafile_DATA += \
-	freeciv-sdl2.appdata.xml
 endif
-if CLIENT_GUI_GTK_3_0
-GUI_SUBDIRS += gui-gtk-3.0
-desktopfile_DATA += \
-	freeciv.desktop
-appdatafile_DATA += \
-	freeciv-gtk3.appdata.xml
-endif
+
+GUI_SUBDIRS += gui-sdl3
+
 if CLIENT_GUI_GTK_3_22
 GUI_SUBDIRS += gui-gtk-3.22
-desktopfile_DATA += \
-	freeciv-gtk3.22.desktop
-appdatafile_DATA += \
-	freeciv-gtk3.22.appdata.xml
 endif
-if CLIENT_GUI_GTK_3X
+
+if CLIENT_GUI_GTK_4
 GUI_SUBDIRS += gui-gtk-4.0
 endif
+
+if CLIENT_GUI_GTK_5
+GUI_SUBDIRS += gui-gtk-5.0
+endif
+
 if CLIENT_GUI_QT
 GUI_SUBDIRS += gui-qt
-desktopfile_DATA += \
-	freeciv-qt.desktop
-appdatafile_DATA += \
-	freeciv-qt.appdata.xml
 endif
+
 if CLIENT_GUI_STUB
 GUI_SUBDIRS += gui-stub
 endif
 
-ALL_AUDIO_SDL_FILES=audio_sdl.c audio_sdl.h
+ALL_AUDIO_SDL_FILES = audio_sdl.c audio_sdl.h
 
 if AUDIO_SDL
-AUDIO_SDL_FILES=$(ALL_AUDIO_SDL_FILES)
+AUDIO_SDL_FILES = $(ALL_AUDIO_SDL_FILES)
 endif
 
 if MINGW
-CLIENTICON=../windows/clienticon.o
+CLIENTICON = $(top_builddir)/platforms/windows/icons/clienticon.o
 endif
 
 EXTRA_DIST= $(ALL_AUDIO_SDL_FILES)
 
-## This is usually false, so "include" is not recursed into 
+## This is usually false, so "include" is not recursed into
 ## by 'make', but it can be enabled in configure, and it is
-## necessary to have something like this so that the include 
+## necessary to have something like this so that the include
 ## directory is included for 'make dist'.
 if MAKE_CLIENT_INCLUDE
 CLI_INCLUDE = include
 else
-CLI_INCLUDE = 
+CLI_INCLUDE =
 endif
 
+if CLIENT
 SUBDIRS = $(GUI_SUBDIRS) $(CLI_INCLUDE) agents luascript
+endif
 
 AM_CPPFLAGS = \
 	-I$(top_srcdir)/utility \
@@ -79,7 +66,8 @@ AM_CPPFLAGS = \
 	-I$(srcdir)/agents \
 	$(CLIENT_CFLAGS) $(SOUND_CFLAGS) \
 	-I$(top_srcdir)/dependencies/cvercmp \
-	-I$(top_srcdir)/dependencies/tinycthread
+	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums
 
 AM_LIBTOOLFLAGS = --preserve-dup-deps
 
@@ -89,24 +77,30 @@ AM_LIBTOOLFLAGS = --preserve-dup-deps
 freeciv_client_src = $(AUDIO_SDL_FILES) \
 	attribute.h	\
 	attribute.c	\
+	audio.c         \
+	audio.h         \
+	audio_none.c    \
+	audio_none.h	\
+	chatline_common.c \
+	chatline_common.h \
 	citydlg_common.c \
 	citydlg_common.h \
 	cityrepdata.c	\
 	cityrepdata.h	\
 	client_main.c	\
 	client_main.h	\
-	chatline_common.c \
-	chatline_common.h \
-	connectdlg_common.c \
-	connectdlg_common.h \
-	climisc.c	\
-	climisc.h	\
 	climap.c	\
 	climap.h	\
+	climisc.c	\
+	climisc.h	\
 	clinet.c	\
 	clinet.h	\
+	clitreaty.c	\
+	clitreaty.h	\
 	colors_common.c		\
 	colors_common.h		\
+	connectdlg_common.c \
+	connectdlg_common.h \
 	control.c	\
 	control.h	\
 	editor.c 		\
@@ -115,8 +109,8 @@ freeciv_client_src = $(AUDIO_SDL_FILES) \
 	global_worklist.h	\
 	goto.c		\
 	goto.h		\
-	helpdata.c	\
-	helpdata.h	\
+	gui_properties.c	\
+	gui_properties.h	\
 	luaconsole_common.c	\
 	luaconsole_common.h	\
 	mapctrl_common.c \
@@ -127,6 +121,8 @@ freeciv_client_src = $(AUDIO_SDL_FILES) \
 	messagewin_common.h \
 	music.c		\
 	music.h		\
+	options.c	\
+	options.h	\
 	overview_common.c	\
 	overview_common.h	\
 	packhand.c	\
@@ -135,14 +131,14 @@ freeciv_client_src = $(AUDIO_SDL_FILES) \
 	packhand_gen.c	\
 	plrdlg_common.c \
 	plrdlg_common.h \
-	options.c	\
-	options.h	\
 	repodlgs_common.c \
 	repodlgs_common.h \
 	reqtree.c \
 	reqtree.h \
-	servers.c		\
-	servers.h		\
+	servers.c	\
+	servers.h	\
+	svgflag.c	\
+	svgflag.h	\
 	text.c	\
 	text.h	\
 	themes_common.c	\
@@ -156,11 +152,7 @@ freeciv_client_src = $(AUDIO_SDL_FILES) \
 	voteinfo.c	\
 	voteinfo.h	\
 	zoom.c		\
-	zoom.h		\
-	audio.c         \
-	audio.h         \
-	audio_none.c    \
-	audio_none.h
+	zoom.h
 
 gui_interface_src = \
 	gui_interface.c \
@@ -178,29 +170,18 @@ gui_cbs_src = \
 MAINTAINERCLEANFILES = $(srcdir)/packhand_gen.c $(srcdir)/packhand_gen.h
 
 bin_PROGRAMS =
-noinst_LTLIBRARIES =
+noinst_LTLIBRARIES = libfc_helpdata.la
+
+libfc_helpdata_la_SOURCES =	\
+	helpdata.c		\
+	helpdata.h
 
 clientlibs = \
  $(top_builddir)/common/scriptcore/libscriptcore.la \
  $(top_builddir)/client/agents/libagents.la \
  $(top_builddir)/client/luascript/libscripting_client.la \
- $(top_builddir)/dependencies/cvercmp/libcvercmp.la
-
-if CLIENT_GUI_GTK_3_0
-bin_PROGRAMS += freeciv-gtk3
-noinst_LTLIBRARIES += libfcgui-gtk3.la
-libfcgui_gtk3_la_SOURCES = $(freeciv_client_src)
-libfcgui_gtk3_la_LIBADD = gui-gtk-3.0/libgui-gtk3.la $(clientlibs)
-freeciv_gtk3_SOURCES = dummy.c
-freeciv_gtk3_LDFLAGS = $(gui_gtk3_ldflags)
-freeciv_gtk3_LDADD = \
- $(SOUND_LIBS) \
- libfcgui-gtk3.la \
- $(top_builddir)/common/libfreeciv.la \
- $(INTLLIBS) $(CLIENT_LIBS) $(SOUND_LIBS) $(CLIENTICON) \
- $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
- $(gui_gtk3_libs)
-endif
+ $(top_builddir)/dependencies/cvercmp/libcvercmp.la \
+ libfc_helpdata.la
 
 if CLIENT_GUI_GTK_3_22
 bin_PROGRAMS += freeciv-gtk3.22
@@ -210,30 +191,44 @@ libfcgui_gtk3_22_la_LIBADD = gui-gtk-3.22/libgui-gtk3_22.la $(clientlibs)
 freeciv_gtk3_22_SOURCES = dummy.c
 freeciv_gtk3_22_LDFLAGS = $(gui_gtk3_22_ldflags)
 freeciv_gtk3_22_LDADD = \
- $(SOUND_LIBS) \
- libfcgui-gtk3_22.la \
+ libfcgui-gtk3_22.la $(SOUND_LIBS) gui-gtk-3.22/gui_main.lo \
  $(top_builddir)/common/libfreeciv.la \
- $(INTLLIBS) $(CLIENT_LIBS) $(SOUND_LIBS) $(CLIENTICON) \
+ $(INTLLIBS) $(CLIENT_LIBS) $(CLIENTICON) \
  $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
  $(gui_3d_libs) \
  $(gui_gtk3_22_libs)
 endif
 
-if CLIENT_GUI_GTK_3X
-bin_PROGRAMS += freeciv-gtk3x
-noinst_LTLIBRARIES += libfcgui-gtk3x.la
-libfcgui_gtk3x_la_SOURCES = $(freeciv_client_src)
-libfcgui_gtk3x_la_LIBADD = gui-gtk-4.0/libgui-gtk3x.la $(clientlibs)
-freeciv_gtk3x_SOURCES = dummy.c
-freeciv_gtk3x_LDFLAGS = $(gui_gtk3x_ldflags)
-freeciv_gtk3x_LDADD = \
- $(SOUND_LIBS) \
- libfcgui-gtk3x.la \
+if CLIENT_GUI_GTK_4
+bin_PROGRAMS += freeciv-gtk4
+noinst_LTLIBRARIES += libfcgui-gtk4.la
+libfcgui_gtk4_la_SOURCES = $(freeciv_client_src)
+libfcgui_gtk4_la_LIBADD = gui-gtk-4.0/libgui-gtk4.la $(clientlibs)
+freeciv_gtk4_SOURCES = dummy.c
+freeciv_gtk4_LDFLAGS = $(gui_gtk4_ldflags)
+freeciv_gtk4_LDADD = \
+ libfcgui-gtk4.la $(SOUND_LIBS) gui-gtk-4.0/gui_main.lo \
  $(top_builddir)/common/libfreeciv.la \
- $(INTLLIBS) $(CLIENT_LIBS) $(SOUND_LIBS) $(CLIENTICON) \
+ $(INTLLIBS) $(CLIENT_LIBS) $(CLIENTICON) \
  $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
  $(gui_3d_libs) \
- $(gui_gtk3x_libs)
+ $(gui_gtk4_libs)
+endif
+
+if CLIENT_GUI_GTK_5
+bin_PROGRAMS += freeciv-gtk4x
+noinst_LTLIBRARIES += libfcgui-gtk5.la
+libfcgui_gtk5_la_SOURCES = $(freeciv_client_src)
+libfcgui_gtk5_la_LIBADD = gui-gtk-5.0/libgui-gtk5.la $(clientlibs)
+freeciv_gtk4x_SOURCES = dummy.c
+freeciv_gtk4x_LDFLAGS = $(gui_gtk4_ldflags)
+freeciv_gtk4x_LDADD = \
+ libfcgui-gtk5.la $(SOUND_LIBS) gui-gtk-5.0/gui_main.lo \
+ $(top_builddir)/common/libfreeciv.la \
+ $(INTLLIBS) $(CLIENT_LIBS) $(CLIENTICON) \
+ $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
+ $(gui_3d_libs) \
+ $(gui_gtk5_libs)
 endif
 
 if CLIENT_GUI_SDL2
@@ -245,9 +240,9 @@ freeciv_sdl2_SOURCES = dummy.c
 freeciv_sdl2_LDFLAGS = $(gui_sdl2_ldflags)
 freeciv_sdl2_LDADD = \
  $(gui_sdl2_libs) \
- libfcgui-sdl2.la \
+ libfcgui-sdl2.la $(SOUND_LIBS) gui-sdl2/gui_main.lo \
  $(top_builddir)/common/libfreeciv.la \
- $(INTLLIBS) $(CLIENT_LIBS) $(SOUND_LIBS) $(CLIENTICON) \
+ $(INTLLIBS) $(CLIENT_LIBS) $(CLIENTICON) \
  $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
  $(gui_sdl2_libs)
 endif
@@ -260,10 +255,9 @@ libfcgui_qt_la_LIBADD = gui-qt/libgui-qt.la $(clientlibs)
 freeciv_qt_SOURCES = dummycxx.cpp $(gui_interface_src)
 freeciv_qt_LDFLAGS = $(gui_qt_ldflags)
 freeciv_qt_LDADD = \
- $(SOUND_LIBS) \
- libfcgui-qt.la \
+ libfcgui-qt.la $(SOUND_LIBS) gui-qt/gui_main.lo \
  $(top_builddir)/common/libfreeciv.la \
- $(INTLLIBS) $(CLIENT_LIBS) $(SOUND_LIBS) $(CLIENTICON) \
+ $(INTLLIBS) $(CLIENT_LIBS) $(CLIENTICON) \
  $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
  $(gui_qt_libs)
 endif
@@ -276,9 +270,9 @@ libfcgui_stub_la_LIBADD = gui-stub/libgui-stub.la $(clientlibs)
 freeciv_stub_SOURCES = $(gui_interface_src) $(gui_cbs_src)
 freeciv_stub_LDFLAGS = $(gui_stub_ldflags)
 freeciv_stub_LDADD = \
- libfcgui-stub.la \
+ libfcgui-stub.la $(SOUND_LIBS) gui-stub/gui_main.lo \
  $(top_builddir)/common/libfreeciv.la \
- $(INTLLIBS) $(CLIENT_LIBS) $(SOUND_LIBS) $(CLIENTICON) \
+ $(INTLLIBS) $(CLIENT_LIBS) $(CLIENTICON) \
  $(TINYCTHR_LIBS) $(MAPIMG_WAND_LIBS) \
  $(gui_stub_libs)
 endif

@@ -116,7 +116,7 @@ void cmafec_get_fe_parameter(struct city *pcity, struct cm_parameter *dest)
 {
   struct cm_parameter parameter;
 
-  /* our fe_parameter could be stale. our agents parameter is uptodate */
+  /* our fe_parameter could be stale. our agents parameter is up to date */
   if (cma_is_city_under_agent(pcity, &parameter)) {
     cm_copy_parameter(dest, &parameter);
     cmafec_set_fe_parameter(pcity, dest);
@@ -223,7 +223,7 @@ const char *cmafec_get_short_descr_of_city(const struct city *pcity)
   struct cm_parameter parameter;
 
   if (!cma_is_city_under_agent(pcity, &parameter)) {
-    return _("none");
+    return Q_("?cma:none");
   } else {
     return cmafec_get_short_descr(&parameter);
   }
@@ -239,7 +239,7 @@ const char *cmafec_get_short_descr(const struct cm_parameter *const
   int idx = cmafec_preset_get_index_of_parameter(parameter);
 
   if (idx == -1) {
-    return _("custom");
+    return Q_("?cma:custom");
   } else {
     return cmafec_preset_get_descr(idx);
   }
@@ -292,7 +292,7 @@ static const char *get_prod_complete_string(struct city *pcity, int surplus)
     return buffer;
   }
 
-  if (city_production_has_flag(pcity, IF_GOLD)) {
+  if (city_production_is_genus(pcity, IG_CONVERT)) {
     fc_strlcpy(buffer, improvement_name_translation
                (pcity->production.value.building), sizeof(buffer));
     return buffer;
@@ -328,6 +328,7 @@ const char *cmafec_get_result_descr(struct city *pcity,
   char buf[RESULT_COLUMNS][BUFFER_SIZE];
   char citizen_types[BUFFER_SIZE];
   static char buffer[600];
+  int slen;
 
   /* TRANS: "W" is worker citizens, as opposed to specialists;
    * %s will represent the specialist types, for instance "E/S/T" */
@@ -345,6 +346,7 @@ const char *cmafec_get_result_descr(struct city *pcity,
     fc_snprintf(buf[6], BUFFER_SIZE, "%d/%s%s",
                 city_size_get(pcity) - cm_result_specialists(result),
                 specialists_string(result->specialists),
+                /* TRANS: preserve leading space */
                 result->happy ? _(" happy") : "");
 
     fc_snprintf(buf[7], BUFFER_SIZE, "%s",
@@ -355,6 +357,7 @@ const char *cmafec_get_result_descr(struct city *pcity,
                 cmafec_get_short_descr(parameter));
   }
 
+  slen = 20 - (int)get_internal_string_length(citizen_types);
   fc_snprintf(buffer, sizeof(buffer),
               _("Name: %s\n"
                 "Food:       %10s Gold:    %10s\n"
@@ -366,14 +369,14 @@ const char *cmafec_get_result_descr(struct city *pcity,
                 "Production completed: %s"),
               buf[9], buf[O_FOOD], buf[O_GOLD], buf[O_SHIELD], buf[O_LUXURY],
               buf[O_TRADE], buf[O_SCIENCE],
-              MAX(0, 20 - (int)get_internal_string_length(citizen_types)), "",
+              MAX(0, slen), "",
               citizen_types,
               buf[6], buf[7], buf[8]);
 
   log_debug("\n%s", buffer);
+
   return buffer;
 }
-
 
 /**********************************************************************//**
   Create default cma presets for a new user (or without configuration file)
@@ -423,7 +426,7 @@ void create_default_cma_presets(void)
      .happy_factor = 0
    }
  };
- const char* names[ARRAY_SIZE(parameters)] = {
+ const char *names[ARRAY_SIZE(parameters)] = {
    N_("?cma:Very happy"),
    N_("?cma:Prefer food"),
    N_("?cma:Prefer production"),

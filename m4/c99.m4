@@ -1,4 +1,4 @@
-# Check for the presence of C99 features.  Generally the check will fail
+# Check for the presence of C99 features. Generally the check will fail
 # if the feature isn't present (a C99 compiler isn't that much to ask,
 # right?).
 
@@ -18,6 +18,30 @@ AC_DEFUN([FC_C99_VARIADIC_MACROS],
            MSG("%s%d", "foo", 1);]])],[ac_cv_c99_variadic_macros=yes],[ac_cv_c99_variadic_macros=no])])
   if test "x${ac_cv_c99_variadic_macros}" != "xyes"; then
     AC_MSG_ERROR([A compiler supporting C99 variadic macros is required])
+  fi
+])
+
+
+# Check C99-style variable-sized arrays (required)
+# We don't use AC_C_VARARRAYS() as it's stricter than what we need
+# and want - it would leave out compilers that are just fine for freeciv
+# compilation.
+#
+#   char concat_str[strlen(s1) + strlen(s2) + 1];
+#
+AC_DEFUN([FC_C99_VARIABLE_ARRAYS],
+[
+  dnl Check for variable arrays
+  AC_CACHE_CHECK([for C99 variable arrays],
+    [ac_cv_c99_variable_arrays],
+    [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#include <string.h>
+#include <stdio.h>
+]], [[char *s1 = "foo", *s2 = "bar";
+         char s3[strlen(s1) + strlen(s2) + 1];
+         sprintf(s3, "%s%s", s1, s2);]])],[ac_cv_c99_variable_arrays=yes],[ac_cv_c99_variable_arrays=no])])
+  if test "x${ac_cv_c99_variable_arrays}" != "xyes"; then
+    AC_MSG_ERROR([A compiler supporting C99 variable arrays is required])
   fi
 ])
 
@@ -51,6 +75,26 @@ AC_DEFUN([FC_C99_INITIALIZERS],
   fi
 ])
 
+# Check C99-style compound literals (required):
+#
+AC_DEFUN([FC_C99_COMPOUND_LITERALS],
+[
+  dnl Check for C99 compound literals
+  AC_CACHE_CHECK([for C99 compound literals],
+    [ac_cv_c99_compound_literals],
+    [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[struct foo {
+           int a; char *b; float c; };
+           void foobar(struct foo *);
+         ]],
+         [[struct foo bar;
+           bar = (struct foo) {.b = "text", .c = 0.1 };
+           foobar(&bar);]])], [ac_cv_c99_compound_literals=yes],
+          [ac_cv_c99_compound_literals=no])])
+  if test "${ac_cv_c99_compound_literals}" != "yes"; then
+    AC_MSG_ERROR([A compiler supporting C99 compound literals is required])
+  fi
+])
+
 # Check C99-style stdint.h (required)
 AC_DEFUN([FC_C99_STDINT_H],
 [
@@ -80,39 +124,17 @@ AC_CACHE_CHECK([whether preprocessor token concenation works],
   fi
 ])
 
-# Whether C99-style initializers of a struct can, or even must, be
-# within braces.
-# Sets macros INIT_BRACE_BEGIN and INIT_BRACE_END accordingly.
-#
-AC_DEFUN([FC_C99_INITIALIZER_BRACES],
+AC_DEFUN([FC_C99_VA_COPY],
 [
-AC_CACHE_CHECK([can struct initializers be within braces],
-  [ac_cv_c99_initializer_braces],
-  [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],
-    [[
-struct outer
-{
-  int v1;
-  int v2;
-  union
-  {
-    int v3;
-    struct
-    {
-      int v4;
-      int v5;
-    } inner;
-  };
-};
-
-  struct outer init_me = { 1, 2, { .inner = { 3, 4 }}}
-]])],
-  [ac_cv_c99_initializer_braces=yes], [ac_cv_c99_initializer_braces=no])])
-  if test "x${ac_cv_c99_initializer_braces}" = "xyes" ; then
-    AC_DEFINE([INIT_BRACE_BEGIN], [{], [Beginning of C99 structure initializer])
-    AC_DEFINE([INIT_BRACE_END], [}], [End of C99 structure initializer])
-  else
-    AC_DEFINE([INIT_BRACE_BEGIN], [], [Beginning of C99 structure initializer])
-    AC_DEFINE([INIT_BRACE_END], [], [End of C99 structure initializer])
+dnl Check for C99 va_copy()
+AC_CACHE_CHECK([for C99 va_copy],
+  [ac_cv_c99_va_copy],
+  [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdarg.h>]],
+     [[va_list orig;
+       va_list copy;
+       va_copy(copy, orig);]])],
+  [ac_cv_c99_va_copy=yes], [ac_cv_c99_va_copy=no])])
+  if test "x${ac_cv_c99_va_copy}" != "xyes" ; then
+    AC_MSG_WARN([va_copy() support is required])
   fi
 ])

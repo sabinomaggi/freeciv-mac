@@ -154,7 +154,8 @@ class city_widget: public QTreeView
     SELECT_PRES_UNITS,
     SELECT_AVAIL_UNITS,
     SELECT_AVAIL_IMPR,
-    SELECT_AVAIL_WONDERS
+    SELECT_AVAIL_WONDERS,
+    BUY
     };
 public:
   city_widget(city_report *ctr);
@@ -215,4 +216,4 @@ private:
 
 void popdown_city_report();
 
-#endif /* FC__CITYREP_H */
+#endif // FC__CITYREP_H

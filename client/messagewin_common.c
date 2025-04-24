@@ -51,7 +51,7 @@ static void meswin_dialog_update(void)
   }
 
   if (meswin_dialog_is_open()) {
-    update_queue_add(UQ_CALLBACK(real_meswin_dialog_update), NULL);
+    update_queue_add(real_meswin_dialog_update, NULL);
   } else if (0 < messages_total
              && (!client_has_player()
                  || is_human(client.conn.playing))) {
@@ -117,7 +117,7 @@ void meswin_add(const char *message, const struct text_tag_list *tags,
 
   nspc = min_msg_len - strlen(s);
   if (nspc > 0) {
-    strncat(s, "                                                  ", nspc);
+    fc_strlcat(s, "                                                  ", min_msg_len);
   }
 
   msg->tile = ptile;

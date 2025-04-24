@@ -312,15 +312,15 @@ void team_slot_set_defined_name(struct team_slot *tslot,
 
 /************************************************************************//**
   Creates a new team for the slot. If slot is NULL, it will lookup to a
-  free slot. If the slot already used, then just return the team.
+  free slot. If the slot is already used, then just return the team.
 ****************************************************************************/
 struct team *team_new(struct team_slot *tslot)
 {
   struct team *pteam;
 
-  fc_assert_ret_val(team_slots_initialised(), NULL);
+  fc_assert_ret_val(team_slots_initialised(), nullptr);
 
-  if (NULL == tslot) {
+  if (tslot == nullptr) {
     team_slots_iterate(aslot) {
       if (!team_slot_is_used(aslot)) {
         tslot = aslot;
@@ -328,8 +328,10 @@ struct team *team_new(struct team_slot *tslot)
       }
     } team_slots_iterate_end;
 
-    fc_assert_ret_val(NULL != tslot, NULL);
-  } else if (NULL != tslot->team) {
+    if (tslot == nullptr) {
+      return nullptr;
+    }
+  } else if (tslot->team != nullptr) {
     return tslot->team;
   }
 
@@ -356,7 +358,6 @@ void team_destroy(struct team *pteam)
   struct team_slot *tslot;
 
   fc_assert_ret(team_slots_initialised());
-  fc_assert_ret(NULL != pteam);
   fc_assert(0 == player_list_size(pteam->plrlist));
 
   tslot = pteam->slot;
@@ -432,10 +433,15 @@ int team_pretty_name(const struct team *pteam, char *buf, size_t buf_len)
 {
   if (NULL != pteam) {
     if (NULL != pteam->slot->defined_name) {
+      /* TRANS: %s is ruleset-chosen team name (e.g. "Red") */
       return fc_snprintf(buf, buf_len, _("team %s"),
                          team_slot_name_translation(pteam->slot));
     } else {
-      return fc_snprintf(buf, buf_len, _("team %d"), team_number(pteam));
+      /* The generated name already contains word "Team" so don't repeat it.
+       * Also note that number of teams may have changed since the name
+       * was originally generated, so the number in it can be
+       * something else than current team_number(). */
+      return fc_snprintf(buf, buf_len, "%s", team_name_translation(pteam));
     }
   }
 
@@ -455,22 +461,22 @@ const struct player_list *team_members(const struct team *pteam)
 }
 
 /************************************************************************//**
-  Set a player to a team.  Removes the previous team affiliation if
+  Set a player to a team. Removes the previous team affiliation if
   necessary.
 ****************************************************************************/
-void team_add_player(struct player *pplayer, struct team *pteam)
+bool team_add_player(struct player *pplayer, struct team *pteam)
 {
-  fc_assert_ret(pplayer != NULL);
+  fc_assert_ret_val(pplayer != nullptr, FALSE);
 
   if (pteam == NULL) {
     pteam = team_new(NULL);
+  } else if (pteam == pplayer->team) {
+    /* It is the team of the player. */
+    return TRUE;
   }
 
-  fc_assert_ret(pteam != NULL);
-
-  if (pteam == pplayer->team) {
-    /* It is the team of the player. */
-    return;
+  if (pteam == nullptr) {
+    return FALSE;
   }
 
   log_debug("Adding player %d/%s to team %s.", player_number(pplayer),
@@ -482,20 +488,22 @@ void team_add_player(struct player *pplayer, struct team *pteam)
   /* Put the player on the new team. */
   pplayer->team = pteam;
   player_list_append(pteam->plrlist, pplayer);
+
+  return TRUE;
 }
 
 /************************************************************************//**
-  Remove the player from the team.  This should only be called when deleting
+  Remove the player from the team. This should only be called when deleting
   a player; since every player must always be on a team.
 
-  Note in some very rare cases a player may not be on a team.  It's safe
+  Note in some very rare cases a player may not be on a team. It's safe
   to call this function anyway.
 ****************************************************************************/
 void team_remove_player(struct player *pplayer)
 {
   struct team *pteam;
 
-  if (pplayer->team) {
+  if (pplayer->team != nullptr) {
     pteam = pplayer->team;
 
     log_debug("Removing player %d/%s from team %s (%d)",
@@ -507,5 +515,6 @@ void team_remove_player(struct player *pplayer)
       team_destroy(pteam);
     }
   }
+
   pplayer->team = NULL;
 }

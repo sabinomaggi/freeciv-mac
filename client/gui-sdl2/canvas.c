@@ -37,18 +37,12 @@
 
 #include "canvas.h"
 
-static int *fonts[FONT_COUNT] = {
-  &city_names_font_size,
-  &city_productions_font_size,
-  &city_productions_font_size
-};
-
 /**********************************************************************//**
   Create a canvas of the given size.
 **************************************************************************/
 struct canvas *canvas_create(int width, int height)
 {
-  struct canvas *result = fc_malloc(sizeof(*result));	
+  struct canvas *result = fc_malloc(sizeof(*result));
 
   result->surf = create_surf(width, height, SDL_SWSURFACE);
 
@@ -79,6 +73,14 @@ void canvas_set_zoom(struct canvas *store, float zoom)
 bool has_zoom_support(void)
 {
   return FALSE;
+}
+
+/**********************************************************************//**
+  Initialize canvas as mapview.
+**************************************************************************/
+void canvas_mapview_init(struct canvas *store)
+{
+  SDL_SetSurfaceBlendMode(store->surf, SDL_BLENDMODE_NONE);
 }
 
 /**********************************************************************//**
@@ -118,6 +120,19 @@ void canvas_put_sprite_full(struct canvas *pcanvas,
   SDL_Rect dst = {canvas_x, canvas_y, 0, 0};
 
   alphablit(GET_SURF(sprite), NULL, pcanvas->surf, &dst, 255);
+}
+
+/************************************************************************//**
+  Draw a full sprite onto the canvas, scaled to the canvas size.
+****************************************************************************/
+void canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                   int canvas_x, int canvas_y,
+                                   int canvas_w, int canvas_h,
+                                   struct sprite *sprite)
+{
+  /* This should never be called as we have not enabled support
+   * in this client yet. */
+  fc_assert(FALSE);
 }
 
 /**********************************************************************//**
@@ -200,7 +215,7 @@ void canvas_put_curved_line(struct canvas *pcanvas, struct color *pcolor,
 void get_text_size(int *width, int *height,
                    enum client_font font, const char *text)
 {
-  utf8_str *ptext = create_utf8_str(NULL, 0, *fonts[font]);
+  utf8_str *ptext = create_utf8_str(NULL, 0, *client_font_sizes[font]);
   SDL_Rect size;
 
   fc_assert(width != NULL ||  height != NULL);
@@ -229,7 +244,7 @@ void canvas_put_text(struct canvas *pcanvas, int canvas_x, int canvas_y,
                      const char *text)
 {
   SDL_Surface *ptmp;
-  utf8_str *ptext = create_utf8_str(NULL, 0, *fonts[font]);
+  utf8_str *ptext = create_utf8_str(NULL, 0, *client_font_sizes[font]);
 
   copy_chars_to_utf8_str(ptext, text);
 

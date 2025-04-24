@@ -28,7 +28,6 @@
 
 /* client/gui-sdl2 */
 #include "colors.h"
-#include "gui_iconv.h"
 #include "gui_id.h"
 #include "gui_string.h"
 #include "gui_tilespec.h"
@@ -106,7 +105,7 @@ static int combo_redraw(struct widget *combo)
 ****************************************************************************/
 static int combo_menu_callback(struct widget *window)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     struct combo_menu *menu =
         (struct combo_menu *)window->data.widget->private_data.ptr;
 
@@ -123,7 +122,7 @@ static int combo_menu_item_callback(struct widget *label)
 {
   struct widget *combo = label->data.widget;
 
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     copy_chars_to_utf8_str(combo->string_utf8, label->string_utf8->text);
     widget_redraw(combo);
     widget_mark_dirty(combo);
@@ -162,8 +161,8 @@ void combo_popup(struct widget *combo)
 
   /* Labels. */
   strvec_iterate(combo->data.vector, string) {
-    label = create_iconlabel_from_chars(NULL, window->dst, string,
-                                        adj_font(10), WF_RESTORE_BACKGROUND);
+    label = create_iconlabel_from_chars(NULL, window->dst, string, 0,
+                                        WF_RESTORE_BACKGROUND);
     label->action = combo_menu_item_callback;
     label->data.widget = combo;
     set_wstate(label, FC_WS_NORMAL);
@@ -240,7 +239,7 @@ struct widget *combo_new(SDL_Surface *background, struct gui_layer *dest,
   SDL_Rect buf = {0, 0, 0, 0};
   struct widget *combo = widget_new();
 
-  combo->theme = current_theme->Edit;
+  combo->theme = current_theme->edit;
   combo->theme2 = background;
   combo->string_utf8 = pstr;
   set_wflag(combo, WF_FREE_STRING | WF_FREE_GFX | flags);
@@ -259,7 +258,7 @@ struct widget *combo_new(SDL_Surface *background, struct gui_layer *dest,
   }
 
   length = MAX(length, buf.w + adj_size(10));
-  correct_size_bcgnd_surf(current_theme->Edit, &length, &buf.h);
+  correct_size_bcgnd_surf(current_theme->edit, &length, &buf.h);
   combo->size.w = buf.w + adj_size(10);
   combo->size.h = buf.h;
 

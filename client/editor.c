@@ -153,7 +153,7 @@ static void tool_init(enum editor_tool_type ett, const char *name,
 {
   struct editor_tool *tool;
 
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
 
@@ -273,7 +273,7 @@ void editor_set_tool(enum editor_tool_type ett)
     return;
   }
 
-  if (!(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
 
@@ -298,8 +298,8 @@ enum editor_tool_type editor_get_tool(void)
 void editor_tool_set_mode(enum editor_tool_type ett,
                           enum editor_tool_mode etm)
 {
-  if (editor == NULL || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)
-      || !(0 <= etm && etm < NUM_EDITOR_TOOL_MODES)
+  if (editor == NULL || !(ett < NUM_EDITOR_TOOL_TYPES)
+      || !(etm < NUM_EDITOR_TOOL_MODES)
       || !editor_tool_has_mode(ett, etm)) {
     return;
   }
@@ -313,8 +313,8 @@ void editor_tool_set_mode(enum editor_tool_type ett,
 bool editor_tool_has_mode(enum editor_tool_type ett,
                           enum editor_tool_mode etm)
 {
-  if (editor == NULL || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)
-      || !(0 <= etm && etm < NUM_EDITOR_TOOL_MODES)) {
+  if (editor == NULL || !(ett < NUM_EDITOR_TOOL_TYPES)
+      || !(etm < NUM_EDITOR_TOOL_MODES)) {
     return FALSE;
   }
 
@@ -334,7 +334,7 @@ bool editor_tool_has_mode(enum editor_tool_type ett,
 ****************************************************************************/
 enum editor_tool_mode editor_tool_get_mode(enum editor_tool_type ett)
 {
-  if (editor == NULL || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (editor == NULL || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return NUM_EDITOR_TOOL_MODES;
   }
   return editor->tools[ett].mode;
@@ -358,7 +358,7 @@ bool editor_is_active(void)
 ****************************************************************************/
 bool editor_tool_is_usable(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
 
@@ -384,7 +384,7 @@ bool editor_tool_is_usable(enum editor_tool_type ett)
 ****************************************************************************/
 bool editor_tool_has_value(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
   return editor->tools[ett].flags & ETF_HAS_VALUE;
@@ -396,7 +396,7 @@ bool editor_tool_has_value(enum editor_tool_type ett)
 ****************************************************************************/
 void editor_tool_set_value(enum editor_tool_type ett, int value)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)
       || !editor_tool_has_value(ett)) {
     return;
   }
@@ -408,7 +408,7 @@ void editor_tool_set_value(enum editor_tool_type ett, int value)
 ****************************************************************************/
 int editor_tool_get_value(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)
       || !editor_tool_has_value(ett)) {
     return 0;
   }
@@ -479,6 +479,7 @@ static void editor_grab_applied_player(const struct tile *ptile)
     apno = player_number(city_owner(tile_city(ptile)));
   } else if (unit_list_size(ptile->units) > 0) {
     struct unit *punit = unit_list_get(ptile->units, 0);
+
     apno = player_number(unit_owner(punit));
   } else if (tile_owner(ptile) != NULL) {
     apno = player_number(tile_owner(ptile));
@@ -594,7 +595,7 @@ static void editor_grab_tool(const struct tile *ptile)
       ett = ETT_TERRAIN_SPECIAL;
       value = extra_index(special);
     }
-  } else if (tile_resource(ptile) != NULL) {
+  } else if (first_resource != NULL) {
     ett = ETT_TERRAIN_RESOURCE;
     value = extra_index(first_resource);
 
@@ -666,7 +667,7 @@ void editor_mouse_button_press(int canvas_x, int canvas_y,
     return;
   }
 
-  ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
   if (ptile == NULL) {
     return;
   }
@@ -730,8 +731,8 @@ static void editor_end_selection_rectangle(int canvas_x, int canvas_y)
 
   if (editor->selrect_width <= 0 || editor->selrect_height <= 0) {
     struct tile *ptile;
-    
-    ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+
+    ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
     if (ptile && editor->selection_mode == SELECTION_MODE_ADD) {
       editor_selection_add(ptile);
     } else if (ptile && editor->selection_mode == SELECTION_MODE_REMOVE) {
@@ -871,7 +872,7 @@ void editor_mouse_move(int canvas_x, int canvas_y, int modifiers)
   }
 
   old = editor_get_current_tile();
-  ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
   if (!ptile) {
     return;
@@ -970,7 +971,7 @@ void editor_apply_tool(const struct tile *ptile,
   case ETT_TERRAIN_SPECIAL:
   case ETT_ROAD:
   case ETT_MILITARY_BASE:
-    dsend_packet_edit_tile_extra(my_conn, tile, value, erase, size);
+    dsend_packet_edit_tile_extra(my_conn, tile, value, erase, apno, size);
     break;
 
   case ETT_UNIT:
@@ -1157,7 +1158,7 @@ void editor_apply_tool_to_selection(void)
 ****************************************************************************/
 const char *editor_tool_get_name(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return "";
   }
 
@@ -1205,7 +1206,7 @@ const char *editor_tool_get_value_name(enum editor_tool_type emt, int value)
 ****************************************************************************/
 bool editor_tool_has_size(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
   return editor->tools[ett].flags & ETF_HAS_SIZE;
@@ -1216,7 +1217,7 @@ bool editor_tool_has_size(enum editor_tool_type ett)
 ****************************************************************************/
 int editor_tool_get_size(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return 1;
   }
   return editor->tools[ett].size;
@@ -1227,7 +1228,7 @@ int editor_tool_get_size(enum editor_tool_type ett)
 ****************************************************************************/
 void editor_tool_set_size(enum editor_tool_type ett, int size)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
   editor->tools[ett].size = MAX(1, size);
@@ -1239,7 +1240,7 @@ void editor_tool_set_size(enum editor_tool_type ett, int size)
 ****************************************************************************/
 bool editor_tool_has_count(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
   return editor->tools[ett].flags & ETF_HAS_COUNT;
@@ -1250,7 +1251,7 @@ bool editor_tool_has_count(enum editor_tool_type ett)
 ****************************************************************************/
 int editor_tool_get_count(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return 1;
   }
   return editor->tools[ett].count;
@@ -1261,7 +1262,7 @@ int editor_tool_get_count(enum editor_tool_type ett)
 ****************************************************************************/
 void editor_tool_set_count(enum editor_tool_type ett, int count)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
   editor->tools[ett].count = MAX(1, count);
@@ -1275,7 +1276,7 @@ struct sprite *editor_tool_get_sprite(enum editor_tool_type ett)
 {
   const struct editor_sprites *sprites;
 
-  if (!tileset || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!tileset || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return NULL;
   }
 
@@ -1325,7 +1326,7 @@ struct sprite *editor_tool_get_sprite(enum editor_tool_type ett)
 ****************************************************************************/
 const char *editor_tool_get_tooltip(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)
       || !editor->tools[ett].tooltip) {
     return "";
   }
@@ -1339,7 +1340,7 @@ const char *editor_tool_get_tooltip(enum editor_tool_type ett)
 ****************************************************************************/
 int editor_tool_get_applied_player(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return -1;
   }
   return editor->tools[ett].applied_player_no;
@@ -1351,7 +1352,7 @@ int editor_tool_get_applied_player(enum editor_tool_type ett)
 void editor_tool_set_applied_player(enum editor_tool_type ett,
                                     int player_no)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return;
   }
   editor->tools[ett].applied_player_no = player_no;
@@ -1363,7 +1364,7 @@ void editor_tool_set_applied_player(enum editor_tool_type ett,
 ****************************************************************************/
 bool editor_tool_has_applied_player(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
   return editor->tools[ett].flags & ETF_HAS_APPLIED_PLAYER;
@@ -1375,7 +1376,7 @@ bool editor_tool_has_applied_player(enum editor_tool_type ett)
 ****************************************************************************/
 bool editor_tool_has_value_erase(enum editor_tool_type ett)
 {
-  if (!editor || !(0 <= ett && ett < NUM_EDITOR_TOOL_TYPES)) {
+  if (!editor || !(ett < NUM_EDITOR_TOOL_TYPES)) {
     return FALSE;
   }
   return editor->tools[ett].flags & ETF_HAS_VALUE_ERASE;
@@ -1537,21 +1538,23 @@ void edit_buffer_copy(struct edit_buffer *ebuf, const struct tile *ptile)
       } extra_type_by_cause_iterate_end;
       break;
     case EBT_BASE:
-     extra_type_iterate(pextra) {
+      extra_type_iterate(pextra) {
         if (tile_has_extra(ptile, pextra)
             && is_extra_caused_by(pextra, EC_BASE)) {
           tile_add_extra(vtile, pextra);
           copied = TRUE;
         }
       } extra_type_iterate_end;
+      break;
     case EBT_ROAD:
-     extra_type_iterate(pextra) {
+      extra_type_iterate(pextra) {
         if (tile_has_extra(ptile, pextra)
             && is_extra_caused_by(pextra, EC_ROAD)) {
           tile_add_extra(vtile, pextra);
           copied = TRUE;
         }
       } extra_type_iterate_end;
+      break;
     case EBT_UNIT:
       unit_list_iterate(ptile->units, punit) {
         if (!punit) {
@@ -1622,6 +1625,11 @@ static void fill_tile_edit_packet(struct packet_edit_tile *packet,
   packet->terrain = pterrain
                     ? terrain_number(pterrain)
                     : terrain_count();
+  if (ptile->extras_owner != NULL) {
+    packet->eowner = player_number(ptile->extras_owner);
+  } else {
+    packet->eowner = MAP_TILE_OWNER_NULL;
+  }
 
   if (ptile->label == NULL) {
     packet->label[0] = '\0';

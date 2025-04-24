@@ -75,6 +75,12 @@
               <object class="GtkMenuItem" id="WORKLISTS" />
             </child>
             <child>
+              <object class="GtkMenuItem" id="RALLY_DLG" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="INFRA_DLG" />
+            </child>
+            <child>
               <object class="GtkSeparatorMenuItem" />
             </child>
             <child>
@@ -142,7 +148,7 @@
             <child>
               <object class="GtkSeparatorMenuItem" />
             </child>
-            <child>  
+            <child>
               <object class="GtkCheckMenuItem" id="SHOW_TERRAIN" />
             </child>
             <child>
@@ -191,6 +197,9 @@
             </child>
             <child>
               <object class="GtkCheckMenuItem" id="SHOW_FOCUS_UNIT" />
+            </child>
+            <child>
+              <object class="GtkCheckMenuItem" id="SHOW_STACK_SIZE" />
             </child>
             <child>
               <object class="GtkCheckMenuItem" id="SHOW_FOG_OF_WAR" />
@@ -294,10 +303,10 @@
               <object class="GtkSeparatorMenuItem" />
             </child>
             <child>
-              <object class="GtkMenuItem" id="UNIT_LOAD" />
+              <object class="GtkMenuItem" id="UNIT_BOARD" />
             </child>
             <child>
-              <object class="GtkMenuItem" id="UNIT_UNLOAD" />
+              <object class="GtkMenuItem" id="UNIT_DEBOARD" />
             </child>
             <child>
               <object class="GtkMenuItem" id="UNIT_UNLOAD_TRANSPORTER" />
@@ -329,7 +338,7 @@
               <object class="GtkMenuItem" id="BUILD_CITY" />
             </child>
             <child>
-              <object class="GtkMenuItem" id="AUTO_SETTLER" />
+              <object class="GtkMenuItem" id="AUTO_WORKER" />
             </child>
             <child>
               <object class="GtkSeparatorMenuItem" />
@@ -345,10 +354,23 @@
               </object>
             </child>
             <child>
+              <object class="GtkMenuItem" id="MENU_CLEAN" >
+                <child type="submenu">
+                  <object class="GtkMenu" id="<MENU>/CLEAN" />
+                </child>
+              </object>
+            </child>
+            <child>
               <object class="GtkMenuItem" id="BUILD_IRRIGATION" />
             </child>
             <child>
+              <object class="GtkMenuItem" id="CULTIVATE" />
+            </child>
+            <child>
               <object class="GtkMenuItem" id="BUILD_MINE" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="PLANT" />
             </child>
             <child>
               <object class="GtkSeparatorMenuItem" />
@@ -360,6 +382,9 @@
               <object class="GtkMenuItem" id="CONNECT_RAIL" />
             </child>
             <child>
+              <object class="GtkMenuItem" id="CONNECT_MAGLEV" />
+            </child>
+            <child>
               <object class="GtkMenuItem" id="CONNECT_IRRIGATION" />
             </child>
             <child>
@@ -369,10 +394,7 @@
               <object class="GtkMenuItem" id="TRANSFORM_TERRAIN" />
             </child>
             <child>
-              <object class="GtkMenuItem" id="CLEAN_POLLUTION" />
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="CLEAN_FALLOUT" />
+              <object class="GtkMenuItem" id="CLEAN" />
             </child>
           </object>
         </child>
@@ -397,6 +419,9 @@
                   <object class="GtkMenu" id="<MENU>/BUILD_BASE" />
                 </child>
               </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="DO_PARADROP" />
             </child>
             <child>
               <object class="GtkMenuItem" id="DO_PILLAGE" />
@@ -476,6 +501,50 @@
       </object>
     </child>
     <child>
+      <object class="GtkMenuItem" id="MENU_BATTLE_GROUPS">
+        <child type="submenu">
+          <object class="GtkMenu" id="<MENU>/BATTLE_GROUPS" >
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_SELECT_0" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_ASSIGN_0" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_APPEND_0" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_SELECT_1" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_ASSIGN_1" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_APPEND_1" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_SELECT_2" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_ASSIGN_2" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_APPEND_2" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_SELECT_3" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_ASSIGN_3" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="BATTLE_GROUP_APPEND_3" />
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
       <object class="GtkMenuItem" id="MENU_HELP">
         <child type="submenu">
           <object class="GtkMenu" id="<MENU>/HELP" >
@@ -529,6 +598,9 @@
             </child>
             <child>
               <object class="GtkMenuItem" id="HELP_TILESET" />
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="HELP_MUSICSET" />
             </child>
             <child>
               <object class="GtkMenuItem" id="HELP_NATIONS" />

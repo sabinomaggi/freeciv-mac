@@ -2,12 +2,12 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
 artists = "
-    Explosions from xgalaga <http://rumsey.org/xgal.html>
+    Explosions from xgalaga <https://sourceforge.net/projects/xgalaga/>
     Credits:
     Joe Rumsey <ogre@atomic.com>
     Mike McGrath <mcgrath@epx.cis.umn.edu>

@@ -25,16 +25,27 @@ extern "C" {
 enum cursor_hover_state {
   HOVER_NONE = 0,
   HOVER_GOTO,
+  HOVER_TELEPORT,
   HOVER_PARADROP,
   HOVER_CONNECT,
   HOVER_PATROL,
-  HOVER_ACT_SEL_TGT
+  HOVER_ACT_SEL_TGT,
+  HOVER_GOTO_SEL_TGT,
 };
 
 /* Selecting unit from a stack without popup. */
 enum quickselect_type {
   SELECT_POPUP = 0, SELECT_SEA, SELECT_LAND, SELECT_APPEND,  SELECT_FOCUS
 };
+
+#define can_unit_do_activity_client(_punit_, _act_) \
+  can_unit_do_activity(&(wld.map), _punit_, _act_, activity_default_action(_act_))
+#define can_unit_do_activity_targeted_client(_punit_, _act_, _tgt_) \
+  can_unit_do_activity_targeted(&(wld.map), _punit_, _act_, activity_default_action(_act_), _tgt_)
+#define can_units_do_activity_client(_punits_, _act_) \
+  can_units_do_activity(&(wld.map), _punits_, _act_, activity_default_action(_act_))
+#define can_units_do_activity_targeted_client(_punits_, _act_, _tgt_) \
+  can_units_do_activity_targeted(&(wld.map), _punits_, _act_, activity_default_action(_act_), _tgt_)
 
 void control_init(void);
 void control_free(void);
@@ -46,8 +57,9 @@ void unit_register_battlegroup(struct unit *punit);
 extern enum cursor_hover_state hover_state;
 extern enum unit_activity connect_activity;
 extern struct extra_type *connect_tgt;
-extern int goto_last_action;
+extern action_id goto_last_action;
 extern int goto_last_tgt;
+extern int goto_last_sub_tgt;
 extern enum unit_orders goto_last_order;
 extern bool non_ai_unit_focus;
 
@@ -71,9 +83,11 @@ void control_mouse_cursor(struct tile *ptile);
 void set_hover_state(struct unit_list *punits, enum cursor_hover_state state,
                      enum unit_activity connect_activity,
                      struct extra_type *tgt,
-                     int goto_last_tgt,
-                     int goto_last_action,
+                     int last_tgt,
+                     int goto_last_sub_tgt,
+                     action_id goto_last_action,
                      enum unit_orders goto_last_order);
+void clear_hover_state(void);
 void request_center_focus_unit(void);
 void request_unit_non_action_move(struct unit *punit,
                                   struct tile *dest_tile);
@@ -85,15 +99,18 @@ void request_new_unit_activity_targeted(struct unit *punit,
 void request_unit_load(struct unit *pcargo, struct unit *ptransporter,
                        struct tile *ptile);
 void request_unit_unload(struct unit *pcargo);
-void request_unit_autosettlers(const struct unit *punit);
+void request_unit_ssa_set(const struct unit *punit,
+                          enum server_side_agent agent);
+void request_unit_autoworker(const struct unit *punit);
 void request_unit_build_city(struct unit *punit);
-void request_unit_caravan_action(struct unit *punit, enum gen_action action);
+void request_unit_caravan_action(struct unit *punit, action_id action);
 void request_unit_change_homecity(struct unit *punit);
 void request_unit_connect(enum unit_activity activity,
                           struct extra_type *tgt);
 void request_unit_disband(struct unit *punit);
 void request_unit_fortify(struct unit *punit);
-void request_unit_goto(enum unit_orders last_order, int action_id, int tgt_id);
+void request_unit_goto(enum unit_orders last_order,
+                       action_id act_id, int sub_tgt_id);
 void request_unit_move_done(void);
 void request_unit_paradrop(struct unit_list *punits);
 void request_unit_patrol(void);
@@ -124,14 +141,23 @@ void request_unit_wakeup(struct unit *punit);
 #define SPECENUM_COUNT    SELLOC_COUNT
 #include "specenum_gen.h"
 
+struct act_confirmation_data
+{
+  action_id act;
+  int actor;
+  int target;
+  int tgt_sub;
+  char *name;
+};
+
 void request_unit_select(struct unit_list *punits,
                          enum unit_select_type_mode seltype,
                          enum unit_select_location_mode selloc);
 
-void request_do_action(enum gen_action action, int actor_id,
-                       int target_id, int value, const char *name);
-void request_action_details(enum gen_action action, int actor_id,
-			    int target_id);
+void request_do_action(action_id action, int actor_id,
+                       int target_id, int sub_tgt, const char *name);
+void request_action_details(action_id action, int actor_id, int target_id);
+void action_confirmation(struct act_confirmation_data *data, bool confirm);
 void request_toggle_city_outlines(void);
 void request_toggle_city_output(void);
 void request_toggle_map_grid(void);
@@ -143,9 +169,10 @@ void request_toggle_city_growth(void);
 void request_toggle_city_productions(void);
 void request_toggle_city_buycost(void);
 void request_toggle_city_trade_routes(void);
+void request_toggle_unit_stack_size(void);
 void request_toggle_terrain(void);
 void request_toggle_coastline(void);
-void request_toggle_roads_rails(void);
+void request_toggle_paths(void);
 void request_toggle_irrigation(void);
 void request_toggle_mines(void);
 void request_toggle_bases(void);
@@ -174,7 +201,7 @@ void unit_focus_add(struct unit *punit);
 void unit_focus_remove(struct unit *punit);
 void unit_focus_urgent(struct unit *punit);
 
-void unit_focus_advance(void);
+void unit_focus_advance(bool accept_current);
 void unit_focus_update(void);
 
 void auto_center_on_focus_unit(void);
@@ -199,9 +226,10 @@ void key_city_growth_toggle(void);
 void key_city_productions_toggle(void);
 void key_city_buycost_toggle(void);
 void key_city_trade_routes_toggle(void);
+void key_unit_stack_size_toggle(void);
 void key_terrain_toggle(void);
 void key_coastline_toggle(void);
-void key_roads_rails_toggle(void);
+void key_paths_toggle(void);
 void key_irrigation_toggle(void);
 void key_mines_toggle(void);
 void key_bases_toggle(void);
@@ -224,28 +252,30 @@ void key_recall_previous_focus_unit(void);
 void key_unit_move(enum direction8 gui_dir);
 void key_unit_airbase(void);
 void key_unit_auto_explore(void);
-void key_unit_auto_settle(void);
+void key_unit_auto_work(void);
 void key_unit_build_city(void);
 void key_unit_build_wonder(void);
 void key_unit_connect(enum unit_activity activity,
                       struct extra_type *tgt);
 void key_unit_action_select(void);
 void key_unit_action_select_tgt(void);
+void key_unit_clean(void);
 void key_unit_convert(void);
 void key_unit_done(void);
-void key_unit_fallout(void);
 void key_unit_fortify(void);
 void key_unit_fortress(void);
 void key_unit_goto(void);
 void key_unit_homecity(void);
 void key_unit_irrigate(void);
+void key_unit_cultivate(void);
 void key_unit_mine(void);
+void key_unit_plant(void);
 void key_unit_patrol(void);
 void key_unit_paradrop(void);
 void key_unit_pillage(void);
-void key_unit_pollution(void);
 void key_unit_road(void);
 void key_unit_sentry(void);
+void key_unit_teleport(void);
 void key_unit_trade_route(void);
 void key_unit_transform(void);
 void key_unit_unload_all(void);
@@ -270,4 +300,4 @@ extern int num_units_below;
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__CONTROL_H */
+#endif /* FC__CONTROL_H */

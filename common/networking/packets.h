@@ -17,14 +17,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
-struct connection;
-struct data_in;
-
 /* utility */
 #include "shared.h"		/* MAX_LEN_ADDR */
 
 /* common */
-#include "connection.h"		/* struct connection, MAX_LEN_* */
 #include "diptreaty.h"
 #include "effects.h"
 #include "events.h"
@@ -38,53 +34,39 @@ struct data_in;
 #include "unittype.h"
 #include "worklist.h"
 
+struct connection;
+struct data_in;
 
-/* Used in network protocol. */
-#define MAX_LEN_MSG             1536
-#define MAX_LEN_ROUTE		2000	  /* MAX_LEN_PACKET / 2 - header */
 
 #ifdef FREECIV_WEB
-#define web_send_packet(packetname, ...) \
-  send_packet_web_ ##packetname( __VA_ARGS__ )
-#define web_lsend_packet(packetname, ...) \
-  lsend_packet_web_ ##packetname( __VA_ARGS__ )
+#define web_send_packet(packetname, pconn, ...)         \
+do {                                                    \
+  if (conn_is_webclient(pconn)) {                       \
+    send_packet_web_ ##packetname(pconn, __VA_ARGS__ ); \
+  }                                                     \
+} while (FALSE)
+#define web_lsend_packet(packetname, pconn, pack, ...)  \
+do {                                                    \
+  const struct packet_web_ ##packetname *_pptr_ = pack; \
+  if (_pptr_ != NULL) {                                 \
+    lsend_packet_web_ ##packetname(pconn, _pptr_, ##__VA_ARGS__ );  \
+  }                                                     \
+} while (FALSE);
 #else  /* FREECIV_WEB */
-#define web_send_packet(packetname, ...)
+#define web_send_packet(packetname, pconn, ...)
 #define web_lsend_packet(packetname, ...)
 #endif /* FREECIV_WEB */
 
-/* The size of opaque (void *) data sent in the network packet.  To avoid
- * fragmentation issues, this SHOULD NOT be larger than the standard
- * ethernet or PPP 1500 byte frame size (with room for headers).
+/* Indicates that the player initiated a request.
  *
- * Do not spend much time optimizing, you have no idea of the actual dynamic
- * path characteristics between systems, such as VPNs and tunnels.
- *
- * Used in network protocol.
- */
-#define ATTRIBUTE_CHUNK_SIZE    (1400)
-
-/* Used in network protocol. */
-enum report_type {
-  REPORT_WONDERS_OF_THE_WORLD,
-  REPORT_TOP_5_CITIES,
-  REPORT_DEMOGRAPHIC,
-  REPORT_ACHIEVEMENTS
-};
+ * Used in network protocol. */
+#define REQEST_PLAYER_INITIATED (0)
 
 /* Used in network protocol. */
 enum unit_info_use {
   UNIT_INFO_IDENTITY,
   UNIT_INFO_CITY_SUPPORTED,
   UNIT_INFO_CITY_PRESENT
-};
-
-/* Used in network protocol. */
-enum authentication_type {
-  AUTH_LOGIN_FIRST,   /* request a password for a returning user */
-  AUTH_NEWUSER_FIRST, /* request a password for a new user */
-  AUTH_LOGIN_RETRY,   /* inform the client to try a different password */
-  AUTH_NEWUSER_RETRY  /* inform the client to try a different [new] password */
 };
 
 #include "packets_gen.h"
@@ -121,6 +103,7 @@ void packet_handlers_fill_capability(struct packet_handlers *phandlers,
                                      const char *capability);
 const char *packet_name(enum packet_type type);
 bool packet_has_game_info_flag(enum packet_type type);
+void packet_destroy(void *packet, enum packet_type type);
 
 void packet_header_init(struct packet_header *packet_header);
 void post_send_packet_server_join_reply(struct connection *pconn,
@@ -161,10 +144,14 @@ void packets_deinit(void);
     return send_packet_data(pc, buffer, size, packet_type); \
   }
 
+#define SEND_PACKET_DISCARD() \
+  return 0
+
 #define RECEIVE_PACKET_START(packet_type, result) \
   struct data_in din; \
   struct packet_type packet_buf, *result = &packet_buf; \
   \
+  init_ ##packet_type (&packet_buf); \
   dio_input_init(&din, pc->buffer->data, \
                  data_type_size(pc->packet_header.length)); \
   { \
@@ -178,6 +165,7 @@ void packets_deinit(void);
 
 #define RECEIVE_PACKET_END(result) \
   if (!packet_check(&din, pc)) { \
+    FREE_PACKET_STRUCT(&packet_buf); \
     return NULL; \
   } \
   remove_packet_from_buffer(pc->buffer); \
@@ -187,6 +175,7 @@ void packets_deinit(void);
 
 #define RECEIVE_PACKET_FIELD_ERROR(field, ...) \
   log_packet("Error on field '" #field "'" __VA_ARGS__); \
+  FREE_PACKET_STRUCT(&packet_buf); \
   return NULL
 
 #endif /* FREECIV_JSON_PROTOCOL */
@@ -195,24 +184,19 @@ int send_packet_data(struct connection *pc, unsigned char *data, int len,
                      enum packet_type packet_type);
 bool packet_check(struct data_in *din, struct connection *pc);
 
-/* Utilities to exchange strings and string vectors. */
-#define PACKET_STRVEC_SEPARATOR '\3'
-#define PACKET_STRVEC_COMPUTE(str, strvec)                                  \
-  if (NULL != strvec) {                                                     \
-    strvec_to_str(strvec, PACKET_STRVEC_SEPARATOR, str, sizeof(str));       \
-  } else {                                                                  \
-    str[0] = '\0';                                                          \
-  }
-#define PACKET_STRVEC_EXTRACT(strvec, str)                                  \
-  if ('\0' != str[0]) {                                                     \
-    strvec = strvec_new();                                                  \
-    strvec_from_str(strvec, PACKET_STRVEC_SEPARATOR, str);                  \
-  } else {                                                                  \
-    strvec = NULL;                                                          \
+/* Utilities to move string vectors in and out of packets. */
+#define PACKET_STRVEC_INSERT(dest, src) \
+  dest = src
+#define PACKET_STRVEC_EXTRACT(dest, src)        \
+  if (src != nullptr && strvec_size(src) > 0) { \
+    dest = strvec_new();                        \
+    strvec_copy(dest, src);                     \
+  } else {                                      \
+    dest = nullptr;                             \
   }
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__PACKETS_H */
+#endif /* FC__PACKETS_H */

@@ -1,19 +1,20 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes
+; for other "maintenance". If you want to make custom changes
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
 [datafile]
-description="Experimental web-client nations data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02 web-compatible"
-format_version=20
+description = "Experimental web-client nations data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17 web-compatible"
+format_version = 50
 
-; This section contains meta information for freeciv-ruledit to recreate the ruleset
-; file in a form wanted. These have no in-game effect whatsoever
+; This section contains meta information for freeciv-ruledit and freeciv-ruleup
+; to recreate the ruleset file in a form wanted.
+; These have no in-game effect whatsoever.
 [ruledit]
 
 ; Nationlist to add include statement for. If this entry is omitted, all the nations
@@ -22,7 +23,7 @@ nationlist = "default/nationlist.ruleset"
 
 ; List of nations to embed to main nations.ruleset despite separate nationlist
 ; being used for other nations.
-embedded_nations = "barbarian"
+embedded_nations = "Barbarian"
 
 [compatibility]
 ; Initial government for all the nations that do not
@@ -55,6 +56,11 @@ aggressive_min = 30
 aggressive_max = 85
 aggressive_default = 50
 
+; Value of trait "builder" defines how much AI wants to build buildings
+builder_min = 30
+builder_max = 85
+builder_default = 50
+
 ; Please keep [ruledit] section in sync with these includes
 *include "default/nationlist.ruleset"
 
@@ -62,12 +68,12 @@ aggressive_default = 50
 
 [nation_barbarian]
 
-translation_domain="freeciv"
+translation_domain = "freeciv-core"
 
-name=_("Barbarian")
-plural=_("?plural:Barbarians")
-groups="Core", "Barbarian"
-legend=_("Since the dawn of civilization, barbarians have been a threat to\
+name = _("Barbarian")
+plural = _("?plural:Barbarians")
+groups = "Core", "Barbarian"
+legend = _("Since the dawn of civilization, barbarians have been a threat to\
  cultured peoples everywhere.")
 
 leaders = {
@@ -80,13 +86,13 @@ leaders = {
  "Boadicea",    "Female"
 }
 
-flag="barbarian"
+flag = "barbarian"
 flag_alt = "-"
 style = "European"
 
-init_techs=""
-init_buildings=""
-init_units=""
+init_techs = ""
+init_buildings = ""
+init_units = ""
 
 cities = "Barbaricum"
 

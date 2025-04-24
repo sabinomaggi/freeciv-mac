@@ -24,6 +24,9 @@
 #include "mem.h"
 #include "timing.h"
 
+/* common */
+#include "nation.h"
+
 /* client */
 #include "client_main.h"
 
@@ -311,11 +314,11 @@ static struct my_agent *agent_by_name(const char *agent_name)
 ****************************************************************************/
 static bool is_outstanding_request(struct my_agent *agent)
 {
-  if (agent->first_outstanding_request_id != 0 &&
-      client.conn.client.request_id_of_currently_handled_packet != 0 &&
-      agent->first_outstanding_request_id <=
-      client.conn.client.request_id_of_currently_handled_packet &&
-      agent->last_outstanding_request_id >=
+  if (agent->first_outstanding_request_id != 0
+      && client.conn.client.request_id_of_currently_handled_packet != 0
+      && agent->first_outstanding_request_id <=
+      client.conn.client.request_id_of_currently_handled_packet
+      && agent->last_outstanding_request_id >=
       client.conn.client.request_id_of_currently_handled_packet) {
     log_debug("A:%s: ignoring packet; outstanding [%d..%d] got=%d",
               agent->agent.name, agent->first_outstanding_request_id,
@@ -347,16 +350,17 @@ void agents_free(void)
 {
   int i;
 
-  /* FIXME: doing this will wipe out any presets on disconnect.
-   * a proper solution should be to split up the client_free functions 
+  /* FIXME: Doing this will wipe out any presets on disconnect.
+   * A proper solution should be to split up the client_free functions
    * for a simple disconnect and a client quit. for right now, we just
    * let the OS free the memory on exit instead of doing it ourselves. */
   /* cmafec_free(); */
 
-  /*simple_historian_done();*/
+  /* simple_historian_done(); */
 
   for (;;) {
     struct call *pcall = remove_and_return_a_call();
+
     if (!pcall) {
       break;
     }
@@ -387,7 +391,8 @@ void register_agent(const struct agent *agent)
   priv_agent->first_outstanding_request_id = 0;
   priv_agent->last_outstanding_request_id = 0;
 
-  priv_agent->stats.network_wall_timer = timer_new(TIMER_USER, TIMER_ACTIVE);
+  priv_agent->stats.network_wall_timer = timer_new(TIMER_USER, TIMER_ACTIVE,
+                                                   "agent: network");
   priv_agent->stats.wait_at_network = 0;
   priv_agent->stats.wait_at_network_requests = 0;
 

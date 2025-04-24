@@ -45,29 +45,7 @@
 
 #include "graphics.h"
 
-struct sprite *intro_gfx_sprite;
-
 GdkCursor *fc_cursors[CURSOR_LAST][NUM_CURSOR_FRAMES];
-
-/***********************************************************************//**
-  Returns TRUE to indicate that gtk3x-client supports given view type
-***************************************************************************/
-bool is_view_supported(enum ts_type type)
-{
-  switch (type) {
-  case TS_ISOMETRIC:
-  case TS_OVERHEAD:
-    return TRUE;
-  case TS_3D:
-#ifdef GTK3_3D_ENABLED
-    return TRUE;
-#else  /* GTK3_3D_ENABLED */
-    return FALSE;
-#endif /* GTK3_3D_ENABLED */
-  }
-
-  return FALSE;
-}
 
 /***********************************************************************//**
   Loading tileset of the specified type
@@ -100,17 +78,5 @@ void load_cursors(void)
 							     hot_x, hot_y);
       g_object_unref(G_OBJECT(pixbuf));
     }
-  }
-}
-
-/***********************************************************************//**
-  This function is so that packhand.c can be gui-independent, and
-  not have to deal with Sprites itself.
-***************************************************************************/
-void free_intro_radar_sprites(void)
-{
-  if (intro_gfx_sprite) {
-    free_sprite(intro_gfx_sprite);
-    intro_gfx_sprite = NULL;
   }
 }

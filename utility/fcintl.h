@@ -32,7 +32,23 @@ extern "C" {
  * we don't want defined when nls is disabled. */
 #ifdef FREECIV_HAVE_LIBINTL_H
 #include <libintl.h>
-#endif
+
+/* Ugly hacks to make nls-enabled builds work with libintl.h in crosser
+ * The problems came up in some C++ headers where functions by the same
+ * name as these global wrappers were used. As such, the libintl.h
+ * header is semantically wrong everywhere, not just in crosser,
+ * but crosser is the only environment where we know it to cause actual
+ * problems (failing build). As this workaround isn't semantically correct
+ * either, by limiting these adjustments to crosser, and even there only
+ * to C++ compilations, we get both
+ * 1) crosser build to go through
+ * 2) we are not accidentally breaking any other environment
+ */
+#if defined(FREECIV_CROSSER) && defined(__cplusplus)
+#undef vswprintf
+#endif /* FREECIV_CROSSER */
+
+#endif /* FREECIV_HAVE_LIBINTL_H */
 
 /* Core freeciv */
 #define _(String) gettext(String)
@@ -68,11 +84,13 @@ extern "C" {
 #endif /* FREECIV_ENABLE_NLS */
 
 /* This provides an untranslated version of Q_ that allows the caller to
- * get access to the original string.  This may be needed for comparisons,
+ * get access to the original string. This may be needed for comparisons,
  * for instance. */
 #define Qn_(String) skip_intl_qualifier_prefix(String)
 
-const char *skip_intl_qualifier_prefix(const char *str);
+const char *skip_intl_qualifier_prefix(const char *str)
+            fc__attribute((__format_arg__(1)));
+
 char *capitalized_string(const char *str);
 void free_capitalized(char *str);
 void capitalization_opt_in(bool opt_in);
@@ -84,4 +102,4 @@ const char *get_locale_dir(void);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__FCINTL_H */
+#endif /* FC__FCINTL_H */

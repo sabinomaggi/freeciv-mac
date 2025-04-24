@@ -43,6 +43,14 @@ struct advance_req_iter {
 };
 #define ADVANCE_REQ_ITER(it) ((struct advance_req_iter *) it)
 
+struct advance_root_req_iter {
+  struct iterator base;
+  bv_techs done, rootdone;
+  const struct advance *array[A_LAST];
+  const struct advance **current, **end;
+};
+#define ADVANCE_ROOT_REQ_ITER(it) ((struct advance_root_req_iter *) it)
+
 /* the advances array is now setup in:
  * server/ruleset.c (for the server)
  * client/packhand.c (for the client)
@@ -67,7 +75,7 @@ const struct advance *advance_array_last(void)
 /**********************************************************************//**
   Return the number of advances/technologies.
 **************************************************************************/
-Tech_type_id advance_count(void)
+Tech_type_id advance_count_real(void)
 {
   return game.control.num_tech_types;
 }
@@ -143,8 +151,15 @@ struct advance *advance_requires(const struct advance *padvance,
 **************************************************************************/
 struct advance *valid_advance(struct advance *padvance)
 {
-  if (NULL == padvance
-      || A_NEVER == padvance->require[AR_ONE]
+  if (padvance == NULL) {
+    return NULL;
+  }
+
+  if (padvance->item_number == A_FUTURE) {
+    return padvance;
+  }
+
+  if (A_NEVER == padvance->require[AR_ONE]
       || A_NEVER == padvance->require[AR_TWO]) {
     return NULL;
   }
@@ -169,11 +184,11 @@ struct advance *valid_advance_by_number(const Tech_type_id id)
 **************************************************************************/
 struct advance *advance_by_translated_name(const char *name)
 {
-  advance_iterate(A_NONE, padvance) {
+  advance_iterate_all(padvance) {
     if (0 == strcmp(advance_name_translation(padvance), name)) {
       return padvance;
     }
-  } advance_iterate_end;
+  } advance_iterate_all_end;
 
   return NULL;
 }
@@ -186,11 +201,11 @@ struct advance *advance_by_rule_name(const char *name)
 {
   const char *qname = Qn_(name);
 
-  advance_iterate(A_NONE, padvance) {
+  advance_iterate_all(padvance) {
     if (0 == fc_strcasecmp(advance_rule_name(padvance), qname)) {
       return padvance;
     }
-  } advance_iterate_end;
+  } advance_iterate_all_end;
 
   return NULL;
 }
@@ -212,7 +227,7 @@ void techs_precalc_data(void)
   fc_assert_msg(tech_cost_style_is_valid(game.info.tech_cost_style),
                 "Invalid tech_cost_style %d", game.info.tech_cost_style);
 
-  advance_iterate(A_FIRST, padvance) {
+  advance_iterate(padvance) {
     int num_reqs = 0;
     bool min_req = TRUE;
 
@@ -232,7 +247,7 @@ void techs_precalc_data(void)
         min_req = FALSE;
         break;
       }
-      /* No break. */
+      fc__fallthrough; /* No break. */
     case TECH_COST_CLASSIC:
       padvance->cost = game.info.base_tech_cost * (1.0 + num_reqs)
                        * sqrt(1.0 + num_reqs) / 2;
@@ -242,15 +257,15 @@ void techs_precalc_data(void)
         min_req = FALSE;
         break;
       }
-      /* No break. */
+      fc__fallthrough; /* No break. */
     case TECH_COST_EXPERIMENTAL:
       padvance->cost = game.info.base_tech_cost * ((num_reqs) * (num_reqs)
                            / (1 + sqrt(sqrt(num_reqs + 1))) - 0.5);
       break;
     }
 
-    if (min_req && padvance->cost < game.info.base_tech_cost) {
-      padvance->cost = game.info.base_tech_cost;
+    if (min_req && padvance->cost < game.info.min_tech_cost) {
+      padvance->cost = game.info.min_tech_cost;
     }
 
     /* Class cost */
@@ -266,6 +281,16 @@ void techs_precalc_data(void)
 bool is_future_tech(Tech_type_id tech)
 {
   return tech == A_FUTURE;
+}
+
+/**********************************************************************//**
+  Is the given tech an regular advance. "None" counts as regular advance,
+  Future Tech does not.
+**************************************************************************/
+bool is_regular_advance(struct advance *padvance)
+{
+  return valid_advance(padvance) != nullptr
+    && padvance->item_number != A_FUTURE;
 }
 
 /**********************************************************************//**
@@ -295,7 +320,7 @@ void tech_classes_init(void)
 
   for (i = 0; i < MAX_NUM_TECH_CLASSES; i++) {
     tech_classes[i].idx = i;
-    tech_classes[i].disabled = FALSE;
+    tech_classes[i].ruledit_disabled = FALSE;
   }
 }
 
@@ -425,14 +450,14 @@ const char *tech_flag_helptxt(enum tech_flag_id id)
 }
 
 /**********************************************************************//**
- Returns true if the costs for the given technology will stay constant
- during the game. False otherwise.
+  Returns true if the costs for the given technology will stay constant
+  during the game. False otherwise.
 
- Checking every tech_cost_style with fixed costs seems a waste of system
- resources, when we can check that it is not the one style without fixed
- costs.
+  Checking every tech_cost_style with fixed costs seems a waste of system
+  resources, when we can check that it is not the one style without fixed
+  costs.
 **************************************************************************/
-bool techs_have_fixed_costs()
+bool techs_have_fixed_costs(void)
 {
   return (game.info.tech_leakage == TECH_LEAKAGE_NONE
           && game.info.tech_cost_style != TECH_COST_CIV1CIV2);
@@ -450,7 +475,9 @@ void techs_init(void)
   memset(advances, 0, sizeof(advances));
   for (i = 0; i < ARRAY_SIZE(advances); i++) {
     advances[i].item_number = i;
+    advances[i].ruledit_dlg = NULL;
     advances[i].cost = -1;
+    advances[i].inherited_root_req = FALSE;
     advances[i].tclass = 0;
 
     requirement_vector_init(&(advances[i].research_reqs));
@@ -575,6 +602,117 @@ struct iterator *advance_req_iter_init(struct advance_req_iter *it,
   it->current = it->array;
   *it->current = goal;
   it->end = it->current + 1;
+
+  return base;
+}
+
+/************************************************************************//**
+  Return the size of the advance root requirements iterator.
+****************************************************************************/
+size_t advance_root_req_iter_sizeof(void)
+{
+  return sizeof(struct advance_root_req_iter);
+}
+
+/************************************************************************//**
+  Return the current root_req.
+****************************************************************************/
+static void *advance_root_req_iter_get(const struct iterator *it)
+{
+  return
+    (void *) advance_requires(*ADVANCE_ROOT_REQ_ITER(it)->current, AR_ROOT);
+}
+
+/************************************************************************//**
+  Return whether we finished to iterate or not.
+****************************************************************************/
+static bool advance_root_req_iter_valid(const struct iterator *it)
+{
+  const struct advance_root_req_iter *iter = ADVANCE_ROOT_REQ_ITER(it);
+
+  return iter->current < iter->end;
+}
+
+/************************************************************************//**
+  Jump to next advance which has a previously unseen root_req.
+****************************************************************************/
+static void advance_root_req_iter_next(struct iterator *it)
+{
+  struct advance_root_req_iter *iter = ADVANCE_ROOT_REQ_ITER(it);
+
+  /* Precondition: either iteration has already finished, or iter->current
+   * points at a tech with an interesting root_req (which means its
+   * requirements may have more). */
+  while (advance_root_req_iter_valid(it)) {
+    const struct advance *padvance = *iter->current;
+    enum tech_req req;
+    bool new = FALSE;
+
+    for (req = AR_ONE; req < AR_SIZE; req++) {
+      const struct advance *preq
+        = valid_advance(advance_requires(padvance, req));
+
+      if (NULL != preq
+          && A_NONE != advance_number(preq)
+          && !BV_ISSET(iter->done, advance_number(preq))) {
+
+        BV_SET(iter->done, advance_number(preq));
+        /* Do we need to look at this subtree at all? If it has A_NONE as
+         * root_req, further root_reqs can't propagate through it, so no. */
+        if (advance_required(advance_number(preq), AR_ROOT) != A_NONE) {
+          /* Yes, this subtree needs iterating over at some point, starting
+           * with preq (whose own root_req we'll consider in a bit) */
+          if (!new) {
+            *iter->current = preq;
+            new = TRUE;
+          } else {
+            *iter->end++ = preq; /* make a note for later */
+          }
+        }
+      }
+    }
+    if (!new) {
+      /* Didn't find an interesting new subtree. */
+      iter->current++;
+    }
+    /* Precondition: *current has been moved on from where we started, and
+     * it has an interesting root_req or it wouldn't be on the list; but
+     * it may be one that we've already yielded. */
+    if (advance_root_req_iter_valid(it)) {
+      Tech_type_id root = advance_required(advance_number(*iter->current),
+                                           AR_ROOT);
+      if (!BV_ISSET(iter->rootdone, root)) {
+        /* A previously unseen root_req. Stop and yield it. */
+        break;
+      } /* else keep looking */
+    }
+  }
+}
+
+/************************************************************************//**
+  Initialize a root requirements iterator.
+****************************************************************************/
+struct iterator *advance_root_req_iter_init(struct advance_root_req_iter *it,
+                                            const struct advance *goal)
+{
+  struct iterator *base = ITERATOR(it);
+
+  base->get = advance_root_req_iter_get;
+  base->next = advance_root_req_iter_next;
+  base->valid = advance_root_req_iter_valid;
+
+  BV_CLR_ALL(it->done);
+  BV_CLR_ALL(it->rootdone);
+  it->current = it->array;
+  if (advance_required(advance_number(goal), AR_ROOT) != A_NONE) {
+    /* First root_req to return is goal's own, and there may be more
+     * for next() to find. */
+    *it->current = goal;
+    it->end = it->current + 1;
+  } else {
+    /* No root_reqs -- go straight to invalid state */
+    it->end = it->current;
+  }
 
   return base;
 }

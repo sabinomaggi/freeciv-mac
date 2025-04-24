@@ -50,6 +50,7 @@
 
 extern "C" {
   const char *calendar_text(void);
+  bool goto_is_active(void);
 }
 static QString popup_terrain_info(struct tile *ptile);
 
@@ -122,7 +123,7 @@ void hud_message_box::keyPressEvent(QKeyEvent *event)
 /************************************************************************//**
   Sets text and title and shows message box
 ****************************************************************************/
-void hud_message_box::set_text_title(QString s1, QString s2)
+int hud_message_box::set_text_title(QString s1, QString s2, bool return_exec)
 {
   QSpacerItem *spacer;
   QGridLayout *layout;
@@ -131,14 +132,17 @@ void hud_message_box::set_text_title(QString s1, QString s2)
 
   if (s1.contains('\n')) {
     int i;
+
     i = s1.indexOf('\n');
     cs1 = s1.left(i);
-    cs2 = s1.right(s1.count() - i);
+    cs2 = s1.right(s1.length() - i);
     mult = 2;
-    w2 = qMax(fm_text->width(cs1), fm_text->width(cs2));
-    w = qMax(w2, fm_title->width(s2));
+    w2 = qMax(fm_text->horizontalAdvance(cs1),
+              fm_text->horizontalAdvance(cs2));
+    w = qMax(w2, fm_title->horizontalAdvance(s2));
   } else {
-    w = qMax(fm_text->width(s1), fm_title->width(s2));
+    w = qMax(fm_text->horizontalAdvance(s1),
+             fm_title->horizontalAdvance(s2));
   }
   w = w + 20;
   h = mult * (fm_text->height() * 3 / 2) + 2 * fm_title->height();
@@ -158,9 +162,12 @@ void hud_message_box::set_text_title(QString s1, QString s2)
              (parentWidget()->height() - h) / 2);
   p = parentWidget()->mapToGlobal(p);
   move(p);
-  show();
+  if (!return_exec) {
+    show ();
+  }
   m_timer.start();
   startTimer(45);
+  return (return_exec) ? exec () : 0;
 }
 
 /************************************************************************//**
@@ -211,16 +218,16 @@ void hud_message_box::paintEvent(QPaintEvent *event)
   p.fillRect(ry, QColor(palette().color(QPalette::AlternateBase)));
   p.fillRect(rfull, g);
   p.setFont(f_title);
-  p.drawText((width() - fm_title->width(title)) / 2,
+  p.drawText((width() - fm_title->horizontalAdvance(title)) / 2,
              fm_title->height() * 4 / 3, title);
   p.setFont(f_text);
   if (mult == 1) {
-    p.drawText((width() - fm_text->width(text)) / 2,
+    p.drawText((width() - fm_text->horizontalAdvance(text)) / 2,
               2 * fm_title->height() + fm_text->height() * 4 / 3, text);
   } else {
-    p.drawText((width() - fm_text->width(cs1)) / 2,
+    p.drawText((width() - fm_text->horizontalAdvance(cs1)) / 2,
               2 * fm_title->height() + fm_text->height() * 4 / 3, cs1);
-    p.drawText((width() - fm_text->width(cs2)) / 2,
+    p.drawText((width() - fm_text->horizontalAdvance(cs2)) / 2,
               2 * fm_title->height() + fm_text->height() * 8 / 3, cs2);
   }
   p.end();
@@ -277,7 +284,7 @@ void hud_text::center_me()
   QPoint p;
 
   w = width();
-  if (bound_rect.isEmpty() == false) {
+  if (!bound_rect.isEmpty()) {
     setFixedSize(bound_rect.width(), bound_rect.height());
   }
   p = QPoint((parentWidget()->width() - w) / 2,
@@ -400,14 +407,17 @@ void hud_input_box::set_text_title_definput(QString s1, QString s2,
   layout = new QVBoxLayout;
   if (s1.contains('\n')) {
     int i;
+
     i = s1.indexOf('\n');
     cs1 = s1.left(i);
-    cs2 = s1.right(s1.count() - i);
+    cs2 = s1.right(s1.length() - i);
     mult = 2;
-    w2 = qMax(fm_text->width(cs1), fm_text->width(cs2));
-    w = qMax(w2, fm_title->width(s2));
+    w2 = qMax(fm_text->horizontalAdvance(cs1),
+              fm_text->horizontalAdvance(cs2));
+    w = qMax(w2, fm_title->horizontalAdvance(s2));
   } else {
-    w = qMax(fm_text->width(s1), fm_title->width(s2));
+    w = qMax(fm_text->horizontalAdvance(s1),
+             fm_title->horizontalAdvance(s2));
   }
   w = w + 20;
   h = mult * (fm_text->height() * 3 / 2) + 2 * fm_title->height();
@@ -446,7 +456,6 @@ void hud_input_box::timerEvent(QTimerEvent *event)
   m_animate_step = m_timer.elapsed() / 40;
   update();
 }
-
 
 /************************************************************************//**
   Paint event for custom input box
@@ -492,16 +501,16 @@ void hud_input_box::paintEvent(QPaintEvent *event)
   p.fillRect(ry, QColor(palette().color(QPalette::AlternateBase)));
   p.fillRect(rx, g);
   p.setFont(f_title);
-  p.drawText((width() - fm_title->width(title)) / 2,
+  p.drawText((width() - fm_title->horizontalAdvance(title)) / 2,
              fm_title->height() * 4 / 3, title);
   p.setFont(f_text);
   if (mult == 1) {
-    p.drawText((width() - fm_text->width(text)) / 2,
+    p.drawText((width() - fm_text->horizontalAdvance(text)) / 2,
               2 * fm_title->height() + fm_text->height() * 4 / 3, text);
   } else {
-    p.drawText((width() - fm_text->width(cs1)) / 2,
+    p.drawText((width() - fm_text->horizontalAdvance(cs1)) / 2,
               2 * fm_title->height() + fm_text->height() * 4 / 3, cs1);
-    p.drawText((width() - fm_text->width(cs2)) / 2,
+    p.drawText((width() - fm_text->horizontalAdvance(cs2)) / 2,
               2 * fm_title->height() + fm_text->height() * 8 / 3, cs2);
   }
   p.end();
@@ -569,6 +578,7 @@ void hud_units::update_actions(unit_list *punits)
   int num;
   int wwidth;
   int font_width;
+  int expanded_unit_width;
   QFont font = *fc_font::instance()->get_font(fonts::notify_label);
   QFontMetrics *fm;
   QImage cropped_img;
@@ -584,6 +594,7 @@ void hud_units::update_actions(unit_list *punits)
   struct canvas *unit_pixmap;
   struct city *pcity;
   struct player *owner;
+  struct tileset *tmp;
   struct unit *punit;
 
   punit = head_of_units_in_focus();
@@ -605,10 +616,15 @@ void hud_units::update_actions(unit_list *punits)
 
   setUpdatesEnabled(false);
 
+  tmp = nullptr;
+  if (unscaled_tileset) {
+    tmp = tileset;
+    tileset = unscaled_tileset;
+  }
   text_str = QString(unit_name_translation(punit));
   owner = punit->owner;
   pcity = player_city_by_number(owner, punit->homecity);
-  if (pcity != NULL) {
+  if (pcity != nullptr) {
     text_str = QString(("%1(%2)"))
                .arg(unit_name_translation(punit), city_name_get(pcity));
   }
@@ -621,7 +637,7 @@ void hud_units::update_actions(unit_list *punits)
                                      + punit->moves_left), false))
                                      + QString(")");
   }
-  /* TRANS: MP = Movement points */
+  // TRANS: MP = Movement points
   mp = QString(_("MP: ")) + mp;
   text_str = text_str + mp + " ";
   text_str += QString(_("HP:%1/%2")).arg(
@@ -631,20 +647,26 @@ void hud_units::update_actions(unit_list *punits)
   snum = QString::number(unit_list_size(punit->tile->units) - 1);
   if (unit_list_size(get_units_in_focus()) > 1) {
     int n = unit_list_size(get_units_in_focus());
-    /* TRANS: preserve leading space; always at least 2 */
+
+    // TRANS: preserve leading space; always at least 2
     text_str = text_str + QString(PL_(" (Selected %1 unit)",
                                       " (Selected %1 units)", n))
                .arg(n);
   } else if (num > 1) {
+    QByteArray ut_bytes;
+
+    ut_bytes = snum.toUtf8();
+    // TRANS: preserve leading space
     text_str = text_str + QString(PL_(" +%1 unit",
                                       " +%1 units", num-1))
-                                  .arg(snum.toLocal8Bit().data());
+                                  .arg(ut_bytes.data());
   }
+  text_label.setTextFormat(Qt::PlainText);
   text_label.setText(text_str);
   font.setPixelSize((text_label.height() * 9) / 10);
   text_label.setFont(font);
   fm = new QFontMetrics(font);
-  text_label.setFixedWidth(fm->width(text_str) + 20);
+  text_label.setFixedWidth(fm->horizontalAdvance(text_str) + 20);
   delete fm;
 
   unit_pixmap = qtg_canvas_create(tileset_unit_width(tileset),
@@ -655,24 +677,27 @@ void hud_units::update_actions(unit_list *punits)
   crop = zealous_crop_rect(img);
   cropped_img = img.copy(crop);
   img = cropped_img.scaledToHeight(height(), Qt::SmoothTransformation);
+  expanded_unit_width = tileset_unit_width(tileset) *
+                        ((height() + 0.0) / tileset_unit_height(tileset));
   pix = QPixmap::fromImage(img);
-  /* add transparent borders if image is too slim */
-  if (pix.width() < tileset_unit_width(tileset)) {
-    int px = tileset_full_tile_width(tileset);
-    pix2 = QPixmap(px, pix.height());
+  /* add transparent borders if image is too slim, accounting for the
+   * scaledToHeight() we've applied */
+  if (pix.width() < expanded_unit_width) {
+    pix2 = QPixmap(expanded_unit_width, pix.height());
     pix2.fill(Qt::transparent);
     p.begin(&pix2);
-    p.drawPixmap(px / 2 - pix.width() / 2, 0, pix);
+    p.drawPixmap(expanded_unit_width / 2 - pix.width() / 2, 0, pix);
     p.end();
     pix = pix2;
   }
-  /* Draw movement points */
+
+  // Draw movement points
   move_pt_text = move_points_text(punit->moves_left, false);
   if (move_pt_text.contains('/')) {
     fraction2 = move_pt_text.right(1);
-    move_pt_text.remove(move_pt_text.count() - 2, 2);
+    move_pt_text.remove(move_pt_text.length() - 2, 2);
     fraction1 = move_pt_text.right(1);
-    move_pt_text.remove(move_pt_text.count() - 1, 1);
+    move_pt_text.remove(move_pt_text.length() - 1, 1);
   }
   crop = QRect(5, 5, pix.width() - 5, pix.height() - 5);
   font.setCapitalization(QFont::Capitalize);
@@ -680,7 +705,23 @@ void hud_units::update_actions(unit_list *punits)
   p.begin(&pix);
   p.setFont(font);
   p.setPen(Qt::white);
-  p.drawText(crop, Qt::AlignLeft | Qt::AlignBottom, move_pt_text);
+  p.drawText(crop, Qt::AlignLeft | Qt::AlignBottom, move_pt_text,
+             &bounding_rect);
+
+  bounding_rect.adjust(bounding_rect.width(), 0 ,
+                       bounding_rect.width() * 2, 0);
+  if (punit->fuel > 1) {
+    QString s;
+    int fuel;
+
+    font.setPointSize(pix.height() / 4);
+    p.setFont(font);
+    fuel = punit->fuel - 1;
+    fuel = fuel * punit->utype->move_rate / SINGLE_MOVE;
+    p.drawText(bounding_rect, Qt::AlignCenter,
+               QString("+") + QString::number(fuel));
+  }
+
   if (move_pt_text.isEmpty()) {
     move_pt_text = " ";
   }
@@ -688,11 +729,12 @@ void hud_units::update_actions(unit_list *punits)
                                  move_pt_text);
   font.setPointSize(pix.height() / 5);
   fm = new QFontMetrics(font);
-  font_width = (fm->width(move_pt_text) * 3) / 5;
+  font_width = (fm->horizontalAdvance(move_pt_text) * 3) / 5;
   delete fm;
   p.setFont(font);
-  if (fraction1.isNull() == false) {
+  if (!fraction1.isNull()) {
     int t = 2 * font.pointSize();
+
     crop = QRect(bounding_rect.right() - font_width,
                  bounding_rect.top(), t, (t / 5) * 4);
     p.drawText(crop, Qt::AlignLeft | Qt::AlignBottom, fraction1);
@@ -720,13 +762,7 @@ void hud_units::update_actions(unit_list *punits)
   img = tile_pixmap->map_pixmap.toImage();
   crop = zealous_crop_rect(img);
   cropped_img = img.copy(crop);
-  if (cropped_img.height() > height() - 5 ||
-      cropped_img.height() < height() / 3) {
-    img = cropped_img.scaledToHeight(height() - 5,
-                                     Qt::SmoothTransformation);
-  } else {
-    img = cropped_img;
-  }
+  img = cropped_img.scaledToHeight(height() - 5, Qt::SmoothTransformation);
   pix = QPixmap::fromImage(img);
   tile_label.setPixmap(pix);
   unit_label.setToolTip(popup_info_text(punit->tile));
@@ -738,6 +774,9 @@ void hud_units::update_actions(unit_list *punits)
   setFixedWidth(wwidth + qMax(unit_icons->update_actions() * (height() * 8)
                               / 10, text_label.width()));
   mw->put_to_corner();
+  if (tmp != nullptr) {
+    tileset = tmp;
+  }
   setUpdatesEnabled(true);
   updateGeometry();
   update();
@@ -809,10 +848,10 @@ void hud_action::paintEvent(QPaintEvent *event)
   p.drawPixmap(rx, *action_pixmap, ry);
   p.setPen(QColor(palette().color(QPalette::Text)));
   p.drawRect(rz);
-   if (focus == true) {
-     p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-     p.fillRect(rx, QColor(palette().color(QPalette::Highlight)));
-   }
+  if (focus) {
+    p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+    p.fillRect(rx, QColor(palette().color(QPalette::Highlight)));
+  }
   p.end();
 
 }
@@ -849,7 +888,7 @@ void hud_action::mouseMoveEvent(QMouseEvent *event)
 }
 
 /************************************************************************//**
-  Leave event for hud_action, used to get status of pixmap higlight
+  Leave event for hud_action, used to get status of pixmap highlight
 ****************************************************************************/
 void hud_action::leaveEvent(QEvent *event)
 {
@@ -859,9 +898,9 @@ void hud_action::leaveEvent(QEvent *event)
 }
 
 /************************************************************************//**
-  Enter event for hud_action, used to get status of pixmap higlight
+  Enter event for hud_action, used to get status of pixmap highlight
 ****************************************************************************/
-void hud_action::enterEvent(QEvent *event)
+void hud_action::enterEvent(QEnterEvent *event)
 {
   focus = true;
   update();
@@ -884,7 +923,7 @@ void hud_action::on_clicked()
 }
 
 /************************************************************************//**
-  Units action contructor, holds possible hud_actions
+  Units action constructor, holds possible hud_actions
 ****************************************************************************/
 unit_actions::unit_actions(QWidget *parent, unit *punit) : QWidget(parent)
 {
@@ -906,7 +945,7 @@ unit_actions::~unit_actions()
 }
 
 /************************************************************************//**
-  Initiazlizes layout ( layout needs to be changed after adding units )
+  Initializes layout ( layout needs to be changed after adding units )
 ****************************************************************************/
 void unit_actions::init_layout()
 {
@@ -918,9 +957,8 @@ void unit_actions::init_layout()
   setLayout(layout);
 }
 
-
 /************************************************************************//**
-  Updates avaialable actions, returns actions count
+  Updates available actions, returns actions count
 ****************************************************************************/
 int unit_actions::update_actions()
 {
@@ -933,6 +971,11 @@ int unit_actions::update_actions()
     hide();
     return 0;
   }
+  /* HACK prevent crash with active goto when leaving widget,
+   * just skip update because with active goto actions shouldn't change */
+  if (goto_is_active() ) {
+    return actions.count();
+  }
   hide();
   clear_layout();
   setUpdatesEnabled(false);
@@ -944,9 +987,9 @@ int unit_actions::update_actions()
   qDeleteAll(actions);
   actions.clear();
 
-  /* Create possible actions */
+  // Create possible actions
 
-  if (unit_can_add_or_build_city(current_unit)) {
+  if (unit_can_add_or_build_city(&(wld.map), current_unit)) {
     a = new hud_action(this);
     a->action_shortcut = SC_BUILDCITY;
     a->set_pixmap(fc_icons::instance()->get_pixmap("home"));
@@ -954,61 +997,52 @@ int unit_actions::update_actions()
   }
 
 
-  if (can_unit_do_activity(current_unit, ACTIVITY_MINE)) {
-    struct terrain *pterrain = tile_terrain(unit_tile(current_unit));
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_MINE)) {
     a = new hud_action(this);
     a->action_shortcut = SC_BUILDMINE;
+    a->set_pixmap(fc_icons::instance()->get_pixmap("mine"));
     actions.append(a);
-    if (pterrain->mining_result != T_NONE
-        && pterrain->mining_result != pterrain) {
-      if (!strcmp(terrain_rule_name(pterrain), "Jungle")
-          || !strcmp(terrain_rule_name(pterrain), "Plains")
-          || !strcmp(terrain_rule_name(pterrain), "Grassland")
-          || !strcmp(terrain_rule_name(pterrain), "Swamp")) {
-        a->set_pixmap(fc_icons::instance()->get_pixmap("plantforest"));
-      } else {
-        a->set_pixmap(fc_icons::instance()->get_pixmap("transform"));
-      }
-    } else {
-      a->set_pixmap(fc_icons::instance()->get_pixmap("mine"));
-    }
   }
 
-  if (can_unit_do_activity(current_unit, ACTIVITY_IRRIGATE)) {
-    struct terrain *pterrain = tile_terrain(unit_tile(current_unit));
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_PLANT)) {
+    a = new hud_action(this);
+    a->action_shortcut = SC_PLANT;
+    a->set_pixmap(fc_icons::instance()->get_pixmap("plantforest"));
+    actions.append(a);
+  }
+
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_IRRIGATE)) {
     a = new hud_action(this);
     a->action_shortcut = SC_BUILDIRRIGATION;
-    if (pterrain->irrigation_result != T_NONE
-        && pterrain->irrigation_result != pterrain) {
-      if ((!strcmp(terrain_rule_name(pterrain), "Forest") ||
-           !strcmp(terrain_rule_name(pterrain), "Jungle"))) {
-        a->set_pixmap(fc_icons::instance()->get_pixmap("chopchop"));
-      } else {
-        a->set_pixmap(fc_icons::instance()->get_pixmap("transform"));
-      }
-    } else {
-      a->set_pixmap(fc_icons::instance()->get_pixmap("irrigation"));
-    }
+    a->set_pixmap(fc_icons::instance()->get_pixmap("irrigation"));
     actions.append(a);
   }
 
-  if (can_unit_do_activity(current_unit, ACTIVITY_TRANSFORM)) {
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_CULTIVATE)) {
+    a = new hud_action(this);
+    a->action_shortcut = SC_CULTIVATE;
+    a->set_pixmap(fc_icons::instance()->get_pixmap("chopchop"));
+    actions.append(a);
+  }
+
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_TRANSFORM)) {
     a = new hud_action(this);
     a->action_shortcut = SC_TRANSFORM;
     a->set_pixmap(fc_icons::instance()->get_pixmap("transform"));
     actions.append(a);
   }
 
-  /* Road */
+  // Road
   {
     bool ok = false;
+
     extra_type_by_cause_iterate(EC_ROAD, pextra) {
       struct road_type *proad = extra_road_get(pextra);
-      if (can_build_road(proad, current_unit, unit_tile(current_unit))) {
+
+      if (can_build_road(&(wld.map), proad, current_unit, unit_tile(current_unit))) {
         ok = true;
       }
-    }
-    extra_type_by_cause_iterate_end;
+    } extra_type_by_cause_iterate_end;
     if (ok) {
       a = new hud_action(this);
       a->action_shortcut = SC_BUILDROAD;
@@ -1016,14 +1050,14 @@ int unit_actions::update_actions()
       actions.append(a);
     }
   }
-  /* Goto */
+  // Goto
   a = new hud_action(this);
   a->action_shortcut = SC_GOTO;
   a->set_pixmap(fc_icons::instance()->get_pixmap("goto"));
   actions.append(a);
 
 
-  if (can_unit_do_activity(current_unit, ACTIVITY_FORTIFYING)) {
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_FORTIFYING)) {
     a = new hud_action(this);
     a->action_shortcut = SC_FORTIFY;
     a->set_pixmap(fc_icons::instance()->get_pixmap("fortify"));
@@ -1031,24 +1065,24 @@ int unit_actions::update_actions()
   }
 
 
-  if (can_unit_do_activity(current_unit, ACTIVITY_SENTRY)) {
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_SENTRY)) {
     a = new hud_action(this);
     a->action_shortcut = SC_SENTRY;
     a->set_pixmap(fc_icons::instance()->get_pixmap("sentry"));
     actions.append(a);
   }
 
-  /* Load */
+  // Board
   if (unit_can_load(current_unit)) {
     a = new hud_action(this);
-    a->action_shortcut = SC_LOAD;
+    a->action_shortcut = SC_BOARD;
     a->set_pixmap(fc_icons::instance()->get_pixmap("load"));
     actions.append(a);
   }
 
-  /* Set homecity */
+  // Set homecity
   if (tile_city(unit_tile(current_unit))) {
-    if (can_unit_change_homecity_to(current_unit,
+    if (can_unit_change_homecity_to(&(wld.map), current_unit,
                                     tile_city(unit_tile(current_unit)))) {
       a = new hud_action(this);
       a->action_shortcut = SC_SETHOME;
@@ -1057,50 +1091,50 @@ int unit_actions::update_actions()
     }
   }
 
-  /* Upgrade */
-  if (UU_OK == unit_upgrade_test(current_unit, FALSE)) {
+  // Upgrade
+  if (UU_OK == unit_upgrade_test(&(wld.map), current_unit, FALSE)) {
     a = new hud_action(this);
     a->action_shortcut = SC_UPGRADE_UNIT;
     a->set_pixmap(fc_icons::instance()->get_pixmap("upgrade"));
     actions.append(a);
   }
 
-  /* Automate */
-  if (can_unit_do_autosettlers(current_unit)) {
+  // Automate
+  if (can_unit_do_autoworker(current_unit)) {
     a = new hud_action(this);
     a->action_shortcut = SC_AUTOMATE;
     a->set_pixmap(fc_icons::instance()->get_pixmap("automate"));
     actions.append(a);
   }
 
-  /* Paradrop */
-  if (can_unit_paradrop(current_unit)) {
+  // Paradrop
+  if (can_unit_paradrop(&(wld.map), current_unit)) {
     a = new hud_action(this);
     a->action_shortcut = SC_PARADROP;
     a->set_pixmap(fc_icons::instance()->get_pixmap("paradrop"));
     actions.append(a);
   }
 
-  /* Clean pollution */
-  if (can_unit_do_activity(current_unit, ACTIVITY_POLLUTION)) {
+  // Clean
+  if (can_unit_do_activity_client(current_unit, ACTIVITY_CLEAN)) {
     a = new hud_action(this);
-    a->action_shortcut = SC_PARADROP;
-    a->set_pixmap(fc_icons::instance()->get_pixmap("pollution"));
+    a->action_shortcut = SC_CLEAN;
+    a->set_pixmap(fc_icons::instance()->get_pixmap("clean"));
     actions.append(a);
   }
 
-  /* Unload */
+  // Deboard
   if (unit_transported(current_unit)
       && can_unit_unload(current_unit, unit_transport_get(current_unit))
       && can_unit_exist_at_tile(&(wld.map), current_unit,
                                 unit_tile(current_unit))) {
     a = new hud_action(this);
-    a->action_shortcut = SC_UNLOAD;
+    a->action_shortcut = SC_DEBOARD;
     a->set_pixmap(fc_icons::instance()->get_pixmap("unload"));
     actions.append(a);
   }
 
-  /* Nuke */
+  // Nuke
   if (unit_can_do_action(current_unit, ACTION_NUKE)) {
     a = new hud_action(this);
     a->action_shortcut = SC_NUKE;
@@ -1108,13 +1142,13 @@ int unit_actions::update_actions()
     actions.append(a);
   }
 
-  /* Wait */
+  // Wait
   a = new hud_action(this);
   a->action_shortcut = SC_WAIT;
   a->set_pixmap(fc_icons::instance()->get_pixmap("wait"));
   actions.append(a);
 
-  /* Done moving */
+  // Done moving
   a = new hud_action(this);
   a->action_shortcut = SC_DONE_MOVING;
   a->set_pixmap(fc_icons::instance()->get_pixmap("done"));
@@ -1189,7 +1223,7 @@ hud_unit_loader::~hud_unit_loader()
 }
 
 /************************************************************************//**
-  Shows unit loader, adds possible tranportsand units to table
+  Shows unit loader, adds possible transports and units to table
   Calculates table size
 ****************************************************************************/
 void hud_unit_loader::show_me()
@@ -1213,10 +1247,12 @@ void hud_unit_loader::show_me()
   setColumnCount(max_size + 1);
   for (i = 0 ; i < transports.count(); i++) {
     QString str;
-    spite = get_unittype_sprite(tileset, transports.at(i)->utype,
+    struct unit *tp = transports.at(i);
+
+    spite = get_unittype_sprite(tileset, tp->utype, tp->activity,
                                 direction8_invalid());
     str = utype_rule_name(transports.at(i)->utype);
-    /* TRANS: MP - just movement points */
+    // TRANS: MP - just movement points
     str = str + " ("
           + QString(move_points_text(transports.at(i)->moves_left, false))
           + _("MP") + ")";
@@ -1224,7 +1260,7 @@ void hud_unit_loader::show_me()
     setItem(i, 0, new_item);
     j = 1;
     unit_list_iterate(transports.at(i)->transporting, tunit) {
-      spite = get_unittype_sprite(tileset, tunit->utype,
+      spite = get_unittype_sprite(tileset, tunit->utype, tunit->activity,
                                   direction8_invalid());
       new_item = new QTableWidgetItem(QIcon(*spite->pm), "");
       setItem(i, j, new_item);
@@ -1248,7 +1284,7 @@ void hud_unit_loader::show_me()
 }
 
 /************************************************************************//**
-  Selects given tranport and closes widget
+  Selects given transport and closes widget
 ****************************************************************************/
 void hud_unit_loader::selection_changed(const QItemSelection& s1,
                                         const QItemSelection& s2)
@@ -1531,8 +1567,9 @@ bool unit_hud_selector::island_filter(struct unit *punit)
     }
   }
 
-  if (main_continent->isChecked() && player_capital(client_player())) {
-    island = player_capital(client_player())->tile->continent;
+  if (main_continent->isChecked()
+      && player_primary_capital(client_player())) {
+    island = player_primary_capital(client_player())->tile->continent;
   } else if (this_continent->isChecked() && cunit) {
     island = cunit->tile->continent;
   }
@@ -1605,7 +1642,7 @@ QString popup_terrain_info(struct tile *ptile)
     }
   } extra_type_by_cause_iterate_end;
 
-  if (has_road == true) {
+  if (has_road) {
     ret = ret + QString(_("Movement cost: %1")).arg(move_text);
   } else {
     ret = ret + QString(_("Movement cost: %1")).arg(movement_cost);
@@ -1624,9 +1661,10 @@ void show_new_turn_info()
   QList<hud_text *> close_list;
   struct research *research;
   int i;
+  char buf[25];
 
-  if (client_has_player() == false
-      || gui()->qt_settings.show_new_turn_text == false) {
+  if (!client_has_player()
+      || !gui()->qt_settings.show_new_turn_text) {
     return;
   }
   close_list = gui()->mapview_wdg->findChildren<hud_text *>();
@@ -1637,8 +1675,11 @@ void show_new_turn_info()
   research = research_get(client_player());
   s = QString(_("Year: %1 (Turn: %2)"))
       .arg(calendar_text()).arg(game.info.turn) + "\n";
-  s = s + QString(nation_plural_for_player(client_player()));
-  s = s + " - " + QString(_("Population: %1"))
+  s += QString(nation_plural_for_player(client_player()));
+  if (client_is_observer()) {
+    s += QString(_(" (observer)"));
+  }
+  s += " - " + QString(_("Population: %1"))
       .arg(population_to_text(civ_population(client.conn.playing)));
   if (research->researching != A_UNKNOWN
       && research->researching != A_UNSET
@@ -1649,34 +1690,34 @@ void show_new_turn_info()
         + QString::number(research->client.researching_cost) + ")";
   }
   s = s + "\n" + science_dialog_text() + "\n";
-  s = s + QString(_("Gold: %1 (+%2)"))
+
+  // Can't use QString().sprintf() as msys libintl.h defines sprintf() as a macro
+  fc_snprintf(buf, sizeof(buf), "%+d", player_get_expected_income(client.conn.playing));
+
+  // TRANS: current gold, then loss/gain per turn
+  s = s + QString(_("Gold: %1 (%2)"))
       .arg(client.conn.playing->economic.gold)
-      .arg(player_get_expected_income(client.conn.playing));
+      .arg(buf);
   ht = new hud_text(s, 5, gui()->mapview_wdg);
   ht->show_me();
 }
 
 /************************************************************************//**
-  Hud unit combat contructor, prepares images to show as result
+  Hud unit combat constructor, prepares images to show as result
 ****************************************************************************/
 hud_unit_combat::hud_unit_combat(int attacker_unit_id, int defender_unit_id,
                                  int attacker_hp, int defender_hp,
                                  bool make_att_veteran, bool make_def_veteran,
-                                 QWidget *parent) : QWidget(parent)
+                                 float scale, QWidget *parent) : QWidget(parent)
 {
-  QImage crdimg, acrimg, at, dt;
-  QRect dr, ar;
-  QPainter p;
-  struct canvas *defender_pixmap;
-  struct canvas *attacker_pixmap;
-  int w;
-
-  w = 3 * tileset_unit_height(tileset) / 2;
+  hud_scale = scale;
   att_hp = attacker_hp;
   def_hp = defender_hp;
 
   attacker = game_unit_by_number(attacker_unit_id);
   defender = game_unit_by_number(defender_unit_id);
+  type_attacker = attacker->utype;
+  type_defender = defender->utype;
   att_veteran = make_att_veteran;
   def_veteran = make_def_veteran;
   att_hp_loss = attacker->hp - att_hp;
@@ -1686,15 +1727,34 @@ hud_unit_combat::hud_unit_combat(int attacker_unit_id, int defender_unit_id,
   } else {
     center_tile = defender->tile;
   }
+  init_images();
+}
+
+/************************************************************************//**
+  Draws images of units to pixmaps for later use
+****************************************************************************/
+void hud_unit_combat::init_images(bool redraw)
+{
+  QImage crdimg, acrimg, at, dt;
+  QRect dr, ar;
+  QPainter p;
+  struct canvas *defender_pixmap;
+  struct canvas *attacker_pixmap;
+  int w;
+
+  focus = false;
+  w = 3 * hud_scale * tileset_unit_height(tileset) / 2;
   setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
   setFixedSize(2 * w, w);
-  focus = false;
-
   defender_pixmap = qtg_canvas_create(tileset_unit_width(tileset),
                                       tileset_unit_height(tileset));
   defender_pixmap->map_pixmap.fill(Qt::transparent);
   if (defender != nullptr) {
-    put_unit(defender, defender_pixmap,  1.0, 0, 0);
+    if (!redraw) {
+      put_unit(defender, defender_pixmap,  1.0, 0, 0);
+    } else {
+      put_unittype(type_defender, defender_pixmap, 1.0,  0, 0);
+    }
     dimg = defender_pixmap->map_pixmap.toImage();
     dr = zealous_crop_rect(dimg);
     crdimg = dimg.copy(dr);
@@ -1714,7 +1774,11 @@ hud_unit_combat::hud_unit_combat(int attacker_unit_id, int defender_unit_id,
                                       tileset_unit_height(tileset));
   attacker_pixmap->map_pixmap.fill(Qt::transparent);
   if (attacker != nullptr) {
-    put_unit(attacker, attacker_pixmap, 1,  0, 0);
+    if (!redraw) {
+      put_unit(attacker, attacker_pixmap, 1,  0, 0);
+    } else {
+      put_unittype(type_attacker, attacker_pixmap, 1,  0, 0);
+    }
     aimg = attacker_pixmap->map_pixmap.toImage();
     ar = zealous_crop_rect(aimg);
     acrimg = aimg.copy(ar);
@@ -1728,8 +1792,18 @@ hud_unit_combat::hud_unit_combat(int attacker_unit_id, int defender_unit_id,
     p.end();
     aimg = at;
   }
-  aimg = aimg.scaled(w, w, Qt::IgnoreAspectRatio,
-                     Qt::SmoothTransformation);
+  aimg = aimg.scaled(w, w, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+  delete defender_pixmap;
+  delete attacker_pixmap;
+}
+
+/************************************************************************//**
+  Sets scale for images
+****************************************************************************/
+void hud_unit_combat::set_scale(float scale)
+{
+  hud_scale = scale;
+  init_images(true);
 }
 
 /************************************************************************//**
@@ -1787,7 +1861,7 @@ void hud_unit_combat::paintEvent(QPaintEvent *event)
     c1 = QColor(125, 25, 25, 175);
     c2 = QColor(25, 125, 25, 175);
   }
-  int w = 3 * tileset_unit_height(tileset) / 2;
+  int w = 3 * tileset_unit_height(tileset) / 2 * hud_scale;
 
   left = QRect(0 , 0, w , w);
   right = QRect(w, 0, w , w);
@@ -1796,7 +1870,7 @@ void hud_unit_combat::paintEvent(QPaintEvent *event)
   if (fading < 1.0) {
     p.setOpacity(fading);
   }
-  if (focus == true) {
+  if (focus) {
     p.fillRect(left, QColor(palette().color(QPalette::Highlight)));
     p.fillRect(right, QColor(palette().color(QPalette::Highlight)));
     c1.setAlpha(110);
@@ -1843,22 +1917,74 @@ void hud_unit_combat::leaveEvent(QEvent *event)
 /************************************************************************//**
   Leave event for hud unit combat. Shows highlight.
 ****************************************************************************/
-void hud_unit_combat::enterEvent(QEvent *event)
+void hud_unit_combat::enterEvent(QEnterEvent *event)
 {
   focus = true;
   update();
 }
 
+
 /************************************************************************//**
-  Hud battle log contructor
+  Scale widget allowing scaling other widgets, shown in right top corner
+****************************************************************************/
+scale_widget::scale_widget(QRubberBand::Shape s,
+                           QWidget* p) : QRubberBand(s, p)
+{
+  QPixmap *pix;
+
+  size = 12;
+  pix = fc_icons::instance()->get_pixmap("plus");
+  plus = pix->scaledToWidth(size);
+  delete pix;
+  pix = fc_icons::instance()->get_pixmap("minus");
+  minus = plus = pix->scaledToWidth(size);
+  delete pix;
+  setFixedSize(2 * size, size);
+  scale = 1.0f;
+  setAttribute(Qt::WA_TransparentForMouseEvents, false);
+}
+
+/************************************************************************//**
+  Draws 2 icons for resizing
+****************************************************************************/
+void scale_widget::paintEvent(QPaintEvent *event)
+{
+  QRubberBand::paintEvent(event);
+  QPainter p;
+
+  p.begin(this);
+  p.drawPixmap(0, 0, minus);
+  p.drawPixmap(size, 0, plus);
+  p.end();
+}
+
+/************************************************************************//**
+  Mouse press event for scale widget
+****************************************************************************/
+void scale_widget::mousePressEvent(QMouseEvent *event)
+{
+  if (event->button() == Qt::LeftButton) {
+    if (event->position().x() <= size) {
+      scale = scale / 1.2;
+    } else {
+      scale = scale * 1.2;
+    }
+    parentWidget()->update();
+  }
+}
+
+/************************************************************************//**
+  Hud battle log constructor
 ****************************************************************************/
 hud_battle_log::hud_battle_log(QWidget *parent) : QWidget(parent)
 {
   setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-  main_layout = new QVBoxLayout;
+  main_layout = new QVBoxLayout(this);
   mw = new move_widget(this);
   setContentsMargins(0, 0, 0, 0);
   main_layout->setContentsMargins(0, 0, 0, 0);
+  sw = new scale_widget(QRubberBand::Rectangle, this);
+  sw->show();
 }
 
 /************************************************************************//**
@@ -1866,6 +1992,42 @@ hud_battle_log::hud_battle_log(QWidget *parent) : QWidget(parent)
 ****************************************************************************/
 hud_battle_log::~hud_battle_log()
 {
+  delete sw;
+  delete mw;
+}
+
+/************************************************************************//**
+  Updates size when scale has changed
+****************************************************************************/
+void hud_battle_log::update_size()
+{
+  hud_unit_combat *hudc;
+  int w = 3 * tileset_unit_height(tileset) / 2 * scale;
+
+  gui()->qt_settings.battlelog_scale = scale;
+  delete layout();
+  main_layout = new QVBoxLayout;
+  foreach (hudc, lhuc) {
+    hudc->set_scale(scale);
+    main_layout->addWidget(hudc);
+    hudc->set_fading(1.0);
+  }
+  setFixedSize(2 * w + 10, lhuc.count() * w + 10);
+  setLayout(main_layout);
+
+  update();
+  show();
+  m_timer.restart();
+  startTimer(50);
+}
+
+/************************************************************************//**
+  Set scale
+****************************************************************************/
+void hud_battle_log::set_scale(float s)
+{
+  scale = s;
+  sw->scale = s;
 }
 
 /************************************************************************//**
@@ -1874,7 +2036,7 @@ hud_battle_log::~hud_battle_log()
 void hud_battle_log::add_combat_info(hud_unit_combat *huc)
 {
   hud_unit_combat *hudc;
-  int w = 3 * tileset_unit_height(tileset) / 2;
+  int w = 3 * tileset_unit_height(tileset) / 2 * scale;
 
   delete layout();
   main_layout = new QVBoxLayout;
@@ -1901,7 +2063,12 @@ void hud_battle_log::add_combat_info(hud_unit_combat *huc)
 ****************************************************************************/
 void hud_battle_log::paintEvent(QPaintEvent *event)
 {
+  if (scale != sw->scale) {
+    scale = sw->scale;
+    update_size();
+  }
   mw->put_to_corner();
+  sw->move(width() - sw->width(), 0);
 }
 
 /************************************************************************//**
@@ -1915,6 +2082,21 @@ void hud_battle_log::moveEvent(QMoveEvent *event)
   gui()->qt_settings.battlelog_x = static_cast<float>(p.x()) / mapview.width;
   gui()->qt_settings.battlelog_y = static_cast<float>(p.y())
                                    / mapview.height;
+  m_timer.restart();
+}
+
+/************************************************************************//**
+  Timer event inner foreach() loop. Implemented as separate method
+  to avoid compiler shadow warning about internal variables of
+  foreach() inside foreach().
+****************************************************************************/
+void hud_battle_log::te_inner()
+{
+  hud_unit_combat *hupdate;
+
+  foreach (hupdate, lhuc) {
+    hupdate->set_fading(1.0);
+  }
 }
 
 /************************************************************************//**
@@ -1923,15 +2105,12 @@ void hud_battle_log::moveEvent(QMoveEvent *event)
 void hud_battle_log::timerEvent(QTimerEvent *event)
 {
   hud_unit_combat *hudc;
-  hud_unit_combat *hupdate;
 
   if (m_timer.elapsed() > 4000 && m_timer.elapsed() < 5000) {
     foreach (hudc, lhuc) {
-      if (hudc->get_focus() == true) {
+      if (hudc->get_focus()) {
         m_timer.restart();
-        foreach (hupdate, lhuc) {
-          hupdate->set_fading(1.0);
-        }
+        te_inner();
         return;
       }
       hudc->set_fading((5000.0 - m_timer.elapsed()) / 1000);
@@ -1955,4 +2134,3 @@ void hud_battle_log::showEvent(QShowEvent *event)
   m_timer.restart();
   setVisible(true);
 }
-

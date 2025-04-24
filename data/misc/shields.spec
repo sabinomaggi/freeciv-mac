@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -23,6 +23,7 @@ sprites =
 		"f.shield.ainu", "flags/ainu-shield"
 		"f.shield.akwe", "flags/akwe-shield"
 		"f.shield.aland", "flags/aland-shield"
+		"f.shield.alaska", "flags/alaska-shield"
 		"f.shield.albania", "flags/albania-shield"
 		"f.shield.aleut", "flags/aleut-shield"
 		"f.shield.algeria", "flags/algeria-shield"
@@ -36,7 +37,7 @@ sprites =
                 "f.shield.animals", "flags/animals-shield"
 		"f.shield.anishinaabe", "flags/anishinaabe-shield"
 		"f.shield.antarctica", "flags/antarctica-shield"
-;		"f.shield.antarctica_alt", "flags/antarctica_alt-shield"
+		"f.shield.antarctica_alt", "flags/antarctica_alt-shield"
 		"f.shield.antigua_and_barbuda", "flags/antigua_and_barbuda-shield"
 		"f.shield.apache", "flags/apache-shield"
 		"f.shield.arab", "flags/arab-shield"
@@ -128,6 +129,7 @@ sprites =
 		"f.shield.colombia", "flags/colombia-shield"
 		"f.shield.comanche", "flags/comanche-shield"
 		"f.shield.comoros", "flags/comoros-shield"
+		"f.shield.conch", "flags/conch-shield"
 ;		"f.shield.constantine", "flags/constantine-shield"
 		"f.shield.cornwall", "flags/cornwall-shield"
 		"f.shield.corsica", "flags/corsica-shield"
@@ -144,6 +146,7 @@ sprites =
 		"f.shield.czech", "flags/czech-shield"
 		"f.shield.czechoslovakia", "flags/czechoslovakia-shield"
 		"f.shield.dacian", "flags/dacian-shield"
+		"f.shield.dagestan", "flags/dagestan-shield"
 		"f.shield.dahomey", "flags/dahomey-shield"
 		"f.shield.darfur", "flags/darfur-shield"
 		"f.shield.ddr", "flags/ddr-shield"
@@ -152,6 +155,7 @@ sprites =
 		"f.shield.djibouti", "flags/djibouti-shield"
 		"f.shield.dominica", "flags/dominica-shield"
 		"f.shield.dominican_republic", "flags/dominican_republic-shield"
+                "f.shield.donetsk", "flags/donetsk-shield"
 		"f.shield.dr_congo", "flags/dr_congo-shield"
 		"f.shield.dryad", "flags/dryad-shield"
 		"f.shield.east_timor", "flags/east_timor-shield"
@@ -177,6 +181,7 @@ sprites =
 		"f.shield.finland", "flags/finland-shield"
 		"f.shield.flanders", "flags/flanders-shield"
 		"f.shield.florence", "flags/florence-shield"
+		"f.shield.florida", "flags/florida-shield"
 		"f.shield.formosan", "flags/formosan-shield"
 		"f.shield.france", "flags/france-shield"
 		"f.shield.france_old", "flags/france_old-shield"
@@ -303,6 +308,9 @@ sprites =
 		"f.shield.lippe", "flags/lippe-shield"
 		"f.shield.lithuania", "flags/lithuania-shield"
 		"f.shield.lorraine", "flags/lorraine-shield"
+                "f.shield.louisiana", "flags/louisiana-shield"
+                "f.shield.luhansk", "flags/luhansk-shield"
+		"f.shield.luik", "flags/luik-shield"
 		"f.shield.luna", "flags/luna-shield"
 		"f.shield.lusatia", "flags/lusatia-shield"
 		"f.shield.luwian", "flags/luwian-shield"
@@ -339,6 +347,7 @@ sprites =
 		"f.shield.micronesia", "flags/micronesia-shield"
 		"f.shield.mikmaq", "flags/mikmaq-shield"
 		"f.shield.milan", "flags/milan-shield"
+		"f.shield.minnesota", "flags/minnesota-shield"
 		"f.shield.miskito", "flags/miskito-shield"
 		"f.shield.mitanni", "flags/mitanni-shield"
 		"f.shield.mixtec", "flags/mixtec-shield"
@@ -357,6 +366,7 @@ sprites =
 		"f.shield.muskogee", "flags/muskogee-shield"
 		"f.shield.mwiska", "flags/mwiska-shield"
 		"f.shield.myanmar", "flags/myanmar-shield"
+		"f.shield.myanmar_old", "flags/myanmar_old-shield"
 		"f.shield.nagorno_karabakh", "flags/nagorno_karabakh-shield"
 		"f.shield.namibia", "flags/namibia-shield"
 		"f.shield.naples", "flags/naples-shield"
@@ -375,6 +385,7 @@ sprites =
 		"f.shield.niger", "flags/niger-shield"
 		"f.shield.nigeria", "flags/nigeria-shield"
 		"f.shield.normandy", "flags/normandy-shield"
+                "f.shield.northernireland", "flags/northernireland-shield"
 		"f.shield.north_korea", "flags/north_korea-shield"
 		"f.shield.northumbria", "flags/northumbria-shield"
 		"f.shield.norway", "flags/norway-shield"
@@ -394,6 +405,7 @@ sprites =
 		"f.shield.paeonia", "flags/paeonia-shield"
 		"f.shield.pakistan", "flags/pakistan-shield"
 		"f.shield.palatinate", "flags/palatinate-shield"
+		"f.shield.palau", "flags/palau-shield"
 		"f.shield.palestine", "flags/palestine-shield"
 		"f.shield.palmyra", "flags/palmyra-shield"
 		"f.shield.panama", "flags/panama-shield"
@@ -414,6 +426,7 @@ sprites =
 		"f.shield.polynesian", "flags/polynesian-shield"
 		"f.shield.pomerania", "flags/pomerania-shield"
 		"f.shield.portugal", "flags/portugal-shield"
+                "f.shield.poyais", "flags/poyais-shield"
 		"f.shield.prusai", "flags/prusai-shield"
 		"f.shield.prussia", "flags/prussia-shield"
 		"f.shield.puerto_rico", "flags/puerto_rico-shield"
@@ -518,6 +531,7 @@ sprites =
 		"f.shield.timur", "flags/timur-shield"
 		"f.shield.tocharian", "flags/tocharian-shield"
 		"f.shield.togo", "flags/togo-shield"
+                "f.shield.tokipona", "flags/tokipona-shield"
 		"f.shield.toltec", "flags/toltec-shield"
 		"f.shield.tonga", "flags/tonga-shield"
 		"f.shield.transnistria", "flags/transnistria-shield"
@@ -530,6 +544,7 @@ sprites =
 		"f.shield.tupi", "flags/tupi-shield"
 		"f.shield.turkey", "flags/turkey-shield"
 		"f.shield.turkmenistan", "flags/turkmenistan-shield"
+		"f.shield.tuvalu", "flags/tuvalu-shield"
 		"f.shield.tyrol", "flags/tyrol-shield"
 		"f.shield.uae", "flags/uae-shield"
 		"f.shield.uganda", "flags/uganda-shield"
@@ -579,6 +594,7 @@ sprites =
 		"f.shield.zhuang", "flags/zhuang-shield"
 		"f.shield.zimbabwe", "flags/zimbabwe-shield"
 		"f.shield.zulu", "flags/zulu-shield"
-	}
 
 *include "override/shields.spec"
+
+	}

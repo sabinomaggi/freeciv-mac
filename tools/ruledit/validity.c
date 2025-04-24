@@ -30,21 +30,6 @@
 
 #include "validity.h"
 
-/**********************************************************************//**
-  Check if universal is mentioned in the requirement vector.
-**************************************************************************/
-bool universal_in_req_vec(const struct universal *uni,
-                          const struct requirement_vector *preqs)
-{
-  requirement_vector_iterate(preqs, preq) {
-    if (are_universals_equal(uni, &preq->source)) {
-      return TRUE;
-    }
-  } requirement_vector_iterate_end;
-
-  return FALSE;
-}
-
 struct effect_list_cb_data
 {
   bool needed;
@@ -61,7 +46,7 @@ static bool effect_list_universal_needed_cb(struct effect *peffect,
 {
   struct effect_list_cb_data *cbdata = (struct effect_list_cb_data *)data;
 
-  if (universal_in_req_vec(cbdata->uni, &peffect->reqs)) {
+  if (universal_is_mentioned_by_requirements(&peffect->reqs, cbdata->uni)) {
     cbdata->cb(R__("Effect"), cbdata->requirers_data);
     cbdata->needed = TRUE;
   }
@@ -82,70 +67,85 @@ static bool is_universal_needed(struct universal *uni, requirers_cb cb,
   struct effect_list_cb_data cb_data;
 
   disaster_type_iterate(pdis) {
-    if (universal_in_req_vec(uni, &pdis->reqs)) {
+    if (universal_is_mentioned_by_requirements(&pdis->reqs, uni)) {
       cb(disaster_rule_name(pdis), data);
       needed = TRUE;
     }
   } disaster_type_iterate_end;
 
-  improvement_iterate(pimprove) {
-    if (universal_in_req_vec(uni, &pimprove->reqs)
-        || universal_in_req_vec(uni, &pimprove->obsolete_by)) {
+  improvement_re_active_iterate(pimprove) {
+    if (universal_is_mentioned_by_requirements(&pimprove->reqs, uni)
+        || universal_is_mentioned_by_requirements(&pimprove->obsolete_by,
+                                                  uni)) {
       cb(improvement_rule_name(pimprove), data);
       needed = TRUE;
     }
-  } improvement_iterate_end;
+  } improvement_re_active_iterate_end;
 
-  governments_iterate(pgov) {
-    if (universal_in_req_vec(uni, &pgov->reqs)) {
+  governments_re_active_iterate(pgov) {
+    if (universal_is_mentioned_by_requirements(&pgov->reqs, uni)) {
       cb(government_rule_name(pgov), data);
       needed = TRUE;
     }
-  } governments_iterate_end;
+  } governments_re_active_iterate_end;
 
-  specialist_type_iterate(sp) {
-    struct specialist *psp = specialist_by_number(sp);
-
-    if (universal_in_req_vec(uni, &psp->reqs)) {
+  specialist_type_re_active_iterate(psp) {
+    if (universal_is_mentioned_by_requirements(&psp->reqs, uni)) {
       cb(specialist_rule_name(psp), data);
       needed = TRUE;
     }
-  } specialist_type_iterate_end;
+  } specialist_type_re_active_iterate_end;
 
-  extra_type_iterate(pextra) {
-    if (universal_in_req_vec(uni, &pextra->reqs)
-        || universal_in_req_vec(uni, &pextra->rmreqs)) {
+  extra_type_re_active_iterate(pextra) {
+    if (universal_is_mentioned_by_requirements(&pextra->reqs, uni)
+        || universal_is_mentioned_by_requirements(&pextra->rmreqs, uni)
+        || universal_is_mentioned_by_requirements(&pextra->appearance_reqs, uni)
+        || universal_is_mentioned_by_requirements(&pextra->disappearance_reqs, uni)) {
       cb(extra_rule_name(pextra), data);
       needed = TRUE;
-    }
-  } extra_type_iterate_end;
+    } else {
+      struct road_type *proad = extra_road_get(pextra);
 
-  goods_type_iterate(pgood) {
-    if (universal_in_req_vec(uni, &pgood->reqs)) {
+      if (proad != nullptr
+          && universal_is_mentioned_by_requirements(&proad->first_reqs, uni)) {
+        cb(extra_rule_name(pextra), data);
+        needed = TRUE;
+      }
+    }
+  } extra_type_re_active_iterate_end;
+
+  goods_type_re_active_iterate(pgood) {
+    if (universal_is_mentioned_by_requirements(&pgood->reqs, uni)) {
       cb(goods_rule_name(pgood), data);
       needed = TRUE;
     }
-  } goods_type_iterate_end;
+  } goods_type_re_active_iterate_end;
 
   action_iterate(act) {
-    action_enabler_list_iterate(action_enablers_for_action(act), enabler) {
-      if (universal_in_req_vec(uni, &(enabler->actor_reqs))
-          || universal_in_req_vec(uni, &(enabler->target_reqs))) {
-        cb(R__("Action Enabler"), data);
+    action_enabler_list_re_iterate(action_enablers_for_action(act), enabler) {
+      if (universal_is_mentioned_by_requirements(&(enabler->actor_reqs),
+                                                 uni)
+          || universal_is_mentioned_by_requirements(&(enabler->target_reqs),
+                                                    uni)) {
+        char buf[1024];
+
+        fc_snprintf(buf, sizeof(buf), R__("%s action enabler"),
+                    action_rule_name(enabler_get_action(enabler)));
+        cb(buf, data);
         needed = TRUE;
       }
-    } action_enabler_list_iterate_end;
+    } action_enabler_list_re_iterate_end;
   } action_iterate_end;
 
-  for (i = 0; i < game.control.styles_count; i++) {
-    if (universal_in_req_vec(uni, &city_styles[i].reqs)) {
+  for (i = 0; i < game.control.num_city_styles; i++) {
+    if (universal_is_mentioned_by_requirements(&city_styles[i].reqs, uni)) {
       cb(city_style_rule_name(i), data);
       needed = TRUE;
     }
   }
 
   music_styles_iterate(pmus) {
-    if (universal_in_req_vec(uni, &pmus->reqs)) {
+    if (universal_is_mentioned_by_requirements(&pmus->reqs, uni)) {
       needed_by_music_style = TRUE;
     }
   } music_styles_iterate_end;
@@ -153,6 +153,23 @@ static bool is_universal_needed(struct universal *uni, requirers_cb cb,
   if (needed_by_music_style) {
     cb(R__("Music Style"), data);
     needed = TRUE;
+  }
+
+  for (i = 0; i < CLAUSE_COUNT; i++) {
+    struct clause_info *info = clause_info_get(i);
+
+    if (info->enabled) {
+      if (universal_is_mentioned_by_requirements(&info->giver_reqs, uni)
+          || universal_is_mentioned_by_requirements(&info->receiver_reqs, uni)) {
+        char buf[1024];
+
+        /* TRANS: e.g. "Advance clause" */
+        fc_snprintf(buf, sizeof(buf), R__("%s clause"),
+                    clause_type_name(info->type));
+        cb(buf, data);
+        needed = TRUE;
+      }
+    }
   }
 
   cb_data.needed = FALSE;
@@ -167,6 +184,16 @@ static bool is_universal_needed(struct universal *uni, requirers_cb cb,
 }
 
 /**********************************************************************//**
+  Check if anything in ruleset needs counter
+**************************************************************************/
+bool is_counter_needed(struct counter *pcount, requirers_cb cb, void *data)
+{
+  struct universal uni = { .value.counter = pcount, .kind = VUT_COUNTER };
+
+  return is_universal_needed(&uni, cb, data);
+}
+
+/**********************************************************************//**
   Check if anything in ruleset needs tech
 **************************************************************************/
 bool is_tech_needed(struct advance *padv, requirers_cb cb, void *data)
@@ -174,23 +201,23 @@ bool is_tech_needed(struct advance *padv, requirers_cb cb, void *data)
   struct universal uni = { .value.advance = padv, .kind = VUT_ADVANCE };
   bool needed = FALSE;
 
-  advance_iterate(A_FIRST, pdependant) {
+  advance_re_active_iterate(pdependant) {
     if (pdependant->require[AR_ONE] == padv
         || pdependant->require[AR_TWO] == padv
         || pdependant->require[AR_ROOT] == padv) {
       cb(advance_rule_name(pdependant), data);
       needed = TRUE;
     }
-  } advance_iterate_end;
+  } advance_re_active_iterate_end;
 
-  unit_type_iterate(ptype) {
-    if (ptype->require_advance == padv) {
+  unit_type_re_active_iterate(ptype) {
+    if (is_tech_req_for_utype(ptype, padv)) {
       cb(utype_rule_name(ptype), data);
       needed = TRUE;
     }
-  } unit_type_iterate_end;
+  } unit_type_re_active_iterate_end;
 
-  extra_type_iterate(pextra) {
+  extra_type_re_active_iterate(pextra) {
     if (pextra->visibility_req == advance_number(padv)) {
       char buf[512];
 
@@ -198,7 +225,7 @@ bool is_tech_needed(struct advance *padv, requirers_cb cb, void *data)
                   extra_rule_name(pextra));
       cb(buf, data);
     }
-  } extra_type_iterate_end;
+  } extra_type_re_active_iterate_end;
 
   needed |= is_universal_needed(&uni, cb, data);
 
@@ -226,6 +253,27 @@ bool is_utype_needed(struct unit_type *ptype, requirers_cb cb,
                      void *data)
 {
   struct universal uni = { .value.utype = ptype, .kind = VUT_UTYPE };
+  bool needed = FALSE;
+
+  needed |= is_universal_needed(&uni, cb, data);
+
+  terrain_re_active_iterate(pterr) {
+    if (pterr->animal == ptype) {
+      cb(terrain_rule_name(pterr), data);
+      needed = TRUE;
+    }
+  } terrain_re_active_iterate_end;
+
+  return needed;
+}
+
+/**********************************************************************//**
+  Check if anything in ruleset needs achievement type
+**************************************************************************/
+bool is_achievement_needed(struct achievement *pach, requirers_cb cb,
+                           void *data)
+{
+  struct universal uni = { .value.achievement = pach, .kind = VUT_ACHIEVEMENT };
   bool needed = FALSE;
 
   needed |= is_universal_needed(&uni, cb, data);
@@ -259,10 +307,10 @@ bool is_extra_needed(struct extra_type *pextra, requirers_cb cb,
   bool hides = FALSE;
   int id = extra_index(pextra);
 
-  extra_type_iterate(requirer) {
+  extra_type_re_active_iterate(requirer) {
     conflicts |= BV_ISSET(requirer->conflicts, id);
     hides     |= BV_ISSET(requirer->hidden_by, id);
-  } extra_type_iterate_end;
+  } extra_type_re_active_iterate_end;
 
   if (conflicts) {
     cb(R__("Conflicting extra"), data);
@@ -286,6 +334,20 @@ bool is_terrain_needed(struct terrain *pterr, requirers_cb cb, void *data)
   bool needed = FALSE;
 
   needed |= is_universal_needed(&uni, cb, data);
+
+  terrain_re_active_iterate(pother) {
+    if (pother != pterr
+        && (pother->cultivate_result == pterr
+            || pother->plant_result == pterr
+            || pother->transform_result == pterr
+            || pother->warmer_wetter_result == pterr
+            || pother->warmer_drier_result == pterr
+            || pother->cooler_wetter_result == pterr
+            || pother->cooler_drier_result == pterr)) {
+      cb(terrain_rule_name(pother), data);
+      needed = TRUE;
+    }
+  } terrain_re_active_iterate_end;
 
   return needed;
 }

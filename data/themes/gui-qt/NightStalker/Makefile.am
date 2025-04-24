@@ -13,6 +13,7 @@ pkgdata_DATA =          	\
 	checkbox-checked-pressed.png	\
 	checkbox-unchecked.png	\
 	checkbox-unchecked-pressed.png \
+	cities.png		\
 	city-close.png		\
 	city-left.png		\
 	city-right.png		\
@@ -31,6 +32,6 @@ pkgdata_DATA =          	\
 	sun.png			\
 	units.png		\
 	view.png		\
-	wheel.png		
+	wheel.png
 
 EXTRA_DIST = $(pkgdata_DATA)

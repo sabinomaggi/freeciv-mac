@@ -30,6 +30,9 @@
 #include <SDL2/SDL.h>
 #endif /* SDL2_PLAIN_INCLUDE */
 
+/* common */
+#include "rgbcolor.h"
+
 /* client */
 #include "tilespec.h"
 
@@ -43,7 +46,7 @@
 **************************************************************************/
 SDL_Color *get_theme_color(enum theme_color themecolor)
 {
-  return theme_get_color(theme, themecolor)->color;
+  return theme_get_color(active_theme, themecolor)->color;
 }
 
 /**********************************************************************//**

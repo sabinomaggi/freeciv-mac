@@ -84,8 +84,8 @@ void rgbcolor_destroy(struct rgbcolor *prgbcolor)
 }
 
 /************************************************************************//**
-  Lookup an RGB color definition (<colorpath>.red, <colorpath>.green and
-  <colorpath>.blue). Returns TRUE on success and FALSE on error.
+  Lookup an RGB color definition ([colorpath].red, [colorpath].green and
+  [colorpath].blue). Returns TRUE on success and FALSE on error.
 ****************************************************************************/
 bool rgbcolor_load(struct section_file *file, struct rgbcolor **prgbcolor,
                    char *path, ...)
@@ -115,8 +115,8 @@ bool rgbcolor_load(struct section_file *file, struct rgbcolor **prgbcolor,
 }
 
 /************************************************************************//**
-  Save an RGB color definition (<colorpath>.red, <colorpath>.green and
-  <colorpath>.blue).
+  Save an RGB color definition ([colorpath].red, [colorpath].green and
+  [colorpath].blue).
 ****************************************************************************/
 void rgbcolor_save(struct section_file *file,
                    const struct rgbcolor *prgbcolor, char *path, ...)
@@ -196,7 +196,7 @@ bool rgbcolor_from_hex(struct rgbcolor **prgbcolor, const char *hex)
 int rgbcolor_brightness_score(struct rgbcolor *prgbcolor)
 {
   /* This simple scoring system taken from W3C "Techniques For Accessibility
-   * Evaluation And Repair Tools", http://www.w3.org/TR/AERT#color-contrast
+   * Evaluation And Repair Tools", https://www.w3.org/TR/AERT#color-contrast
    *
    * "Color brightness is determined by the following formula:
    * ((Red value X 299) + (Green value X 587) + (Blue value X 114)) / 1000

@@ -22,7 +22,7 @@ struct nation_style
 {
   int id;
   struct name_translation name;
-  bool disabled;
+  bool ruledit_disabled;
 };
 
 struct music_style
@@ -53,11 +53,11 @@ struct nation_style *style_by_rule_name(const char *name);
   }                                                      \
 }
 
-#define styles_active_iterate(_p)                         \
+#define styles_re_active_iterate(_p)                      \
   styles_iterate(_p) {                                    \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define styles_active_iterate_end                         \
+#define styles_re_active_iterate_end                      \
     }                                                     \
   } styles_iterate_end;
 
@@ -80,6 +80,13 @@ struct music_style *player_music_style(struct player *plr);
     }                                                          \
   }                                                            \
 }
+
+/* Deletion of music styles not supported */
+#define music_styles_re_active_iterate(_p)                     \
+  music_styles_iterate(_p)
+
+#define music_styles_re_active_iterate_end                     \
+  music_styles_iterate_end;
 
 int style_of_city(const struct city *pcity);
 

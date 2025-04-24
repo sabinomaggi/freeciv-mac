@@ -43,6 +43,18 @@ extern "C" {
 #define SPECENUM_VALUE2NAME "FastAlways"
 #include "specenum_gen.h"
 
+/* Used in the network protocol. */
+#define SPECENUM_NAME road_gui_type
+#define SPECENUM_VALUE0 ROAD_GUI_ROAD
+#define SPECENUM_VALUE0NAME "Road"
+#define SPECENUM_VALUE1 ROAD_GUI_RAILROAD
+#define SPECENUM_VALUE1NAME "Railroad"
+#define SPECENUM_VALUE2 ROAD_GUI_MAGLEV
+#define SPECENUM_VALUE2NAME "Maglev"
+#define SPECENUM_VALUE3 ROAD_GUI_OTHER
+#define SPECENUM_VALUE3NAME "Other"
+#include "specenum_gen.h"
+
 struct road_type;
 
 /* get 'struct road_type_list' and related functions: */
@@ -65,10 +77,11 @@ struct road_type {
   int tile_incr[O_LAST];
   int tile_bonus[O_LAST];
   enum road_compat compat;
+  enum road_gui_type gui_type;
 
   struct requirement_vector first_reqs;
 
-  bv_roads integrates;
+  bv_max_extras integrates;
   bv_road_flags flags;
 
   /* Same information as in integrates, but iterating through this list is much
@@ -90,30 +103,38 @@ struct extra_type *road_extra_get(const struct road_type *proad);
 enum road_compat road_compat_special(const struct road_type *proad);
 struct road_type *road_by_compat_special(enum road_compat compat);
 
-int count_road_near_tile(const struct tile *ptile, const struct road_type *proad);
-int count_river_near_tile(const struct tile *ptile,
+struct road_type *road_by_gui_type(enum road_gui_type gui_type);
+
+int count_road_near_tile(struct civ_map *nmap, const struct tile *ptile,
+                         const struct road_type *proad);
+int count_river_near_tile(struct civ_map *nmap,
+                          const struct tile *ptile,
                           const struct extra_type *priver);
-int count_river_type_tile_card(const struct tile *ptile,
+int count_river_type_tile_card(struct civ_map *nmap,
+                               const struct tile *ptile,
                                const struct extra_type *priver,
                                bool percentage);
-int count_river_type_near_tile(const struct tile *ptile,
+int count_river_type_near_tile(struct civ_map *nmap,
+                               const struct tile *ptile,
                                const struct extra_type *priver,
                                bool percentage);
 
 /* Functions to operate on a road flag. */
 bool road_has_flag(const struct road_type *proad, enum road_flag_id flag);
-bool is_road_flag_card_near(const struct tile *ptile,
+bool is_road_flag_card_near(const struct civ_map *nmap, const struct tile *ptile,
                             enum road_flag_id flag);
-bool is_road_flag_near_tile(const struct tile *ptile,
+bool is_road_flag_near_tile(const struct civ_map *nmap, const struct tile *ptile,
                             enum road_flag_id flag);
 
 bool road_can_be_built(const struct road_type *proad, const struct tile *ptile);
-bool can_build_road(struct road_type *proad,
-		    const struct unit *punit,
-		    const struct tile *ptile);
-bool player_can_build_road(const struct road_type *proad,
-			   const struct player *pplayer,
-			   const struct tile *ptile);
+bool can_build_road(const struct civ_map *nmap,
+                    struct road_type *proad,
+                    const struct unit *punit,
+                    const struct tile *ptile);
+bool player_can_build_road(const struct civ_map *nmap,
+                           const struct road_type *proad,
+                           const struct player *pplayer,
+                           const struct tile *ptile);
 
 bool is_native_tile_to_road(const struct road_type *proad,
                             const struct tile *ptile);
@@ -149,4 +170,4 @@ void road_types_free(void);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__ROAD_H */
+#endif /* FC__ROAD_H */

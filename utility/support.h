@@ -28,7 +28,7 @@ extern "C" {
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>		/* size_t */
+#include <stdlib.h>             /* size_t */
 #include <sys/stat.h>
 
 #ifdef FREECIV_HAVE_SYS_TYPES_H
@@ -45,6 +45,16 @@ extern "C" {
 
 #define TRUE true
 #define FALSE false
+
+#ifdef __cplusplus
+#ifndef FREECIV_HAVE_CXX_NULLPTR
+#define nullptr 0
+#endif
+#else
+#ifndef FREECIV_HAVE_C23_NULLPTR
+#define nullptr NULL
+#endif
+#endif
 
 #ifndef __cplusplus
 #if __BEOS__
@@ -99,18 +109,59 @@ extern "C" {
 #define fc__warn_unused_result
 #endif
 
+/* TODO: C++17 compilers (also other than g++) could use [[fallthrough]]
+   for C++ code */
+#if defined(__GNUC__) && __GNUC__ >= 7
+#define fc__fallthrough __attribute__((fallthrough))
+#elif defined (__clang__) && __clang_major__ >= 12
+#define fc__fallthrough __attribute__((fallthrough))
+#else
+#define fc__fallthrough
+#endif
+
+#if defined(__GNUC__) && __GNUC__ >= 5
+#define fc__noreturn __attribute__((noreturn))
+#else
+#define fc__noreturn
+#endif
+
+#ifdef FREECIV_HAVE_UNREACHABLE
+#define fc__unreachable(_cond_) \
+  if (_cond_) {                 \
+    __builtin_unreachable();    \
+  }
+#else  /* FREECIV_HAVE_UNREACHABLE */
+#define fc__unreachable(_cond_) fc_assert(!(_cond_))
+#endif /* FREECIV_HAVE_UNREACHABLE */
+
 #ifdef FREECIV_MSWINDOWS
 typedef long int fc_errno;
 #else
 typedef int fc_errno;
 #endif
 
+#ifdef FREECIV_RETURN_VALUE_AFTER_EXIT
+#define RETURN_VALUE_AFTER_EXIT(_val_) return _val_ ;
+#else
+#define RETURN_VALUE_AFTER_EXIT(_val_)
+#endif
+
+#ifdef FREECIV_NO_CONST_VAR_ARG
+#define VAR_ARG_CONST
+#else
+#define VAR_ARG_CONST const
+#endif
+
 int fc_strcasecmp(const char *str0, const char *str1);
 int fc_strncasecmp(const char *str0, const char *str1, size_t n);
 int fc_strncasequotecmp(const char *str0, const char *str1, size_t n);
 
-void fc_strAPI_init(void);
-void fc_strAPI_free(void);
+/* TODO: Make UTF-8 aware */
+#define fc_strncmp(_s1_, _s2_, _len_) strncmp(_s1_, _s2_, _len_)
+
+void fc_support_init(void);
+void fc_support_free(void);
+bool are_support_services_available(void);
 
 size_t effectivestrlenquote(const char *str);
 
@@ -140,7 +191,7 @@ char *fc_strrep_resize(char *str, size_t *len, const char *search,
 size_t fc_strlcpy(char *dest, const char *src, size_t n);
 size_t fc_strlcat(char *dest, const char *src, size_t n);
 
-/* convenience macros for use when dest is a char ARRAY: */
+/* Convenience macros for use when dest is a char ARRAY: */
 #define sz_strlcpy(dest,src) ((void) fc_strlcpy((dest), (src), sizeof(dest)))
 #define sz_strlcat(dest,src) ((void) fc_strlcat((dest), (src), sizeof(dest)))
 
@@ -176,9 +227,14 @@ char fc_tolower(char c);
 
 const char *fc_basename(const char *path);
 
-static bool inline is_bigendian(void)
+struct tm *fc_localtime(const time_t *timep, struct tm *result);
+
+/************************************************************************//**
+  Return whether the program is currently running on a bigendian system.
+****************************************************************************/
+static inline bool is_bigendian(void)
 {
-#ifdef WORDS_BIGENDIAN 
+#ifdef WORDS_BIGENDIAN
   return TRUE;
 #else  /* WORDS_BIGENDIAN */
   return FALSE;
@@ -195,4 +251,4 @@ int fc_at_quick_exit(void (*func)(void));
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__SUPPORT_H */
+#endif /* FC__SUPPORT_H */

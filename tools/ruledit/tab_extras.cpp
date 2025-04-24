@@ -16,12 +16,12 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QToolButton>
 
 // utility
@@ -33,6 +33,7 @@
 #include "extras.h"
 
 // ruledit
+#include "edit_extra.h"
 #include "ruledit.h"
 #include "ruledit_qt.h"
 #include "validity.h"
@@ -51,6 +52,8 @@ tab_extras::tab_extras(ruledit_gui *ui_in) : QWidget()
   QPushButton *add_button;
   QPushButton *delete_button;
   QPushButton *reqs_button;
+  QPushButton *edit_button;
+  int row = 0;
 
   ui = ui_in;
   selected = 0;
@@ -65,42 +68,46 @@ tab_extras::tab_extras(ruledit_gui *ui_in) : QWidget()
   label = new QLabel(QString::fromUtf8(R__("Rule Name")));
   label->setParent(this);
   rname = new QLineEdit(this);
-  rname->setText("None");
+  rname->setText(R__("None"));
   connect(rname, SIGNAL(returnPressed()), this, SLOT(name_given()));
-  extra_layout->addWidget(label, 0, 0);
-  extra_layout->addWidget(rname, 0, 2);
+  extra_layout->addWidget(label, row, 0);
+  extra_layout->addWidget(rname, row++, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Name")));
   label->setParent(this);
-  same_name = new QRadioButton();
+  same_name = new QCheckBox();
   connect(same_name, SIGNAL(toggled(bool)), this, SLOT(same_name_toggle(bool)));
   name = new QLineEdit(this);
-  name->setText("None");
+  name->setText(R__("None"));
   connect(name, SIGNAL(returnPressed()), this, SLOT(name_given()));
-  extra_layout->addWidget(label, 1, 0);
-  extra_layout->addWidget(same_name, 1, 1);
-  extra_layout->addWidget(name, 1, 2);
+  extra_layout->addWidget(label, row, 0);
+  extra_layout->addWidget(same_name, row, 1);
+  extra_layout->addWidget(name, row++, 2);
+
+  edit_button = new QPushButton(QString::fromUtf8(R__("Edit Values")), this);
+  connect(edit_button, SIGNAL(pressed()), this, SLOT(edit_now()));
+  extra_layout->addWidget(edit_button, row++, 2);
 
   reqs_button = new QPushButton(QString::fromUtf8(R__("Requirements")), this);
   connect(reqs_button, SIGNAL(pressed()), this, SLOT(edit_reqs()));
-  extra_layout->addWidget(reqs_button, 2, 2);
+  extra_layout->addWidget(reqs_button, row++, 2);
 
   effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
   connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
-  extra_layout->addWidget(effects_button, 3, 2);
-  show_experimental(effects_button);
+  extra_layout->addWidget(effects_button, row++, 2);
 
   add_button = new QPushButton(QString::fromUtf8(R__("Add Extra")), this);
   connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
-  extra_layout->addWidget(add_button, 4, 0);
+  extra_layout->addWidget(add_button, row, 0);
   show_experimental(add_button);
 
   delete_button = new QPushButton(QString::fromUtf8(R__("Remove this Extra")), this);
   connect(delete_button, SIGNAL(pressed()), this, SLOT(delete_now()));
-  extra_layout->addWidget(delete_button, 4, 2);
+  extra_layout->addWidget(delete_button, row++, 2);
   show_experimental(delete_button);
 
   refresh();
+  update_extra_info(nullptr);
 
   main_layout->addLayout(extra_layout);
 
@@ -114,14 +121,12 @@ void tab_extras::refresh()
 {
   extra_list->clear();
 
-  extra_type_iterate(pextra) {
-    if (!pextra->disabled) {
-      QListWidgetItem *item =
-        new QListWidgetItem(QString::fromUtf8(extra_rule_name(pextra)));
+  extra_type_re_active_iterate(pextra) {
+    QListWidgetItem *item
+      = new QListWidgetItem(QString::fromUtf8(extra_rule_name(pextra)));
 
-      extra_list->insertItem(extra_index(pextra), item);
-    }
-  } extra_type_iterate_end;
+    extra_list->insertItem(extra_index(pextra), item);
+  } extra_type_re_active_iterate_end;
 }
 
 /**********************************************************************//**
@@ -145,8 +150,8 @@ void tab_extras::update_extra_info(struct extra_type *pextra)
       name->setEnabled(true);
     }
   } else {
-    name->setText("None");
-    rname->setText("None");
+    name->setText(R__("None"));
+    rname->setText(R__("None"));
     same_name->setChecked(true);
     name->setEnabled(false);
   }
@@ -160,7 +165,10 @@ void tab_extras::select_extra()
   QList<QListWidgetItem *> select_list = extra_list->selectedItems();
 
   if (!select_list.isEmpty()) {
-    update_extra_info(extra_type_by_rule_name(select_list.at(0)->text().toUtf8().data()));
+    QByteArray en_bytes;
+
+    en_bytes = select_list.at(0)->text().toUtf8();
+    update_extra_info(extra_type_by_rule_name(en_bytes.data()));
   }
 }
 
@@ -170,9 +178,13 @@ void tab_extras::select_extra()
 void tab_extras::name_given()
 {
   if (selected != nullptr) {
+    QByteArray name_bytes;
+    QByteArray rname_bytes;
+
     extra_type_iterate(pextra) {
-      if (pextra != selected && !pextra->disabled) {
-        if (!strcmp(extra_rule_name(pextra), rname->text().toUtf8().data())) {
+      if (pextra != selected && !pextra->ruledit_disabled) {
+        rname_bytes = rname->text().toUtf8();
+        if (!strcmp(extra_rule_name(pextra), rname_bytes.data())) {
           ui->display_msg(R__("An extra with that rule name already exists!"));
           return;
         }
@@ -183,15 +195,17 @@ void tab_extras::name_given()
       name->setText(rname->text());
     }
 
+    name_bytes = name->text().toUtf8();
+    rname_bytes = rname->text().toUtf8();
     names_set(&(selected->name), 0,
-              name->text().toUtf8().data(),
-              rname->text().toUtf8().data());
+              name_bytes.data(),
+              rname_bytes.data());
     refresh();
   }
 }
 
 /**********************************************************************//**
-  User requested extra deletion 
+  User requested extra deletion
 **************************************************************************/
 void tab_extras::delete_now()
 {
@@ -203,7 +217,11 @@ void tab_extras::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
+
+    if (selected->ruledit_dlg != nullptr) {
+      ((edit_extra *)selected->ruledit_dlg)->done(0);
+    }
 
     refresh();
     update_extra_info(nullptr);
@@ -220,6 +238,10 @@ bool tab_extras::initialize_new_extra(struct extra_type *pextra)
   }
 
   name_set(&(pextra->name), 0, "New Extra");
+  BV_CLR_ALL(pextra->flags);
+  if (pextra->helptext != nullptr) {
+    strvec_clear(pextra->helptext);
+  }
 
   return true;
 }
@@ -233,9 +255,9 @@ void tab_extras::add_now()
 
   // Try to reuse freed extra slot
   extra_type_iterate(pextra) {
-    if (pextra->disabled) {
+    if (pextra->ruledit_disabled) {
       if (initialize_new_extra(pextra)) {
-        pextra->disabled = false;
+        pextra->ruledit_disabled = false;
         update_extra_info(pextra);
         refresh();
       }
@@ -296,5 +318,22 @@ void tab_extras::edit_effects()
 
     ui->open_effect_edit(QString::fromUtf8(extra_rule_name(selected)),
                          &uni, EFMC_NORMAL);
+  }
+}
+
+/**********************************************************************//**
+  User requested extra edit dialog
+**************************************************************************/
+void tab_extras::edit_now()
+{
+  if (selected != nullptr) {
+    if (selected->ruledit_dlg == nullptr) {
+      edit_extra *edit = new edit_extra(ui, selected);
+
+      edit->show();
+      selected->ruledit_dlg = edit;
+    } else {
+      ((edit_extra *)selected->ruledit_dlg)->raise();
+    }
   }
 }

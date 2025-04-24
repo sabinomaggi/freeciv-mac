@@ -15,10 +15,21 @@
 
 struct city;
 
+struct citizens_reduction {
+  struct player_slot *pslot;
+  citizens change;
+};
+
 void citizens_update(struct city *pcity, struct player *plr);
 void citizens_convert(struct city *pcity);
 void citizens_convert_conquest(struct city *pcity);
+struct player
+*citizens_unit_nationality(const struct city *pcity,
+                           int pop_cost,
+                           struct citizens_reduction *pchange);
+void citizens_reduction_apply(struct city *pcity,
+                              const struct citizens_reduction *pchange);
 
 void citizens_print(const struct city *pcity);
 
-#endif  /* FC__CITIZENSHAND_H */
+#endif /* FC__CITIZENSHAND_H */

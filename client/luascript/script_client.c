@@ -44,7 +44,7 @@
 #include "luaconsole_common.h"
 
 /* client/luascript */
-#include "tolua_client_gen.h"
+#include <tolua_client_gen.h> /* <> so looked from the build directory first. */
 
 #include "script_client.h"
 
@@ -209,10 +209,19 @@ bool script_client_init(void)
   }
 
   tolua_common_a_open(main_fcl->state);
-  api_specenum_open(main_fcl->state);
+  api_game_specenum_open(main_fcl->state);
   tolua_game_open(main_fcl->state);
   tolua_signal_open(main_fcl->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_client_open(main_fcl->state);
+#else  /* MESON_BUILD */
   tolua_client_open(main_fcl->state);
+#endif /* MESON_BUILD */
+
   tolua_common_z_open(main_fcl->state);
 
   script_client_code_init();
@@ -225,7 +234,7 @@ bool script_client_init(void)
 }
 
 /*************************************************************************//**
-  Ouput a message on the client lua console.
+  Output a message on the client lua console.
 *****************************************************************************/
 static void script_client_output(struct fc_lua *fcl, enum log_level level,
                                  const char *format, ...)
@@ -308,12 +317,12 @@ void script_client_state_save(struct section_file *file)
 /*************************************************************************//**
   Invoke all the callback functions attached to a given signal.
 *****************************************************************************/
-void script_client_signal_emit(const char *signal_name, int nargs, ...)
+void script_client_signal_emit(const char *signal_name, ...)
 {
   va_list args;
 
-  va_start(args, nargs);
-  luascript_signal_emit_valist(main_fcl, signal_name, nargs, args);
+  va_start(args, signal_name);
+  luascript_signal_emit_valist(main_fcl, signal_name, args);
   va_end(args);
 }
 

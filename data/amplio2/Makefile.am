@@ -6,12 +6,16 @@ pkgdatadir = $(datadir)/$(PACKAGE)/amplio2
 pkgdata_DATA =          	\
 	activities.png		\
 	activities.spec		\
+	animals.png		\
+	animals.spec		\
 	bases.png		\
 	bases.spec		\
 	cities.png		\
 	cities.spec		\
 	explosions.png		\
 	explosions.spec		\
+	extra_units.png		\
+	extra_units.spec	\
 	fog.png			\
 	fog.spec		\
 	grid.png		\
@@ -40,6 +44,8 @@ pkgdata_DATA =          	\
 	upkeep.spec		\
 	veterancy.png		\
 	veterancy.spec		\
+	volcano.png		\
+	volcano.spec		\
 	water.png		\
 	water.spec
 

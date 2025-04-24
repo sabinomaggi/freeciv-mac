@@ -8,21 +8,30 @@ Version tags
 
 These are sent by metaserver
 
+While the follow tag compared to one received from the metaserver
+does not contain qualifiers, we do pass string with the qualifier
+added to gettext to get the translation.
 /* TRANS: Version tag name received from metaserver */
 _("?vertag:stable")
 _("?vertag:windows")
-_("?vertag:win32")
-_("?vertag:S3_0")
-_("?vertag:S3_1")
+_("?vertag:macos")
+_("?vertag:S3_2")
+_("?vertag:S3_3")
+_("?vertag:S3_4")
 _("?vertag:crosser")
-_("?vertag:windows-S3_0")
-_("?vertag:windows-S3_1")
+_("?vertag:windows-S3_2")
+_("?vertag:windows-S3_3")
+_("?vertag:windows-S3_4")
+_("?vertag:macos-S3_2")
+_("?vertag:macos-S3_3")
+_("?vertag:macos-S3_4")
 
 
 Generated version header
 
 /* TRANS: part of revision based version number string
-          "(modified r25000)" */
+          "(modified 855bfb8e2f)" (the second 'word' is a git hash)
+          (Preserve the trailing space.) */
 _("modified ")
 
 

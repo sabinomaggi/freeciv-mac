@@ -1,24 +1,28 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#/***********************************************************************
+# Freeciv - Copyright (C) 2017-2023
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 2, or (at your option)
+#   any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#***********************************************************************/
 
-# This is a script to replace one regular expression with another.  Call
-# it like `replace "foo bar" "bar foo"` to replace all "foo bar" text with
-# "bar foo".  By default it does replacement in *.[ch] files but this can
-# be edited down below.
+if test "$1" = "-h" || test "$1" = "--help" || test "$3" = "" ; then
+  echo "Usage: $0 <path> <string to replace> <replace with>"
+  exit
+fi
 
-files=`find . -name "*.[ch]"`
-#files=pango.diff
-#files=`find . -type f -name "Makefile.am"`
-#files=`find . -type f| grep -v CVS`
-#files=`find . -name "*.ruleset"`
-
-echo Replacing \"$1\" with \"$2\".
-
-for file in $files; do
-    cat $file \
-	| sed "s/$1/$2/g" \
-	> $file.$$
-
-    cmp $file $file.$$ >/dev/null \
-	|| (mv $file.$$ $file && echo "  $file")
-    rm -f $file.$$
-done
+find "$1" -name "*.[ch]" |
+  (while read FILE ; do
+     if grep "$2" "$FILE" >/dev/null ; then
+       echo "Updating $FILE"
+       sed "s/$2/$3/g" "$FILE" > "$FILE.new"
+       mv "$FILE.new" "$FILE"
+     fi
+   done )

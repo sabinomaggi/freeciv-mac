@@ -26,15 +26,16 @@
 
 /* server */
 #include "auth.h"
+#include "connecthand.h"
 
 /* server/scripting */
 #include "script_fcdb.h"
 
 #include "api_fcdb_auth.h"
 
-/*************************************************************************//**
+/**********************************************************************//**
   Get the username.
-*****************************************************************************/
+**************************************************************************/
 const char *api_auth_get_username(lua_State *L, Connection *pconn)
 {
   LUASCRIPT_CHECK_STATE(L, NULL);
@@ -44,9 +45,9 @@ const char *api_auth_get_username(lua_State *L, Connection *pconn)
   return auth_get_username(pconn);
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Get the ip address.
-*****************************************************************************/
+**************************************************************************/
 const char *api_auth_get_ipaddr(lua_State *L, Connection *pconn)
 {
   LUASCRIPT_CHECK_STATE(L, NULL);
@@ -56,27 +57,26 @@ const char *api_auth_get_ipaddr(lua_State *L, Connection *pconn)
   return auth_get_ipaddr(pconn);
 }
 
-/*************************************************************************//**
-  Set the password.
-*****************************************************************************/
-bool api_auth_set_password(lua_State *L, Connection *pconn,
-                           const char *password)
+/**********************************************************************//**
+  Get the access level.
+**************************************************************************/
+int api_auth_get_cmdlevel(lua_State *L, Connection *pconn)
 {
-  LUASCRIPT_CHECK_STATE(L, NULL);
-  LUASCRIPT_CHECK_SELF(L, pconn, FALSE);
-  fc_assert_ret_val(conn_is_valid(pconn), FALSE);
+  LUASCRIPT_CHECK_STATE(L, -1);
+  LUASCRIPT_CHECK_SELF(L, pconn, -1);
+  fc_assert_ret_val(conn_is_valid(pconn), -1);
 
-  return auth_set_password(pconn, password);
+  return conn_get_access(pconn);
 }
 
-/*************************************************************************//**
-  Get the password
-*****************************************************************************/
-const char *api_auth_get_password(lua_State *L, Connection *pconn)
+/**********************************************************************//**
+  Set the access level.
+**************************************************************************/
+void api_auth_set_cmdlevel(lua_State *L, Connection *pconn, int level)
 {
-  LUASCRIPT_CHECK_STATE(L, NULL);
-  LUASCRIPT_CHECK_SELF(L, pconn, NULL);
-  fc_assert_ret_val(conn_is_valid(pconn), NULL);
+  LUASCRIPT_CHECK_STATE(L);
+  LUASCRIPT_CHECK_SELF(L, pconn);
+  fc_assert_ret(conn_is_valid(pconn));
 
-  return auth_get_password(pconn);
+  conn_set_access(pconn, level, TRUE);
 }

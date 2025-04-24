@@ -38,6 +38,7 @@
 #include "editor.h"
 #include "tilespec.h"
 #include "text.h"
+#include "zoom.h"
 
 /* client/agents */
 #include "cma_core.h"
@@ -50,9 +51,11 @@
 #include "editgui.h"
 #include "graphics.h"
 #include "gui_main.h"
+#include "infradlg.h"
 #include "inputdlg.h"
 #include "mapview.h"
 #include "menu.h"
+#include "rallypointdlg.h"
 
 #include "mapctrl.h"
 
@@ -84,14 +87,14 @@ static void popupinfo_positioning_callback(GtkWidget *w, GtkAllocation *alloc,
   float x, y;
   struct tile *ptile;
 
-  ptile = canvas_pos_to_tile(mousepos->x, mousepos->y);
-  if (tile_to_canvas_pos(&x, &y, ptile)) {
+  ptile = canvas_pos_to_tile(mousepos->x, mousepos->y, map_zoom);
+  if (tile_to_canvas_pos(&x, &y, map_zoom, ptile)) {
     gint minx, miny, maxy;
 
     gdk_window_get_origin(gtk_widget_get_window(map_canvas), &minx, &miny);
     maxy = miny + gtk_widget_get_allocated_height(map_canvas);
 
-    if (x > mapview.width/2) {
+    if (x > mapview.width / 2) {
       /* right part of the map */
       x += minx;
       y += miny + (tileset_tile_height(tileset) - alloc->height)/2;
@@ -189,7 +192,7 @@ static void name_new_city_popup_callback(gpointer data, gint response,
 /**********************************************************************//**
   Popup dialog where the user choose the name of the new city
   punit = (settler) unit which builds the city
-  suggestname = suggetion of the new city's name
+  suggestname = suggestion of the new city's name
 **************************************************************************/
 void popup_newcity_dialog(struct unit *punit, const char *suggestname)
 {
@@ -207,6 +210,8 @@ void popup_newcity_dialog(struct unit *punit, const char *suggestname)
 void set_turn_done_button_state(bool state)
 {
   gtk_widget_set_sensitive(turn_done_button, state);
+
+  update_turn_done_tooltip();
 }
 
 /**********************************************************************//**
@@ -248,7 +253,7 @@ gboolean butt_down_mapcanvas(GtkWidget *w, GdkEventButton *ev, gpointer data)
   }
 
   gtk_widget_grab_focus(map_canvas);
-  ptile = canvas_pos_to_tile(ev->x, ev->y);
+  ptile = canvas_pos_to_tile(ev->x, ev->y, mouse_zoom);
   pcity = ptile ? tile_city(ptile) : NULL;
 
   switch (ev->button) {
@@ -274,6 +279,10 @@ gboolean butt_down_mapcanvas(GtkWidget *w, GdkEventButton *ev, gpointer data)
       if (ptile) {
         toggle_tile_hilite(ptile);
       }
+    } else if (rally_set_tile(ptile)) {
+      /* Nothing here, rally_set_tile() already did what we wanted */
+    } else if (infra_placement_mode()) {
+      infra_placement_set_tile(ptile);
     } else {
       /* Plain LMB click. */
       action_button_pressed(ev->x, ev->y, SELECT_POPUP);
@@ -415,7 +424,7 @@ gboolean move_mapcanvas(GtkWidget *w, GdkEventMotion *ev, gpointer data)
   if (keyboardless_goto_button_down && hover_state == HOVER_NONE) {
     maybe_activate_keyboardless_goto(ev->x, ev->y);
   }
-  control_mouse_cursor(canvas_pos_to_tile(ev->x, ev->y));
+  control_mouse_cursor(canvas_pos_to_tile(ev->x, ev->y, mouse_zoom));
 
   return TRUE;
 }
@@ -438,7 +447,8 @@ gboolean leave_mapcanvas(GtkWidget *widget, GdkEventCrossing *event)
   if (!map_is_empty()
       && event->x >= 0 && event->y >= 0
       && event->x < mapview.width && event->y < mapview.height) {
-    control_mouse_cursor(canvas_pos_to_tile(event->x, event->y));
+    control_mouse_cursor(canvas_pos_to_tile(event->x, event->y,
+                                            mouse_zoom));
   } else {
     update_mouse_cursor(CURSOR_DEFAULT);
   }
@@ -453,6 +463,7 @@ gboolean leave_mapcanvas(GtkWidget *widget, GdkEventCrossing *event)
 gboolean move_overviewcanvas(GtkWidget *w, GdkEventMotion *ev, gpointer data)
 {
   overview_update_line(ev->x, ev->y);
+
   return TRUE;
 }
 

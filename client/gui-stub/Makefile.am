@@ -6,8 +6,10 @@ AM_CPPFLAGS = \
 	-I$(srcdir)/.. \
 	-I$(srcdir)/../include \
 	-I$(top_srcdir)/utility \
+	-I$(top_srcdir)/common/aicore \
 	-I$(top_srcdir)/common/networking \
 	-I$(top_srcdir)/dependencies/tinycthread \
+	-I$(top_srcdir)/gen_headers/enums \
         -I$(top_srcdir)/common $(gui_stub_cflags)
 
 libgui_stub_la_SOURCES = \
@@ -38,6 +40,7 @@ libgui_stub_la_SOURCES = \
 	gui_stub.h	\
 	helpdlg.c	\
 	helpdlg.h	\
+	infradlg.c	\
 	inteldlg.c	\
 	inteldlg.h	\
 	luaconsole.c	\

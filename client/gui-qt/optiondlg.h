@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,34 +23,36 @@ extern "C" {
 #include <QMap>
 
 // qt-client
-#include <dialogs.h>
+#include "dialogs.h"
 
 class Qdialog;
 class QVBoxLayout;
 class QTabWidget;
 class QDialogButtonBox;
-class QSignalMapper;
 class QWidget;
 class QString;
 
 QString split_text(QString text, bool cut);
 QString cut_helptext(QString text);
+
+void option_dialog_popup(QString name, const struct option_set *poptset,
+                         bool client);
+
 /****************************************************************************
   Dialog for client/server options
 ****************************************************************************/
 class option_dialog : public qfc_dialog
 {
   Q_OBJECT
-  QVBoxLayout * main_layout;
+  QVBoxLayout *main_layout;
   QTabWidget *tab_widget;
   QDialogButtonBox *button_box;
   QList <QString> categories;
   QMap <QString, QWidget *> widget_map;
-  QSignalMapper *signal_map;
 
 public:
-   option_dialog(const QString &name, const option_set *options,
-                 QWidget *parent = 0);
+  option_dialog(const QString &name, const option_set *options, bool client_set,
+                QWidget *parent = nullptr);
   ~option_dialog();
   void fill(const struct option_set *poptset);
   void add_option(struct option *poption);
@@ -58,7 +60,9 @@ public:
   void option_dialog_reset(struct option *poption);
   void full_refresh();
   void apply_options();
+
 private:
+  bool client_settings; // As opposed to server ones
   const option_set *curr_options;
   void set_bool(struct option *poption, bool value);
   void set_int(struct option *poption, int value);
@@ -66,6 +70,7 @@ private:
   void set_enum(struct option *poption, int index);
   void set_bitwise(struct option *poption, unsigned value);
   void set_color(struct option *poption, struct ft_color color);
+  void set_button_color(QPushButton *button, const char *colorname);
   void set_font(struct option *poption, QString s);
   void get_color(struct option *poption, QByteArray &a1, QByteArray &a2);
   bool get_bool(struct option *poption);
@@ -74,13 +79,18 @@ private:
   QByteArray get_button_font(struct option *poption);
   QByteArray get_string(struct option *poption);
   int get_enum(struct option *poption);
-  struct option* get_color_option();
   unsigned get_bitwise(struct option *poption);
   void full_reset();
+
+protected:
+  void showEvent(QShowEvent *event);
+  void hideEvent(QHideEvent *event);
+  void closeEvent(QCloseEvent *event);
+
 private slots:
   void apply_option(int response);
-  void set_color();
-  void set_font();
+  void select_color();
+  void select_font();
 };
 
-#endif /* FC__OPTIONDLG_H */
+#endif // FC__OPTIONDLG_H

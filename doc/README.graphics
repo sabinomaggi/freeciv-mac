@@ -8,8 +8,8 @@ Using Graphics:
 To use different graphics with Freeciv, use the '--tiles' argument to
 the Freeciv client. Eg, to use the 'engels' graphics, start the
 client as:
-  
-    freeciv-gtk3 --tiles engels
+
+    freeciv-gtk3.22 --tiles engels
 
 What Freeciv actually does in this case is look for a file called
 'engels.tilespec' somewhere in your Freeciv data path. (See the file
@@ -35,7 +35,7 @@ conveniently provide additional graphics.
 
 There are two layers to the tilespec files:
 
-The top-level file is named, eg: 'trident.tilespec'.  The basename of
+The top-level file is named, eg: 'trident.tilespec'. The basename of
 this file (here, 'trident') corresponds to the parameter of the
 '--tiles' command-line argument for the Freeciv client, as described
 above.
@@ -75,8 +75,6 @@ options include:
   type                  : general type of tileset, different types have
                           quite different format. Supported types are
                           "overhead" and "isometric"
-  city_names_font       : an X font string
-  city_productions_font : an X font string
   main_intro_file       : GFX file for the intro graphics
   unit_default_orientation : Specifies a direction to use for unit types in
                           worklists etc. See "Unit Sprites" below.
@@ -99,6 +97,8 @@ options include:
                           height in isometric tileset
   small_tile_width      : the width of icon sprites
   small_tile_height     : the height of icon sprites
+  svg_height            : The height svg flags should be drawn to,
+                          if they are used
   fog_style             : Specifies how fog is drawn.
                           "Auto" :     Code automatically adds fog.
                           "Sprite :    A single fog sprite is drawn on top of all
@@ -134,9 +134,11 @@ options include:
   activity_offset_y      draw normal unit activity icons. "Auto" icons are not
                          affected by this as they are usually wanted in different
                          offset than real activity icons for both to appear simultaneously
-                         "Auto" icons are auto_attack, auto_settler, patrol, connect.
+                         "Auto" icons are auto_attack, auto_worker, patrol, connect.
   select_offset_x      : Gives an offset from the tile origin at which to
   select_offset_y        draw selected unit sprites.
+  stack_size_offset_x  : Gives an offset from the tile origin at which to
+  stack_size_offset_y    draw unit stack size indicator.
   unit_upkeep_offset_y : Gives an offset from the unit origin at which to draw
                          the upkeep icons when they are shown along the unit. The upkeep
                          icons can safely extend below the unit icon itself.
@@ -167,8 +169,6 @@ options include:
                          "normal" dimensions of 64x32 with a hex_side of 16
                          for an iso-hex tileset will give hexagons of size
                          48x32.
-  city_names_font_size : Font size used in drawing city name
-  city_production_font_size : Font size used in drawing city production
 
   Booleans (FALSE or TRUE)
   ------------------------
@@ -179,8 +179,15 @@ options include:
 
   String lists (a comma-separated list of strings)
   ------------------------------------------------
-  files                 : A list of .spec files to scan for sprites.
+  files                 : A main list of .spec files to scan for sprites.
+                          These files are always looked at.
                           See "individual spec files", below.
+  files_svg             : List of .spec files to scan for sprites.
+                          This list is added to the main 'files' list
+                          when client svgflags feature is enabled.
+  files_pixel           : List of .spec files to scan for sprites.
+                          This list is added to the main 'files' list
+                          when client svgflags feature is disabled.
 
 
 ----------------------------------------------------------------------
@@ -188,7 +195,7 @@ Terrain options:
 ----------------
 
 The top-level tilespec file also contains information on how to draw each
-terrain type.  For each terrain type include a section "[tile_xxx]".
+terrain type. For each terrain type include a section "[tile_xxx]".
 This section contains information on how to draw this terrain type.
 (The terrain types are specified in the server ruleset file.)
 
@@ -212,7 +219,7 @@ This section contains information on how to draw this terrain type.
                           on normal_tile_width and normal_tile_height, but
                           to corner of the full tile.
   layerN_offset_x       : Offset for terrain sprites
-  layerN_offset_y       
+  layerN_offset_y
   layerN_match_type     : If 0 or unset, no terrain matching will be done and
                           the base sprite will be drawn for the terrain. If
                           non-zero, then terrain matching will be done. A
@@ -334,7 +341,7 @@ having to modify earlier files in the list.
 Tag prefixes:
 -------------
 
-To help keep the tags organised, there is a rough prefix system used 
+To help keep the tags organised, there is a rough prefix system used
 for standard tags:
 
   f.	      national flags
@@ -400,7 +407,7 @@ sprites.
   progress indicators:
 
     There are three types of progress indicator. "science_bulb" indicates
-    progress toward the current research target. "warming_sun" indicates 
+    progress toward the current research target. "warming_sun" indicates
     progress toward global warming. "cooling_flake" indicates progress
     toward nuclear winter. Each indicator should have 8 states, numbered
     0 (least) through 7 (most). The sprite names are "s.<type>_<n>".
@@ -434,7 +441,7 @@ sprites.
   matched sprites       : If the terrain has a match type or is layered, a
                           set of matched sprites is needed. This consists of
                           16 sprites with tags "t.<terrain>_n<V>e<V>s<V>w<V>"
-                          (e.g., "t.hills_n0e0s1w0". Each direcional value
+                          (e.g., "t.hills_n0e0s1w0". Each directional value
                           <V> is either 0 or 1. Note that the directions are
                           in map coordinates, so n (north) in iso-view is
                           northeast on the mapview. (Note this only applies
@@ -514,12 +521,21 @@ sprites.
   Unit Sprites
   ------------
 
+    Unit sprites depend on the unit's activity. If there's no sprite
+    defined for the activity in question, "Idle" activity sprite is
+    used instead. "Idle" sprite is a mandatory one.
+    See full list of legal activities in README.effects.
+    If there's no "Idle" sprite, for backward compatibility reasons,
+    current Freeciv version still looks for a tag with no activity at all
+    to use instead.
+
     Units sprites can be either unoriented or oriented, in which case the
     sprite that is displayed depends on the direction the unit is facing (it
     turns when it moves or fights).
 
-    Unoriented sprites are specified as 'u.phalanx'. Oriented sprites have
-    a direction suffix: 'u.phalanx_s', 'u.phalanx_nw' and so on.
+    Unoriented sprites are specified as 'u.phalanx_Idle',
+    Oriented sprites have a direction suffix:
+    'u.phalanx_Idle_s', 'u.phalanx_Idle_nw' and so on.
     For each unit type, either an unoriented sprite or a full set of
     the oriented sprites needed for the tileset topology must be provided
     (you can also provide both, see below).

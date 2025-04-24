@@ -244,26 +244,19 @@ static void meswin_dialog_row_activated_callback(GtkTreeView *view,
   care about right clicks on a row; this action centers on the tile
   associated with the event at that row (if applicable).
 ****************************************************************************/
-static gboolean meswin_dialog_button_press_callback(GtkWidget *widget,
-                                                    GdkEvent *ev,
-                                                    gpointer data)
+static gboolean meswin_dialog_button_press_callback(GtkGestureClick *gesture,
+                                                    int n_press,
+                                                    double x, double y)
 {
+  GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
   GtkTreePath *path = NULL;
   GtkTreeModel *model;
   GtkTreeIter iter;
   gint row;
-  guint button;
-  gdouble e_x, e_y;
 
   fc_assert_ret_val(GTK_IS_TREE_VIEW(widget), FALSE);
 
-  gdk_event_get_button(ev, &button);
-  if (GDK_BUTTON_PRESS != gdk_event_get_event_type(ev) || 3 != button) {
-    return FALSE;
-  }
-
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), e_x, e_y,
+  if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), x, y,
                                      &path, NULL, NULL, NULL)) {
     return TRUE;
   }
@@ -273,6 +266,7 @@ static gboolean meswin_dialog_button_press_callback(GtkWidget *widget,
     gtk_tree_model_get(model, &iter, MESWIN_COL_ID, &row, -1);
     meswin_goto(row);
   }
+
   gtk_tree_path_free(path);
 
   return TRUE;
@@ -318,16 +312,17 @@ static void meswin_dialog_response_callback(struct gui_dialog *pgui_dialog,
 }
 
 /************************************************************************//**
-  Initilialize a message window dialog.
+  Initialize a message window dialog.
 ****************************************************************************/
 static void meswin_dialog_init(struct meswin_dialog *pdialog)
 {
   GtkWidget *view, *sw, *cmd, *notebook;
-  GtkContainer *vbox;
   GtkListStore *store;
   GtkTreeSelection *selection;
   GtkCellRenderer *renderer;
   GtkTreeViewColumn *col;
+  GtkGesture *gesture;
+  GtkEventController *controller;
 
   fc_assert_ret(NULL != pdialog);
 
@@ -339,14 +334,12 @@ static void meswin_dialog_init(struct meswin_dialog *pdialog)
 
   gui_dialog_new(&pdialog->shell, GTK_NOTEBOOK(notebook), pdialog, TRUE);
   gui_dialog_set_title(pdialog->shell, _("Messages"));
-  vbox = GTK_CONTAINER(pdialog->shell->vbox);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                      GTK_SHADOW_ETCHED_IN);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
-  gtk_container_add(vbox, sw);
+  gui_dialog_add_content_widget(pdialog->shell, sw);
 
   store = meswin_dialog_store_new();
   view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
@@ -357,8 +350,14 @@ static void meswin_dialog_init(struct meswin_dialog *pdialog)
   gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(view), FALSE);
   g_signal_connect(view, "row_activated",
                    G_CALLBACK(meswin_dialog_row_activated_callback), NULL);
-  g_signal_connect(view, "button-press-event",
+
+  gesture = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 3);
+  controller = GTK_EVENT_CONTROLLER(gesture);
+  g_signal_connect(controller, "pressed",
                    G_CALLBACK(meswin_dialog_button_press_callback), NULL);
+  gtk_widget_add_controller(view, controller);
+
   pdialog->tree_view = GTK_TREE_VIEW(view);
 
   renderer = gtk_cell_renderer_pixbuf_new();
@@ -374,13 +373,13 @@ static void meswin_dialog_init(struct meswin_dialog *pdialog)
                                                  "style", MESWIN_COL_STYLE,
                                                  NULL);
   gtk_tree_view_append_column(GTK_TREE_VIEW(view), col);
-  gtk_container_add(GTK_CONTAINER(sw), view);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
 
   selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(view));
   g_signal_connect(selection, "changed",
                    G_CALLBACK(meswin_dialog_selection_callback), pdialog);
 
-  gui_dialog_add_button(pdialog->shell, "window-close", _("Close"),
+  gui_dialog_add_button(pdialog->shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
 
   if (GUI_GTK_OPTION(show_message_window_buttons)) {
@@ -452,7 +451,7 @@ bool meswin_dialog_is_open(void)
 /************************************************************************//**
   Update the message window dialog.
 ****************************************************************************/
-void real_meswin_dialog_update(void)
+void real_meswin_dialog_update(void *unused)
 {
   if (NULL != meswin.shell) {
     meswin_dialog_refresh(&meswin);

@@ -28,6 +28,9 @@
 #include "log.h"
 #include "registry.h"
 
+/* common */
+#include "map.h"
+
 /* common/scriptcore */
 #include "luascript_func.h"
 #include "luascript_signal.h"
@@ -38,7 +41,6 @@
   Configuration for script execution time limits. Checkinterval is the
   number of executed lua instructions between checking. Disabled if 0.
 *****************************************************************************/
-#define LUASCRIPT_MAX_EXECUTION_TIME_SEC 5.0
 #define LUASCRIPT_CHECKINTERVAL 10000
 
 /* The name used for the freeciv lua struct saved in the lua state. */
@@ -59,8 +61,8 @@
   * Reading files and running processes
   * Loading lua files or libraries
 *****************************************************************************/
-#define LUASCRIPT_SECURE_LUA_VERSION1 502
-#define LUASCRIPT_SECURE_LUA_VERSION2 503
+#define LUASCRIPT_SECURE_LUA_VERSION1 503
+#define LUASCRIPT_SECURE_LUA_VERSION2 504
 
 static const char *luascript_unsafe_symbols_secure[] = {
   "debug",
@@ -85,19 +87,7 @@ static const char *luascript_unsafe_symbols_permissive[] = {
   Lua libraries to load (all default libraries, excluding operating system
   and library loading modules). See linit.c in Lua 5.1 for the default list.
 *****************************************************************************/
-#if LUA_VERSION_NUM == 502
-static luaL_Reg luascript_lualibs_secure[] = {
-  /* Using default libraries excluding: package, io and os */
-  {"_G", luaopen_base},
-  {LUA_COLIBNAME, luaopen_coroutine},
-  {LUA_TABLIBNAME, luaopen_table},
-  {LUA_STRLIBNAME, luaopen_string},
-  {LUA_BITLIBNAME, luaopen_bit32},
-  {LUA_MATHLIBNAME, luaopen_math},
-  {LUA_DBLIBNAME, luaopen_debug},
-  {NULL, NULL}
-};
-#elif LUA_VERSION_NUM == 503
+#if LUA_VERSION_NUM == 503 || LUA_VERSION_NUM == 504
 static luaL_Reg luascript_lualibs_secure[] = {
   /* Using default libraries excluding: package, io, os, and bit32 */
   {"_G", luaopen_base},
@@ -111,7 +101,7 @@ static luaL_Reg luascript_lualibs_secure[] = {
 };
 
 static luaL_Reg luascript_lualibs_permissive[] = {
-  /* Using default libraries excluding: package, io, and bit32 */
+  /* Using default libraries excluding: package, and bit32 */
   {"_G", luaopen_base},
   {LUA_COLIBNAME, luaopen_coroutine},
   {LUA_TABLIBNAME, luaopen_table},
@@ -119,13 +109,14 @@ static luaL_Reg luascript_lualibs_permissive[] = {
   {LUA_UTF8LIBNAME, luaopen_utf8},
   {LUA_MATHLIBNAME, luaopen_math},
   {LUA_DBLIBNAME, luaopen_debug},
+  {LUA_IOLIBNAME, luaopen_io },
   {LUA_OSLIBNAME, luaopen_os},
   {NULL, NULL}
 };
 #else  /* LUA_VERSION_NUM */
 #error "Unsupported lua version"
 #endif /* LUA_VERSION_NUM */
- 
+
 static int luascript_report(struct fc_lua *fcl, int status, const char *code);
 static void luascript_traceback_func_save(lua_State *L);
 static void luascript_traceback_func_push(lua_State *L);
@@ -135,10 +126,11 @@ static void luascript_hook_end(lua_State *L);
 static void luascript_openlibs(lua_State *L, const luaL_Reg *llib);
 static void luascript_blacklist(lua_State *L, const char *lsymbols[]);
 
-/*************************************************************************//**
+/**********************************************************************//**
   Report a lua error.
-*****************************************************************************/
-static int luascript_report(struct fc_lua *fcl, int status, const char *code)
+**************************************************************************/
+static int luascript_report(struct fc_lua *fcl, int status,
+                            const char *code)
 {
   fc_assert_ret_val(fcl, -1);
   fc_assert_ret_val(fcl->state, -1);
@@ -207,9 +199,9 @@ static int luascript_report(struct fc_lua *fcl, int status, const char *code)
   return status;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Find the debug.traceback function and store in the registry
-*****************************************************************************/
+**************************************************************************/
 static void luascript_traceback_func_save(lua_State *L)
 {
   /* Find the debug.traceback function, if available */
@@ -221,17 +213,17 @@ static void luascript_traceback_func_save(lua_State *L)
   lua_pop(L, 1);       /* pop debug */
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Push the traceback function to the stack
-*****************************************************************************/
+**************************************************************************/
 static void luascript_traceback_func_push(lua_State *L)
 {
   lua_getfield(L, LUA_REGISTRYINDEX, "freeciv_traceback");
 }
 
-/*************************************************************************//**
-  Check currently excecuting lua function for execution time limit
-*****************************************************************************/
+/**********************************************************************//**
+  Check currently executing lua function for execution time limit
+**************************************************************************/
 static void luascript_exec_check(lua_State *L, lua_Debug *ar)
 {
   lua_Number exec_clock;
@@ -239,15 +231,15 @@ static void luascript_exec_check(lua_State *L, lua_Debug *ar)
   lua_getfield(L, LUA_REGISTRYINDEX, "freeciv_exec_clock");
   exec_clock = lua_tonumber(L, -1);
   lua_pop(L, 1);
-  if ((float)(clock() - exec_clock)/CLOCKS_PER_SEC
-      > LUASCRIPT_MAX_EXECUTION_TIME_SEC) {
-    luaL_error(L, "Execution time limit exceeded in script");
+  if ((float)(clock() - exec_clock) / CLOCKS_PER_SEC
+      > game.lua_timeout) {
+    luaL_error(L, _("Execution time limit exceeded in script"));
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Setup function execution guard
-*****************************************************************************/
+**************************************************************************/
 static void luascript_hook_start(lua_State *L)
 {
 #if LUASCRIPT_CHECKINTERVAL
@@ -258,9 +250,9 @@ static void luascript_hook_start(lua_State *L)
 #endif
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Clear function execution guard
-*****************************************************************************/
+**************************************************************************/
 static void luascript_hook_end(lua_State *L)
 {
 #if LUASCRIPT_CHECKINTERVAL
@@ -268,9 +260,9 @@ static void luascript_hook_end(lua_State *L)
 #endif
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Open lua libraries in the array of library definitions in llib.
-*****************************************************************************/
+**************************************************************************/
 static void luascript_openlibs(lua_State *L, const luaL_Reg *llib)
 {
   /* set results to global table */
@@ -280,9 +272,9 @@ static void luascript_openlibs(lua_State *L, const luaL_Reg *llib)
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Remove global symbols from lua state L
-*****************************************************************************/
+**************************************************************************/
 static void luascript_blacklist(lua_State *L, const char *lsymbols[])
 {
   int i;
@@ -293,9 +285,9 @@ static void luascript_blacklist(lua_State *L, const char *lsymbols[])
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Internal api error function - varg version.
-*****************************************************************************/
+**************************************************************************/
 int luascript_error(lua_State *L, const char *format, ...)
 {
   va_list vargs;
@@ -308,11 +300,11 @@ int luascript_error(lua_State *L, const char *format, ...)
   return ret;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Internal api error function.
   Invoking this will cause Lua to stop executing the current context and
   throw an exception, so to speak.
-*****************************************************************************/
+**************************************************************************/
 int luascript_error_vargs(lua_State *L, const char *format, va_list vargs)
 {
   fc_assert_ret_val(L != NULL, -1);
@@ -324,18 +316,19 @@ int luascript_error_vargs(lua_State *L, const char *format, va_list vargs)
   return lua_error(L);
 }
 
-/*************************************************************************//**
-  Like script_error, but using a prefix identifying the called lua function:
-    bad argument #narg to '<func>': msg
-*****************************************************************************/
+/**********************************************************************//**
+  Like script_error, but using a prefix identifying the called lua
+  function:
+    bad argument narg to '[func]': msg
+**************************************************************************/
 int luascript_arg_error(lua_State *L, int narg, const char *msg)
 {
   return luaL_argerror(L, narg, msg);
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Initialize the scripting state.
-*****************************************************************************/
+**************************************************************************/
 struct fc_lua *luascript_new(luascript_log_func_t output_fct,
                              bool secured_environment)
 {
@@ -367,9 +360,9 @@ struct fc_lua *luascript_new(luascript_log_func_t output_fct,
   return fcl;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Get the freeciv lua struct from a lua state.
-*****************************************************************************/
+**************************************************************************/
 struct fc_lua *luascript_get_fcl(lua_State *L)
 {
   struct fc_lua *fcl;
@@ -387,9 +380,9 @@ struct fc_lua *luascript_get_fcl(lua_State *L)
   return fcl;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Free the scripting data.
-*****************************************************************************/
+**************************************************************************/
 void luascript_destroy(struct fc_lua *fcl)
 {
   if (fcl) {
@@ -410,9 +403,9 @@ void luascript_destroy(struct fc_lua *fcl)
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Print a message to the selected output handle.
-*****************************************************************************/
+**************************************************************************/
 void luascript_log(struct fc_lua *fcl, enum log_level level,
                    const char *format, ...)
 {
@@ -423,9 +416,9 @@ void luascript_log(struct fc_lua *fcl, enum log_level level,
   va_end(args);
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Print a message to the selected output handle.
-*****************************************************************************/
+**************************************************************************/
 void luascript_log_vargs(struct fc_lua *fcl, enum log_level level,
                          const char *format, va_list args)
 {
@@ -443,9 +436,68 @@ void luascript_log_vargs(struct fc_lua *fcl, enum log_level level,
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
+  Pop return values from the Lua stack.
+**************************************************************************/
+void luascript_pop_returns(struct fc_lua *fcl, const char *func_name,
+                           int nreturns, enum api_types *preturn_types,
+                           va_list args)
+{
+  int i;
+  lua_State *L;
+
+  fc_assert_ret(fcl);
+  fc_assert_ret(fcl->state);
+  L = fcl->state;
+
+  for (i = 0; i < nreturns; i++) {
+    enum api_types type = preturn_types[i];
+
+    fc_assert_ret(api_types_is_valid(type));
+
+    switch (type) {
+      case API_TYPE_INT:
+        {
+          int isnum;
+          int *pres = va_arg(args, int*);
+
+          *pres = lua_tointegerx(L, -1, &isnum);
+          if (!isnum) {
+            log_error("Return value from lua function %s is a %s, want int",
+                      func_name, lua_typename(L, lua_type(L, -1)));
+          }
+        }
+        break;
+      case API_TYPE_BOOL:
+        {
+          bool *pres = va_arg(args, bool*);
+          *pres = lua_toboolean(L, -1);
+        }
+        break;
+      case API_TYPE_STRING:
+        {
+          char **pres = va_arg(args, char**);
+
+          if (lua_isstring(L, -1)) {
+            *pres = fc_strdup(lua_tostring(L, -1));
+          }
+        }
+        break;
+      default:
+        {
+          void **pres = va_arg(args, void**);
+
+          *pres = tolua_tousertype(fcl->state, -1, NULL);
+        }
+        break;
+    }
+    lua_pop(L, 1);
+  }
+}
+
+/**********************************************************************//**
   Push arguments into the Lua stack.
-*****************************************************************************/
+**************************************************************************/
 void luascript_push_args(struct fc_lua *fcl, int nargs,
                          enum api_types *parg_types, va_list args)
 {
@@ -455,35 +507,27 @@ void luascript_push_args(struct fc_lua *fcl, int nargs,
   fc_assert_ret(fcl->state);
 
   for (i = 0; i < nargs; i++) {
-    int type;
+    enum api_types type = parg_types[i];
 
-    type = va_arg(args, int);
     fc_assert_ret(api_types_is_valid(type));
-    fc_assert_ret(type == *(parg_types + i));
 
     switch (type) {
       case API_TYPE_INT:
         {
-          int arg;
-
-          arg = va_arg(args, int);
-          tolua_pushnumber(fcl->state, (lua_Number)arg);
+          lua_Integer arg = va_arg(args, lua_Integer);
+          lua_pushinteger(fcl->state, arg);
         }
         break;
       case API_TYPE_BOOL:
         {
-          int arg;
-
-          arg = va_arg(args, int);
-          tolua_pushboolean(fcl->state, (bool)arg);
+          int arg = va_arg(args, int);
+          lua_pushboolean(fcl->state, arg);
         }
         break;
       case API_TYPE_STRING:
         {
-          const char *arg;
-
-          arg = va_arg(args, const char*);
-          tolua_pushstring(fcl->state, arg);
+          const char *arg = va_arg(args, const char*);
+          lua_pushstring(fcl->state, arg);
         }
         break;
       default:
@@ -501,9 +545,10 @@ void luascript_push_args(struct fc_lua *fcl, int nargs,
   }
 }
 
-/*************************************************************************//**
-  Return if the function 'funcname' is define in the lua state 'fcl->state'.
-*****************************************************************************/
+/**********************************************************************//**
+  Return if the function 'funcname' is define in the lua state
+  'fcl->state'.
+**************************************************************************/
 bool luascript_check_function(struct fc_lua *fcl, const char *funcname)
 {
   bool defined;
@@ -518,7 +563,7 @@ bool luascript_check_function(struct fc_lua *fcl, const char *funcname)
   return defined;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Evaluate a Lua function call or loaded script on the stack.
   Return nonzero if an error occurred.
 
@@ -529,8 +574,9 @@ bool luascript_check_function(struct fc_lua *fcl, const char *funcname)
 
   On error, print an error message with traceback. Nothing is pushed to
   the stack.
-*****************************************************************************/
-int luascript_call(struct fc_lua *fcl, int narg, int nret, const char *code)
+**************************************************************************/
+int luascript_call(struct fc_lua *fcl, int narg, int nret,
+                   const char *code)
 {
   int status;
   int base;          /* Index of function to call */
@@ -565,10 +611,11 @@ int luascript_call(struct fc_lua *fcl, int narg, int nret, const char *code)
   return status;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   lua_dostring replacement with error message showing on errors.
-*****************************************************************************/
-int luascript_do_string(struct fc_lua *fcl, const char *str, const char *name)
+**************************************************************************/
+int luascript_do_string(struct fc_lua *fcl, const char *str,
+                        const char *name)
 {
   int status;
 
@@ -584,9 +631,9 @@ int luascript_do_string(struct fc_lua *fcl, const char *str, const char *name)
   return status;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Parse and execute the script at filename.
-*****************************************************************************/
+**************************************************************************/
 int luascript_do_file(struct fc_lua *fcl, const char *filename)
 {
   int status;
@@ -604,10 +651,11 @@ int luascript_do_file(struct fc_lua *fcl, const char *filename)
 }
 
 
-/*************************************************************************//**
+/**********************************************************************//**
   Invoke the 'callback_name' Lua function.
-*****************************************************************************/
-bool luascript_callback_invoke(struct fc_lua *fcl, const char *callback_name,
+**************************************************************************/
+bool luascript_callback_invoke(struct fc_lua *fcl,
+                               const char *callback_name,
                                int nargs, enum api_types *parg_types,
                                va_list args)
 {
@@ -644,11 +692,11 @@ bool luascript_callback_invoke(struct fc_lua *fcl, const char *callback_name,
   return stop_emission;
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Mark any, if exported, full userdata representing 'object' in
   the current script state as 'Nonexistent'.
   This changes the type of the lua variable.
-*****************************************************************************/
+**************************************************************************/
 void luascript_remove_exported_object(struct fc_lua *fcl, void *object)
 {
   if (fcl && fcl->state) {
@@ -656,7 +704,7 @@ void luascript_remove_exported_object(struct fc_lua *fcl, void *object)
 
     /* The following is similar to tolua_release(..) in src/lib/tolua_map.c */
     /* Find the userdata representing 'object' */
-    lua_pushstring(fcl->state,"tolua_ubox");
+    lua_pushstring(fcl->state, "tolua_ubox");
     /* stack: ubox */
     lua_rawget(fcl->state, LUA_REGISTRYINDEX);
     /* stack: ubox u */
@@ -683,9 +731,9 @@ void luascript_remove_exported_object(struct fc_lua *fcl, void *object)
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Save lua variables to file.
-*****************************************************************************/
+**************************************************************************/
 void luascript_vars_save(struct fc_lua *fcl, struct section_file *file,
                          const char *section)
 {
@@ -709,9 +757,9 @@ void luascript_vars_save(struct fc_lua *fcl, struct section_file *file,
   }
 }
 
-/*************************************************************************//**
+/**********************************************************************//**
   Load lua variables from file.
-*****************************************************************************/
+**************************************************************************/
 void luascript_vars_load(struct fc_lua *fcl, struct section_file *file,
                          const char *section)
 {
@@ -723,4 +771,30 @@ void luascript_vars_load(struct fc_lua *fcl, struct section_file *file,
 
   vars = secfile_lookup_str_default(file, "", "%s", section);
   luascript_do_string(fcl, vars, section);
+}
+
+/* FIXME: tolua-5.2 does not create a destructor for dynamically
+ * allocated objects in non-C++ code but tries to call it. */
+/* Thus, avoid returning any non-basic types. If you need them, put here
+ * constructors returning them in lua_Object registering their destructor
+ * in tolua system. (None yet.) */
+
+/* To avoid the complexity and overheads of creating such objects for
+ * 4-bit enums, here is a helper function to return Direction objects. */
+/********************************************************************//******
+  Returns a pointer to a given value of enum direction8 (always the same
+  address for the same value), or NULL if the direction is invalid
+  on the current map.
+****************************************************************************/
+const Direction *luascript_dir(enum direction8 dir)
+{
+  static const
+   Direction etalon[8] = {DIR8_NORTHWEST, DIR8_NORTH, DIR8_NORTHEAST,
+                          DIR8_WEST,                  DIR8_EAST,
+                          DIR8_SOUTHWEST, DIR8_SOUTH, DIR8_SOUTHEAST};
+  if (is_valid_dir(dir)) {
+    return &etalon[dir];
+  } else {
+    return NULL;
+  }
 }

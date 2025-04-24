@@ -63,8 +63,8 @@ void center_on_something(void);
  */
 
 cid cid_encode(struct universal target);
-cid cid_encode_unit(struct unit_type *punittype);
-cid cid_encode_building(struct impr_type *pimprove);
+cid cid_encode_unit(const struct unit_type *punittype);
+cid cid_encode_building(const struct impr_type *pimprove);
 cid cid_encode_from_city(const struct city *pcity);
 
 struct universal cid_decode(cid cid);
@@ -76,6 +76,8 @@ bool city_unit_present(const struct city *pcity,
                        const struct universal *target);
 bool city_building_present(const struct city *pcity,
                            const struct universal *target);
+bool can_city_build_now_client(const struct city *pcity,
+                               const struct universal *target);
 
 struct item {
   struct universal item;
@@ -114,7 +116,7 @@ void create_event(struct tile *ptile, enum event_type event,
 struct city *get_nearest_city(const struct unit *punit, int *sq_dist);
 
 void cityrep_buy(struct city *pcity);
-void common_taxrates_callback(int i);
+void common_taxrates_callback(int idx, bool reverse);
 
 bool can_units_do_connect(struct unit_list *punits,
                           enum unit_activity activity,
@@ -143,6 +145,8 @@ bool mapimg_client_createmap(const char *filename);
 
 struct nation_set *client_current_nation_set(void);
 bool client_nation_is_in_current_set(const struct nation_type *pnation);
+
+enum ai_level server_ai_level(void);
 
 #ifdef __cplusplus
 }

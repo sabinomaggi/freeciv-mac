@@ -23,8 +23,7 @@ const char *api_auth_get_username(lua_State *L, Connection *pconn);
 
 const char *api_auth_get_ipaddr(lua_State *L, Connection *pconn);
 
-bool api_auth_set_password(lua_State *L, Connection *pconn, const char *pass);
-const char *api_auth_get_password(lua_State *L, Connection *pconn);
+int api_auth_get_cmdlevel(lua_State *L, Connection *pconn);
+void api_auth_set_cmdlevel(lua_State *L, Connection *pconn, int level);
 
 #endif /* FC__API_FCDB_AUTH_H */
-

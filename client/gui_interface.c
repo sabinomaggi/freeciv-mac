@@ -24,10 +24,12 @@
 #include "citydlg_g.h"
 #include "connectdlg_g.h"
 #include "dialogs_g.h"
+#include "diplodlg_g.h"
 #include "editgui_g.h"
 #include "graphics_g.h"
 #include "gui_main_g.h"
 #include "mapview_g.h"
+#include "repodlgs_g.h"
 #include "themes_g.h"
 
 #include "gui_interface.h"
@@ -54,9 +56,9 @@ void ui_init(void)
 /**********************************************************************//**
   Call ui_main callback
 **************************************************************************/
-void ui_main(int argc, char *argv[])
+int ui_main(int argc, char *argv[])
 {
-  funcs.ui_main(argc, argv);
+  return funcs.ui_main(argc, argv);
 }
 
 /**********************************************************************//**
@@ -102,22 +104,6 @@ void insert_client_build_info(char *outbuf, size_t outlen)
 }
 
 /**********************************************************************//**
-  Call adjust_default_options callback
-**************************************************************************/
-void adjust_default_options(void)
-{
-  funcs.adjust_default_options();
-}
-
-/**********************************************************************//**
-  Call is_view_supported callback
-**************************************************************************/
-bool is_view_supported(enum ts_type type)
-{
-  return funcs.is_view_supported(type);
-}
-
-/**********************************************************************//**
   Call tileset_type_set callback
 **************************************************************************/
 void tileset_type_set(enum ts_type type)
@@ -126,19 +112,19 @@ void tileset_type_set(enum ts_type type)
 }
 
 /**********************************************************************//**
-  Call free_intro_radar_sprites callback
+  Call load_gfxfile callback
 **************************************************************************/
-void free_intro_radar_sprites(void)
+struct sprite *load_gfxfile(const char *filename, bool svgflag)
 {
-  funcs.free_intro_radar_sprites();
+  return funcs.load_gfxfile(filename, svgflag);
 }
 
 /**********************************************************************//**
-  Call load_gfxfile callback
+  Call load_gfxnumber callback
 **************************************************************************/
-struct sprite *load_gfxfile(const char *filename)
+struct sprite *load_gfxnumber(int num)
 {
-  return funcs.load_gfxfile(filename);
+  return funcs.load_gfxnumber(num);
 }
 
 /**********************************************************************//**
@@ -226,6 +212,14 @@ bool has_zoom_support(void)
 }
 
 /**********************************************************************//**
+  Call canvas_mapview_init callback
+**************************************************************************/
+void canvas_mapview_init(struct canvas *store)
+{
+  funcs.canvas_mapview_init(store);
+}
+
+/**********************************************************************//**
   Call canvas_copy callback
 **************************************************************************/
 void canvas_copy(struct canvas *dest, struct canvas *src,
@@ -255,6 +249,18 @@ void canvas_put_sprite_full(struct canvas *pcanvas,
                             struct sprite *psprite)
 {
   funcs.canvas_put_sprite_full(pcanvas, canvas_x, canvas_y, psprite);
+}
+
+/**********************************************************************//**
+  Call canvas_put_sprite_full_scaled callback
+**************************************************************************/
+void canvas_put_sprite_full_scaled(struct canvas *pcanvas,
+                                   int canvas_x, int canvas_y,
+                                   int canvas_w, int canvas_h,
+                                   struct sprite *psprite)
+{
+  funcs.canvas_put_sprite_full_scaled(pcanvas, canvas_x, canvas_y,
+                                      canvas_w, canvas_h, psprite);
 }
 
 /**********************************************************************//**
@@ -331,6 +337,14 @@ void canvas_put_text(struct canvas *pcanvas, int canvas_x, int canvas_y,
 }
 
 /**********************************************************************//**
+  Call map_canvas_size_refresh callback
+**************************************************************************/
+void map_canvas_size_refresh(void)
+{
+  funcs.map_canvas_size_refresh();
+}
+
+/**********************************************************************//**
   Call set_rulesets callback
 **************************************************************************/
 void set_rulesets(int num_rulesets, char **rulesets)
@@ -373,15 +387,15 @@ void remove_net_input(void)
 /**********************************************************************//**
   Call real_conn_list_dialog_update callback
 **************************************************************************/
-void real_conn_list_dialog_update(void)
+void real_conn_list_dialog_update(void *unused)
 {
-  funcs.real_conn_list_dialog_update();
+  funcs.real_conn_list_dialog_update(NULL);
 }
 
 /**********************************************************************//**
   Call close_connection_dialog callback
 **************************************************************************/
-void close_connection_dialog()
+void close_connection_dialog(void)
 {
   funcs.close_connection_dialog();
 }
@@ -448,16 +462,6 @@ void set_unit_icons_more_arrow(bool onoff)
 void gui_update_font(const char *font_name, const char *font_value)
 {
   funcs.gui_update_font(font_name, font_value);
-}
-
-/**********************************************************************//**
-  Call set_city_names_font_sizes callback
-**************************************************************************/
-void set_city_names_font_sizes(int my_city_names_font_size,
-			       int my_city_productions_font_size)
-{
-  funcs.set_city_names_font_sizes(my_city_names_font_size,
-                                  my_city_productions_font_size);
 }
 
 /**********************************************************************//**
@@ -529,6 +533,14 @@ void update_timeout_label(void)
 }
 
 /**********************************************************************//**
+  Call start_turn callback
+**************************************************************************/
+void start_turn(void)
+{
+  funcs.start_turn();
+}
+
+/**********************************************************************//**
   Call real_city_dialog_popup callback
 **************************************************************************/
 void real_city_dialog_popup(struct city *pcity)
@@ -555,7 +567,7 @@ void popdown_city_dialog(struct city *pcity)
 /**********************************************************************//**
   Call popdown_all_city_dialogs callback
 **************************************************************************/
-void popdown_all_city_dialogs()
+void popdown_all_city_dialogs(void)
 {
   funcs.popdown_all_city_dialogs();
 }
@@ -563,7 +575,7 @@ void popdown_all_city_dialogs()
 /**********************************************************************//**
   Call handmade_scenario_warning callback
 **************************************************************************/
-bool handmade_scenario_warning()
+bool handmade_scenario_warning(void)
 {
   return funcs.handmade_scenario_warning();
 }
@@ -593,6 +605,14 @@ bool request_transport(struct unit *pcargo, struct tile *ptile)
 }
 
 /**********************************************************************//**
+  Call update_infra_dialog callback
+**************************************************************************/
+void update_infra_dialog(void)
+{
+  funcs.update_infra_dialog();
+}
+
+/**********************************************************************//**
   Call gui_load_theme callback
 **************************************************************************/
 void gui_load_theme(const char *directory, const char *theme_name)
@@ -617,9 +637,140 @@ char **get_gui_specific_themes_directories(int *count)
 }
 
 /**********************************************************************//**
-  Call get_useable_themes_in_directory callback
+  Call get_usable_themes_in_directory callback
 **************************************************************************/
-char **get_useable_themes_in_directory(const char *directory, int *count)
+char **get_usable_themes_in_directory(const char *directory, int *count)
 {
-  return funcs.get_useable_themes_in_directory(directory, count);
+  return funcs.get_usable_themes_in_directory(directory, count);
+}
+
+/**********************************************************************//**
+  Call gui_init_meeting callback
+**************************************************************************/
+void gui_init_meeting(struct treaty *ptreaty, struct player *they,
+                      struct player *initiator)
+{
+  funcs.gui_init_meeting(ptreaty, they, initiator);
+}
+
+/**********************************************************************//**
+  Call gui_recv_cancel_meeting callback
+**************************************************************************/
+void gui_recv_cancel_meeting(struct treaty *ptreaty, struct player *they,
+                             struct player *initiator)
+{
+  funcs.gui_recv_cancel_meeting(ptreaty, they, initiator);
+}
+
+/**********************************************************************//**
+  Call gui_prepare_clause_updt callback
+**************************************************************************/
+void gui_prepare_clause_updt(struct treaty *ptreaty, struct player *they)
+{
+  funcs.gui_prepare_clause_updt(ptreaty, they);
+}
+
+/**********************************************************************//**
+  Call gui_recv_create_clause callback
+**************************************************************************/
+void gui_recv_create_clause(struct treaty *ptreaty, struct player *they)
+{
+  funcs.gui_recv_create_clause(ptreaty, they);
+}
+
+/**********************************************************************//**
+  Call gui_recv_remove_clause callback
+**************************************************************************/
+void gui_recv_remove_clause(struct treaty *ptreaty, struct player *they)
+{
+  funcs.gui_recv_remove_clause(ptreaty, they);
+}
+
+/**********************************************************************//**
+  Call gui_recv_accept_treaty callback
+**************************************************************************/
+void gui_recv_accept_treaty(struct treaty *ptreaty, struct player *they)
+{
+  funcs.gui_recv_accept_treaty(ptreaty, they);
+}
+
+/**********************************************************************//**
+  Call request_action_confirmation callback
+**************************************************************************/
+void request_action_confirmation(const char *expl,
+                                 struct act_confirmation_data *data)
+{
+  funcs.request_action_confirmation(expl, data);
+}
+
+/**********************************************************************//**
+  Call real_science_report_dialog_update callback
+**************************************************************************/
+void real_science_report_dialog_update(void *unused)
+{
+  funcs.real_science_report_dialog_update(unused);
+}
+
+/**********************************************************************//**
+  Call science_report_dialog_redraw callback
+**************************************************************************/
+void science_report_dialog_redraw(void)
+{
+  funcs.science_report_dialog_redraw();
+}
+
+/**********************************************************************//**
+  Call science_report_dialog_popup callback
+**************************************************************************/
+void science_report_dialog_popup(bool raise)
+{
+  funcs.science_report_dialog_popup(raise);
+}
+
+/**********************************************************************//**
+  Call real_economy_report_dialog_update callback
+**************************************************************************/
+void real_economy_report_dialog_update(void *unused)
+{
+  funcs.real_economy_report_dialog_update(unused);
+}
+
+/**********************************************************************//**
+  Call real_units_report_dialog_update callback
+**************************************************************************/
+void real_units_report_dialog_update(void *unused)
+{
+  funcs.real_units_report_dialog_update(unused);
+}
+
+/**********************************************************************//**
+  Call endgame_report_dialog_start callback
+**************************************************************************/
+void endgame_report_dialog_start(const struct packet_endgame_report *packet)
+{
+  funcs.endgame_report_dialog_start(packet);
+}
+
+/**********************************************************************//**
+  Call endgame_report_dialog_player callback
+**************************************************************************/
+void endgame_report_dialog_player(const struct packet_endgame_player *packet)
+{
+  funcs.endgame_report_dialog_player(packet);
+}
+
+/**********************************************************************//**
+  Call popup_image callback
+**************************************************************************/
+void popup_image(const char *tag)
+{
+  funcs.popup_image(tag);
+}
+
+/**********************************************************************//**
+  Call setup_gui_properties callback
+**************************************************************************/
+void setup_gui_properties(void)
+{
+  funcs.setup_gui_properties();
 }

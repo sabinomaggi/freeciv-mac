@@ -3,7 +3,6 @@
 ** Authors: Pedro Rabinovitch, Roberto Ierusalimschy, Carlos Cassino
 ** Tomas Guisasola, Eduardo Quintao
 ** See Copyright Notice in license.html
-** $Id: ls_postgres.c,v 1.11 2009/02/07 23:16:23 tomas Exp $
 */
 
 #include <assert.h>
@@ -48,9 +47,6 @@ typedef struct {
 
 
 typedef void (*creator) (lua_State *L, cur_data *cur);
-
-
-LUASQL_API int luaopen_luasql_postgres(lua_State *L);
 
 
 /*
@@ -252,7 +248,7 @@ static void create_coltypes (lua_State *L, cur_data *cur) {
 ** a reference to it on the cursor structure.
 */
 static void _pushtable (lua_State *L, cur_data *cur, size_t off, creator func) {
-	int *ref = (int *)((char *)cur + off);
+	int *ref = (int *)cur + off / sizeof(int);
 	if (*ref != LUA_NOREF)
 		lua_rawgeti (L, LUA_REGISTRYINDEX, *ref);
 	else {

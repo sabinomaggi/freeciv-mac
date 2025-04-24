@@ -157,7 +157,7 @@ static bool usdlg_tab_update(struct unit_select_dialog *pdialog,
                              enum unit_select_location_mode loc);
 static void usdlg_tab_append_utype(GtkTreeStore *store,
                                    enum unit_select_location_mode loc,
-                                   struct unit_type *putype,
+                                   const struct unit_type *putype,
                                    GtkTreeIter *it);
 static void usdlg_tab_append_activity(GtkTreeStore *store,
                                       enum unit_select_location_mode loc,
@@ -177,7 +177,7 @@ static void usdlg_cmd_sentry(GObject *object, gpointer data);
 static void usdlg_cmd_select(GObject *object, gpointer data);
 static void usdlg_cmd_deselect(GObject *object, gpointer data);
 static void usdlg_cmd_exec(GObject *object, gpointer mode_data,
-                           enum usdlg_cmd cmd);
+			   enum usdlg_cmd cmd);
 static void usdlg_cmd_exec_unit(struct unit *punit, enum usdlg_cmd cmd);
 static void usdlg_cmd_center(GObject *object, gpointer data);
 static void usdlg_cmd_focus(GObject *object, gpointer data);
@@ -278,7 +278,7 @@ static struct unit_select_dialog *usdlg_create(void)
 
   /* Buttons. */
   close_cmd = gtk_dialog_add_button(GTK_DIALOG(pdialog->shell),
-                                    _("Close"), GTK_RESPONSE_CLOSE);
+                                    _("_Close"), GTK_RESPONSE_CLOSE);
   gtk_dialog_set_default_response(GTK_DIALOG(pdialog->shell),
                                   GTK_RESPONSE_CLOSE);
   g_signal_connect(close_cmd, "clicked",
@@ -415,9 +415,9 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   g_object_unref(store);
 
   g_signal_connect(view, "row-activated", G_CALLBACK(usdlg_cmd_row_activated),
-                   (gpointer *)loc);
+                   GINT_TO_POINTER(loc));
   g_signal_connect(view, "cursor-changed",
-                   G_CALLBACK(usdlg_cmd_cursor_changed), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_cursor_changed), GINT_TO_POINTER(loc));
 
   /* Translate titles. */
   intl_slist(ARRAY_SIZE(usdlg_col_titles), usdlg_col_titles, &titles_done);
@@ -476,7 +476,7 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   gtk_container_add(GTK_CONTAINER(vbox),
                     pdialog->tabs[loc].cmd[USDLG_CMD_READY]);
   g_signal_connect(pdialog->tabs[loc].cmd[USDLG_CMD_READY], "clicked",
-                   G_CALLBACK(usdlg_cmd_ready), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_ready), GINT_TO_POINTER(loc));
   gtk_widget_set_sensitive(
     GTK_WIDGET(pdialog->tabs[loc].cmd[USDLG_CMD_READY]), FALSE);
 
@@ -487,7 +487,7 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   gtk_container_add(GTK_CONTAINER(vbox),
                     pdialog->tabs[loc].cmd[USDLG_CMD_SENTRY]);
   g_signal_connect(pdialog->tabs[loc].cmd[USDLG_CMD_SENTRY], "clicked",
-                   G_CALLBACK(usdlg_cmd_sentry), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_sentry), GINT_TO_POINTER(loc));
   gtk_widget_set_sensitive(
     GTK_WIDGET(pdialog->tabs[loc].cmd[USDLG_CMD_SENTRY]), FALSE);
 
@@ -498,7 +498,7 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   gtk_container_add(GTK_CONTAINER(vbox),
                     pdialog->tabs[loc].cmd[USDLG_CMD_SELECT]);
   g_signal_connect(pdialog->tabs[loc].cmd[USDLG_CMD_SELECT], "clicked",
-                   G_CALLBACK(usdlg_cmd_select), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_select), GINT_TO_POINTER(loc));
   gtk_widget_set_sensitive(
     GTK_WIDGET(pdialog->tabs[loc].cmd[USDLG_CMD_SELECT]), FALSE);
 
@@ -509,7 +509,7 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   gtk_container_add(GTK_CONTAINER(vbox),
                     pdialog->tabs[loc].cmd[USDLG_CMD_DESELECT]);
   g_signal_connect(pdialog->tabs[loc].cmd[USDLG_CMD_DESELECT], "clicked",
-                   G_CALLBACK(usdlg_cmd_deselect), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_deselect), GINT_TO_POINTER(loc));
   gtk_widget_set_sensitive(
     GTK_WIDGET(pdialog->tabs[loc].cmd[USDLG_CMD_DESELECT]), FALSE);
 
@@ -520,7 +520,7 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   gtk_container_add(GTK_CONTAINER(vbox),
                     pdialog->tabs[loc].cmd[USDLG_CMD_CENTER]);
   g_signal_connect(pdialog->tabs[loc].cmd[USDLG_CMD_CENTER], "clicked",
-                   G_CALLBACK(usdlg_cmd_center), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_center), GINT_TO_POINTER(loc));
   gtk_widget_set_sensitive(
     GTK_WIDGET(pdialog->tabs[loc].cmd[USDLG_CMD_CENTER]), FALSE);
 
@@ -529,7 +529,7 @@ static void usdlg_tab_select(struct unit_select_dialog *pdialog,
   gtk_container_add(GTK_CONTAINER(vbox),
                     pdialog->tabs[loc].cmd[USDLG_CMD_FOCUS]);
   g_signal_connect(pdialog->tabs[loc].cmd[USDLG_CMD_FOCUS], "clicked",
-                   G_CALLBACK(usdlg_cmd_focus), (gpointer *)loc);
+                   G_CALLBACK(usdlg_cmd_focus), GINT_TO_POINTER(loc));
   gtk_widget_set_sensitive(
     GTK_WIDGET(pdialog->tabs[loc].cmd[USDLG_CMD_FOCUS]), FALSE);
 }
@@ -677,7 +677,7 @@ static bool usdlg_tab_update(struct unit_select_dialog *pdialog,
 *****************************************************************************/
 static void usdlg_tab_append_utype(GtkTreeStore *store,
                                    enum unit_select_location_mode loc,
-                                   struct unit_type *putype,
+                                   const struct unit_type *putype,
                                    GtkTreeIter *it)
 {
   GdkPixbuf *pix;
@@ -933,7 +933,8 @@ static void usdlg_cmd_deselect(GObject *object, gpointer data)
 static void usdlg_cmd_exec(GObject *object, gpointer mode_data,
                            enum usdlg_cmd cmd)
 {
-  enum unit_select_location_mode loc_mode = (enum unit_select_location_mode) mode_data;
+  enum unit_select_location_mode loc_mode
+    = (enum unit_select_location_mode) GPOINTER_TO_INT(mode_data);
   GtkTreeView *view;
   GtkTreeSelection *selection;
   GtkTreeModel *model;
@@ -1081,7 +1082,8 @@ static void usdlg_cmd_exec_unit(struct unit *punit, enum usdlg_cmd cmd)
 *****************************************************************************/
 static void usdlg_cmd_center(GObject *object, gpointer data)
 {
-  enum unit_select_location_mode loc = (enum unit_select_location_mode) data;
+  enum unit_select_location_mode loc
+    = (enum unit_select_location_mode) GPOINTER_TO_INT(data);
   GtkTreeView *view;
   GtkTreeSelection *selection;
   GtkTreeModel *model;
@@ -1119,7 +1121,8 @@ static void usdlg_cmd_center(GObject *object, gpointer data)
 *****************************************************************************/
 static void usdlg_cmd_focus(GObject *object, gpointer data)
 {
-  enum unit_select_location_mode loc = (enum unit_select_location_mode) data;
+  enum unit_select_location_mode loc
+    = (enum unit_select_location_mode) GPOINTER_TO_INT(data);
   struct unit_select_dialog *pdialog = usdlg_get(FALSE);
 
   fc_assert_ret(pdialog != NULL);
@@ -1176,7 +1179,8 @@ static void usdlg_cmd_focus_real(GtkTreeView *view)
 *****************************************************************************/
 static void usdlg_cmd_cursor_changed(GtkTreeView *view, gpointer data)
 {
-  enum unit_select_location_mode loc = (enum unit_select_location_mode) data;
+  enum unit_select_location_mode loc
+    = (enum unit_select_location_mode) GPOINTER_TO_INT(data);
   GtkTreeSelection *selection;
   GtkTreeModel *model;
   GtkTreeIter it;
@@ -1272,6 +1276,13 @@ static void usdlg_cmd_cursor_changed(GtkTreeView *view, gpointer data)
     }
 
     cmd_status[USDLG_CMD_CENTER] = TRUE;
+    break;
+
+  default:
+    fc_assert(FALSE);
+    for (cmd_id = 0; cmd_id < USDLG_CMD_LAST; cmd_id++) {
+      cmd_status[cmd_id] = FALSE;
+    }
     break;
   }
 

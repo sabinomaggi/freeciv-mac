@@ -25,10 +25,10 @@ extern "C" {
 #include "log.h"
 #include "support.h"            /* fc__warn_unused_result */
 
-/* fc_malloc, fc_realloc, fc_calloc:
+/* fc_malloc(), fc_realloc(), fc_calloc():
  * fc_ stands for freeciv; the return value is checked,
- * and freeciv-specific processing occurs if it is NULL:
- * a log message, possibly cleanup, and ending with exit(1)
+ * and freeciv-specific processing occurs if it is nullptr:
+ * a log message, possibly cleanup, and ending with exit(EXIT_FAILURE)
  */
 
 #define fc_malloc(sz)      fc_real_malloc((sz), "malloc", \
@@ -38,7 +38,7 @@ extern "C" {
 #define fc_calloc(n,esz)   fc_real_calloc((n), (esz), "calloc", \
                                           __FC_LINE__, __FILE__)
 
-#define FC_FREE(ptr)       do { free(ptr); (ptr) = NULL; } while (FALSE)
+#define FC_FREE(ptr)       do { free(ptr); (ptr) = nullptr; } while (FALSE)
 
 #define fc_strdup(str) real_fc_strdup((str), "strdup", __FC_LINE__, __FILE__)
 

@@ -38,61 +38,67 @@
 /* client/gui-sdl2 */
 #include "colors.h"
 #include "graphics.h"
-#include "gui_iconv.h"
 #include "gui_main.h"
 #include "themespec.h"
-#include "unistring.h"
 #include "utf8string.h"
 
 #include "gui_string.h"
 
 /* =================================================== */
 
-static struct TTF_Font_Chain {
-  struct TTF_Font_Chain *next;
+static struct ttf_font_chain {
+  struct ttf_font_chain *next;
   TTF_Font *font;
-  Uint16 ptsize;		/* size of font */
-  Uint16 count;			/* number of strings alliased with this font */
-} *Font_TAB = NULL;
+  Uint16 ptsize;                /* size of font */
+  Uint16 count;                 /* number of strings alliased with this font */
+} *font_tab = NULL;
 
-static unsigned int Sizeof_Font_TAB;
-static char *pFont_with_FullPath = NULL;
+static char *font_with_full_path = NULL;
 
 static TTF_Font *load_font(Uint16 ptsize);
 
 static SDL_Surface *create_utf8_surf(utf8_str *pstr);
 static SDL_Surface *create_utf8_multi_surf(utf8_str *pstr);
 
+/* Adjust font sizes on 320x240 screen */
+#ifdef GUI_SDL2_SMALL_SCREEN
+  static int adj_font(int size);
+#else  /* GUI_SDL2_SMALL_SCREEN */
+  #define adj_font(size) size
+#endif /* GUI_SDL2_SMALL_SCREEN */
+
+#define ptsize_default() adj_font(default_font_size(active_theme))
+
 /**********************************************************************//**
   Adjust font sizes for small screen.
 **************************************************************************/
-#ifdef SMALL_SCREEN
-int adj_font(int size)
+#ifdef GUI_SDL2_SMALL_SCREEN
+static int adj_font(int size)
 {
-  switch(size) {
-    case 24:
-      return 12;
-    case 20:
-      return 12;
-    case 16:
-      return 10;
-    case 14:
-      return 8;
-    case 13:
-      return 8;
-    case 12:
-      return 8;
-    case 11:
-      return 7;
-    case 10:
-      return 7;
-    case 8:
-      return 6;
-    default:
-      return size;
+  switch (size) {
+  case 24:
+    return 12;
+  case 20:
+    return 12;
+  case 16:
+    return 10;
+  case 14:
+    return 8;
+  case 13:
+    return 8;
+  case 12:
+    return 8;
+  case 11:
+    return 7;
+  case 10:
+    return 7;
+  case 8:
+    return 6;
+  default:
+    return size;
   }
 }
-#endif /* SMALL_SCREEN */
+#endif /* GUI_SDL2_SMALL_SCREEN */
 
 /**********************************************************************//**
   Calculate display size of string.
@@ -108,8 +114,8 @@ void utf8_str_size(utf8_str *pstr, SDL_Rect *fill)
     /* find '\n' */
     while (c != '\0') {
       if (c == '\n') {
-	new_line = TRUE;
-	break;
+        new_line = TRUE;
+        break;
       }
       current++;
       c = *current;
@@ -131,7 +137,7 @@ void utf8_str_size(utf8_str *pstr, SDL_Rect *fill)
             FC_FREE(utf8_texts[count]);
             count++;
           } while (utf8_texts[count]);
-          log_error("TTF_SizeUTF8() return ERROR !");
+          log_error("TTF_SizeUTF8() return ERROR!");
         }
         w = MAX(w, ww);
         h += hh;
@@ -140,7 +146,7 @@ void utf8_str_size(utf8_str *pstr, SDL_Rect *fill)
       }
     } else {
       if (TTF_SizeUTF8(pstr->font, pstr->text, &w, &h) < 0) {
-        log_error("TTF_SizeUTF8() return ERROR !");
+        log_error("TTF_SizeUTF8() return ERROR!");
       }
     }
 
@@ -157,22 +163,58 @@ void utf8_str_size(utf8_str *pstr, SDL_Rect *fill)
 }
 
 /**********************************************************************//**
-  Create utf8_str struct with ptsize font.
+  Convert font_origin to ptsize value
+**************************************************************************/
+static Uint16 fonto_ptsize(enum font_origin origin)
+{
+  int def;
+
+  switch (origin) {
+  case FONTO_DEFAULT:
+    /* Rely on create_utf8_str() default */
+    return 0;
+  case FONTO_DEFAULT_PLUS:
+    def = ptsize_default();
+    return adj_font(MAX(def + 0, def * 1.1)); /* Same as def, when def < 10 */
+  case FONTO_ATTENTION:
+    def = ptsize_default();
+    return adj_font(MAX(def + 1, def * 1.2));
+  case FONTO_ATTENTION_PLUS:
+    def = ptsize_default();
+    return adj_font(MAX(def + 1, def * 1.2)); /* Same as FONTO_ATTENTION, when def < 10 */
+  case FONTO_HEADING:
+    def = ptsize_default();
+    return adj_font(MAX(def + 2, def * 1.4));
+  case FONTO_BIG:
+    def = ptsize_default();
+    return adj_font(MAX(def + 3, def * 1.6));
+  case FONTO_MAX:
+    def = ptsize_default();
+    return adj_font(MAX(def + 7, def * 2.4));
+  }
+
+  return 0;
+}
+
+/**********************************************************************//**
+  Create utf8_str struct with ptsize font. If ptsize is zero,
+  use theme's default font size.
+
   Font will be loaded or aliased with existing font of that size.
-  pInTextString must be allocated in memory (MALLOC/fc_calloc)
+  in_text must be allocated in memory (fc_malloc() / fc_calloc())
 **************************************************************************/
 utf8_str *create_utf8_str(char *in_text, size_t n_alloc, Uint16 ptsize)
 {
   utf8_str *str = fc_calloc(1, sizeof(utf8_str));
 
-  if (!ptsize) {
-    str->ptsize = theme_default_font_size(theme);
+  if (ptsize == 0) {
+    str->ptsize = ptsize_default();
   } else {
     str->ptsize = ptsize;
   }
 
   if ((str->font = load_font(str->ptsize)) == NULL) {
-    log_error("create_utf8_str(): load_font failed");
+    log_error("create_utf8_str(): load_font() failed");
     FC_FREE(str);
 
     return NULL;
@@ -183,11 +225,23 @@ utf8_str *create_utf8_str(char *in_text, size_t n_alloc, Uint16 ptsize)
   str->fgcol = *get_theme_color(COLOR_THEME_TEXT);
   str->render = 2;
 
-  /* pInTextString must be allocated in memory (MALLOC/fc_calloc) */
+  /* in_text must be allocated in memory (fc_malloc() / fc_calloc() ) */
   str->text = in_text;
   str->n_alloc = n_alloc;
 
   return str;
+}
+
+/**********************************************************************//**
+  Create utf8_str struct with font size from given origin.
+
+  Font will be loaded or aliased with existing font of that size.
+  in_text must be allocated in memory (fc_malloc() / fc_calloc())
+**************************************************************************/
+utf8_str *create_utf8_str_fonto(char *in_text, size_t n_alloc,
+                                enum font_origin origin)
+{
+  return create_utf8_str(in_text, n_alloc, fonto_ptsize(origin));
 }
 
 /**********************************************************************//**
@@ -229,6 +283,7 @@ int write_utf8(SDL_Surface *dest, Sint16 x, Sint16 y,
     log_error("write_utf8(): couldn't blit text to display: %s",
               SDL_GetError());
     FREESURFACE(text);
+
     return -1;
   }
 
@@ -304,7 +359,7 @@ static SDL_Surface *create_utf8_multi_surf(utf8_str *pstr)
     pstr->text = utf8_texts[i];
     tmp[i] = create_utf8_surf(pstr);
 
-    /* find max len */
+    /* Find max len */
     if (tmp[i]->w > w) {
       w = tmp[i]->w;
     }
@@ -312,9 +367,11 @@ static SDL_Surface *create_utf8_multi_surf(utf8_str *pstr)
 
   pstr->text = buf;
 
-  /* create and fill surface */
+  /* Create and fill surface */
 
-  SDL_GetColorKey(tmp[0], &color);
+  if (SDL_GetColorKey(tmp[0], &color) < 0) {
+    color = SDL_MapRGBA(tmp[0]->format, 0, 0, 0, 0);
+  }
 
   switch (pstr->render) {
   case 1:
@@ -333,15 +390,15 @@ static SDL_Surface *create_utf8_multi_surf(utf8_str *pstr)
     break;
   }
 
-  /* blit (default: center left) */
+  /* Blit (default: center left) */
   for (i = 0; i < count; i++) {
     if (pstr->style & SF_CENTER) {
       des.x = (w - tmp[i]->w) / 2;
     } else {
       if (pstr->style & SF_CENTER_RIGHT) {
-	des.x = w - tmp[i]->w;
+        des.x = w - tmp[i]->w;
       } else {
-	des.x = 0;
+        des.x = 0;
       }
     }
 
@@ -350,7 +407,7 @@ static SDL_Surface *create_utf8_multi_surf(utf8_str *pstr)
   }
 
 
-  /* Free Memmory */
+  /* Free Memory */
   for (i = 0; i < count; i++) {
     FC_FREE(utf8_texts[i]);
     FREESURFACE(tmp[i]);
@@ -503,6 +560,10 @@ void change_ptsize_utf8(utf8_str *pstr, Uint16 new_ptsize)
 {
   TTF_Font *buf;
 
+  if (new_ptsize == 0) {
+    new_ptsize = ptsize_default();
+  }
+
   if (pstr->ptsize == new_ptsize) {
     return;
   }
@@ -517,6 +578,14 @@ void change_ptsize_utf8(utf8_str *pstr, Uint16 new_ptsize)
   pstr->font = buf;
 }
 
+/**********************************************************************//**
+  Change font size of text to that from given origin.
+**************************************************************************/
+void change_fonto_utf8(utf8_str *pstr, enum font_origin origin)
+{
+  change_ptsize_utf8(pstr, fonto_ptsize(origin));
+}
+
 /* =================================================== */
 
 /**********************************************************************//**
@@ -524,55 +593,56 @@ void change_ptsize_utf8(utf8_str *pstr, Uint16 new_ptsize)
 **************************************************************************/
 static TTF_Font *load_font(Uint16 ptsize)
 {
-  struct TTF_Font_Chain *Font_TAB_TMP = Font_TAB;
+  struct ttf_font_chain *font_tab_tmp = font_tab;
   TTF_Font *font_tmp = NULL;
 
-  /* find existing font and return pointer to it */
-  if (Sizeof_Font_TAB) {
-    while (Font_TAB_TMP) {
-      if (Font_TAB_TMP->ptsize == ptsize) {
-        Font_TAB_TMP->count++;
-        return Font_TAB_TMP->font;
+  /* Find existing font and return pointer to it */
+  if (font_tab != NULL) {
+
+    while (font_tab_tmp != NULL) {
+      if (font_tab_tmp->ptsize == ptsize) {
+        font_tab_tmp->count++;
+
+        return font_tab_tmp->font;
       }
-      Font_TAB_TMP = Font_TAB_TMP->next;
+
+      font_tab_tmp = font_tab_tmp->next;
     }
   }
 
-  if (!pFont_with_FullPath) {
-    const char *path = theme_font_filename(theme);
+  if (!font_with_full_path) {
+    const char *path = theme_font_filename(active_theme);
 
-    pFont_with_FullPath = fc_strdup(path);
-    fc_assert_ret_val(pFont_with_FullPath != NULL, NULL);
+    font_with_full_path = fc_strdup(path);
+    fc_assert_ret_val(font_with_full_path != NULL, NULL);
   }
 
   /* Load Font */
-  if ((font_tmp = TTF_OpenFont(pFont_with_FullPath, ptsize)) == NULL) {
+  if ((font_tmp = TTF_OpenFont(font_with_full_path, ptsize)) == NULL) {
     log_error("load_font: Couldn't load %d pt font from %s: %s",
-              ptsize, pFont_with_FullPath, SDL_GetError());
-    return font_tmp;
+              ptsize, font_with_full_path, SDL_GetError());
+    return NULL;
   }
 
-  /* add new font to list */
-  if (Sizeof_Font_TAB == 0) {
-    Sizeof_Font_TAB++;
-    Font_TAB_TMP = fc_calloc(1, sizeof(struct TTF_Font_Chain));
-    Font_TAB = Font_TAB_TMP;
+  /* Add new font to list */
+  if (font_tab == NULL) {
+    font_tab_tmp = fc_calloc(1, sizeof(struct ttf_font_chain));
+    font_tab = font_tab_tmp;
   } else {
     /* Go to end of chain */
-    Font_TAB_TMP = Font_TAB;
-    while (Font_TAB_TMP->next) {
-      Font_TAB_TMP = Font_TAB_TMP->next;
+    font_tab_tmp = font_tab;
+    while (font_tab_tmp->next) {
+      font_tab_tmp = font_tab_tmp->next;
     }
 
-    Sizeof_Font_TAB++;
-    Font_TAB_TMP->next = fc_calloc(1, sizeof(struct TTF_Font_Chain));
-    Font_TAB_TMP = Font_TAB_TMP->next;
+    font_tab_tmp->next = fc_calloc(1, sizeof(struct ttf_font_chain));
+    font_tab_tmp = font_tab_tmp->next;
   }
 
-  Font_TAB_TMP->ptsize = ptsize;
-  Font_TAB_TMP->count = 1;
-  Font_TAB_TMP->font = font_tmp;
-  Font_TAB_TMP->next = NULL;
+  font_tab_tmp->ptsize = ptsize;
+  font_tab_tmp->count = 1;
+  font_tab_tmp->font = font_tmp;
+  font_tab_tmp->next = NULL;
 
   return font_tmp;
 }
@@ -582,45 +652,44 @@ static TTF_Font *load_font(Uint16 ptsize)
 **************************************************************************/
 void unload_font(Uint16 ptsize)
 {
-  int index;
-  struct TTF_Font_Chain *Font_TAB_PREV = NULL;
-  struct TTF_Font_Chain *Font_TAB_TMP = Font_TAB;
+  struct ttf_font_chain *font_tab_prev = NULL;
+  struct ttf_font_chain *font_tab_tmp = font_tab;
 
-  if (Sizeof_Font_TAB == 0) {
+  if (font_tab == NULL) {
     log_error("unload_font: Trying unload from empty Font ARRAY");
     return;
   }
 
-  for (index = 0; index < Sizeof_Font_TAB; index++) {
-    if (Font_TAB_TMP->ptsize == ptsize) {
+  while (font_tab_tmp != NULL) {
+    if (font_tab_tmp->ptsize == ptsize) {
       break;
     }
-    Font_TAB_PREV = Font_TAB_TMP;
-    Font_TAB_TMP = Font_TAB_TMP->next;
+    font_tab_prev = font_tab_tmp;
+    font_tab_tmp = font_tab_tmp->next;
   }
 
-  if (index == Sizeof_Font_TAB) {
+  if (font_tab_tmp == NULL) {
     log_error("unload_font: Trying unload Font which is "
               "not included in Font ARRAY");
     return;
   }
 
-  Font_TAB_TMP->count--;
-
-  if (Font_TAB_TMP->count) {
+  if (--font_tab_tmp->count > 0) {
     return;
   }
 
-  TTF_CloseFont(Font_TAB_TMP->font);
-  Font_TAB_TMP->font = NULL;
-  if (Font_TAB_TMP == Font_TAB) {
-    Font_TAB = Font_TAB_TMP->next;
+  TTF_CloseFont(font_tab_tmp->font);
+  font_tab_tmp->font = NULL;
+
+  if (font_tab_prev == NULL) {
+    font_tab = font_tab_tmp->next;
   } else {
-    Font_TAB_PREV->next = Font_TAB_TMP->next;
+    font_tab_prev->next = font_tab_tmp->next;
   }
-  Font_TAB_TMP->next = NULL;
-  Sizeof_Font_TAB--;
-  FC_FREE(Font_TAB_TMP);
+
+  font_tab_tmp->next = NULL;
+
+  FC_FREE(font_tab_tmp);
 }
 
 /**********************************************************************//**
@@ -628,22 +697,22 @@ void unload_font(Uint16 ptsize)
 **************************************************************************/
 void free_font_system(void)
 {
-  struct TTF_Font_Chain *Font_TAB_TMP;
+  struct ttf_font_chain *font_tab_tmp;
 
-  FC_FREE(pFont_with_FullPath);
-  while (Font_TAB) {
-    if (Font_TAB->next) {
-      Font_TAB_TMP = Font_TAB;
-      Font_TAB = Font_TAB->next;
-      if (Font_TAB_TMP->font) {
-        TTF_CloseFont(Font_TAB_TMP->font);
+  FC_FREE(font_with_full_path);
+  while (font_tab) {
+    if (font_tab->next) {
+      font_tab_tmp = font_tab;
+      font_tab = font_tab->next;
+      if (font_tab_tmp->font) {
+        TTF_CloseFont(font_tab_tmp->font);
       }
-      FC_FREE(Font_TAB_TMP);
+      FC_FREE(font_tab_tmp);
     } else {
-      if (Font_TAB->font) {
-        TTF_CloseFont(Font_TAB->font);
+      if (font_tab->font) {
+        TTF_CloseFont(font_tab->font);
       }
-      FC_FREE(Font_TAB);
+      FC_FREE(font_tab);
     }
   }
 }

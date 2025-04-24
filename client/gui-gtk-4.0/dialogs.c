@@ -38,6 +38,7 @@
 #include "map.h"
 #include "packets.h"
 #include "player.h"
+#include "sex.h"
 
 /* client */
 #include "client_main.h"
@@ -63,6 +64,7 @@
 #include "plrdlg.h"
 #include "wldlg.h"
 #include "unitselect.h"
+#include "unitselextradlg.h"
 
 #include "dialogs.h"
 
@@ -86,15 +88,14 @@ static void races_leader_callback(void);
 static void races_sex_callback(GtkWidget *w, gpointer data);
 static void races_style_callback(GtkTreeSelection *select, gpointer data);
 static gboolean races_selection_func(GtkTreeSelection *select,
-				     GtkTreeModel *model, GtkTreePath *path,
-				     gboolean selected, gpointer data);
+                                     GtkTreeModel *model, GtkTreePath *path,
+                                     gboolean selected, gpointer data);
 
 static int selected_nation;
 static int selected_sex;
 static int selected_style;
 
 static int is_showing_pillage_dialog = FALSE;
-static int unit_to_use_to_pillage;
 
 /**********************************************************************//**
   Popup a generic dialog to display some generic information.
@@ -103,45 +104,44 @@ void popup_notify_dialog(const char *caption, const char *headline,
                          const char *lines)
 {
   static struct gui_dialog *shell;
-  GtkWidget *vbox, *label, *headline_label, *sw;
+  GtkWidget *vgrid, *label, *headline_label, *sw;
+  int grid_row = 0;
 
   gui_dialog_new(&shell, GTK_NOTEBOOK(bottom_notebook), NULL, TRUE);
   gui_dialog_set_title(shell, caption);
 
-  gui_dialog_add_button(shell, "window-close", _("Close"),
+  gui_dialog_add_button(shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
-  gui_dialog_set_default_response(shell, GTK_RESPONSE_CLOSE);
 
-  vbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+  vgrid = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(vbox), 2);
-  gtk_container_add(GTK_CONTAINER(shell->vbox), vbox);
+  gtk_grid_set_row_spacing(GTK_GRID(vgrid), 2);
+  gui_dialog_add_content_widget(shell, vgrid);
 
-  headline_label = gtk_label_new(headline);   
-  gtk_container_add(GTK_CONTAINER(vbox), headline_label);
+  headline_label = gtk_label_new(headline);
+  gtk_grid_attach(GTK_GRID(vgrid), headline_label, 0, grid_row++, 1, 1);
   gtk_widget_set_name(headline_label, "notify_label");
 
   gtk_label_set_justify(GTK_LABEL(headline_label), GTK_JUSTIFY_LEFT);
   gtk_widget_set_halign(headline_label, GTK_ALIGN_START);
   gtk_widget_set_valign(headline_label, GTK_ALIGN_START);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
-				 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
   label = gtk_label_new(lines);
   gtk_widget_set_hexpand(label, TRUE);
   gtk_widget_set_vexpand(label, TRUE);
-  gtk_container_add(GTK_CONTAINER(sw), label);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), label);
 
   gtk_widget_set_name(label, "notify_label");
   gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_LEFT);
   gtk_widget_set_halign(label, GTK_ALIGN_START);
   gtk_widget_set_valign(label, GTK_ALIGN_START);
 
-  gtk_container_add(GTK_CONTAINER(vbox), sw);
+  gtk_grid_attach(GTK_GRID(vgrid), sw, 0, grid_row++, 1, 1);
 
   gui_dialog_show_all(shell);
 
@@ -176,7 +176,8 @@ static void notify_goto_response(GtkWidget *w, gint response)
     }
     break;
   }
-  gtk_widget_destroy(w);
+
+  gtk_window_destroy(GTK_WINDOW(w));
 }
 
 /**********************************************************************//**
@@ -184,12 +185,12 @@ static void notify_goto_response(GtkWidget *w, gint response)
 **************************************************************************/
 static void notify_connect_msg_response(GtkWidget *w, gint response)
 {
-  gtk_widget_destroy(w);
+  gtk_window_destroy(GTK_WINDOW(w));
 }
 
 /**********************************************************************//**
   Popup a dialog to display information about an event that has a
-  specific location.  The user should be given the option to goto that
+  specific location. The user should be given the option to goto that
   location.
 **************************************************************************/
 void popup_notify_goto_dialog(const char *headline, const char *lines,
@@ -200,7 +201,7 @@ void popup_notify_goto_dialog(const char *headline, const char *lines,
 
   if (ptile == NULL) {
     shell = gtk_dialog_new_with_buttons(headline, NULL, 0,
-                                        _("Close"), GTK_RESPONSE_CLOSE,
+                                        _("_Close"), GTK_RESPONSE_CLOSE,
                                         NULL);
   } else {
     struct city *pcity = tile_city(ptile);
@@ -209,27 +210,27 @@ void popup_notify_goto_dialog(const char *headline, const char *lines,
       shell = gtk_dialog_new_with_buttons(headline, NULL, 0,
                                           _("Goto _Location"), 1,
                                           _("I_nspect City"), 2,
-                                          _("Close"), GTK_RESPONSE_CLOSE,
+                                          _("_Close"), GTK_RESPONSE_CLOSE,
                                           NULL);
     } else {
       shell = gtk_dialog_new_with_buttons(headline, NULL, 0,
                                           _("Goto _Location"), 1,
-                                          _("Close"), GTK_RESPONSE_CLOSE,
+                                          _("_Close"), GTK_RESPONSE_CLOSE,
                                           NULL);
     }
   }
   setup_dialog(shell, toplevel);
   gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_CLOSE);
-  gtk_window_set_position(GTK_WINDOW(shell), GTK_WIN_POS_CENTER_ON_PARENT);
 
   label = gtk_label_new(lines);
-  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell))), label);
-  gtk_widget_show(label);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(shell))),
+                 label);
+  gtk_widget_set_visible(label, TRUE);
 
   g_object_set_data(G_OBJECT(shell), "tile", ptile);
 
   g_signal_connect(shell, "response", G_CALLBACK(notify_goto_response), NULL);
-  gtk_widget_show(shell);
+  gtk_widget_set_visible(shell, TRUE);
 }
 
 /**********************************************************************//**
@@ -243,19 +244,19 @@ void popup_connect_msg(const char *headline, const char *message)
   gtk_window_set_title(GTK_WINDOW(shell), headline);
   setup_dialog(shell, toplevel);
   gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_CLOSE);
-  gtk_window_set_position(GTK_WINDOW(shell), GTK_WIN_POS_CENTER_ON_PARENT);
 
   label = gtk_label_new(message);
   gtk_label_set_selectable(GTK_LABEL(label), 1);
 
-  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell))), label);
-  gtk_widget_show(label);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(shell))),
+                 label);
+  gtk_widget_set_visible(label, TRUE);
 
-  gtk_dialog_add_button(GTK_DIALOG(shell), _("Close"),GTK_RESPONSE_CLOSE);
+  gtk_dialog_add_button(GTK_DIALOG(shell), _("_Close"),GTK_RESPONSE_CLOSE);
 
   g_signal_connect(shell, "response", G_CALLBACK(notify_connect_msg_response),
-                   NULL);
-  gtk_widget_show(shell);
+                   nullptr);
+  gtk_widget_set_visible(shell, TRUE);
 }
 
 /**********************************************************************//**
@@ -273,7 +274,7 @@ static void revolution_response(GtkWidget *w, gint response, gpointer data)
     }
   }
   if (w) {
-    gtk_widget_destroy(w);
+    gtk_window_destroy(GTK_WINDOW(w));
   }
 }
 
@@ -287,18 +288,18 @@ void popup_revolution_dialog(struct government *government)
   if (0 > client.conn.playing->revolution_finishes) {
     if (!shell) {
       shell = gtk_message_dialog_new(NULL,
-	  0,
-	  GTK_MESSAGE_WARNING,
-	  GTK_BUTTONS_YES_NO,
-	  _("You say you wanna revolution?"));
+                                     0,
+                                     GTK_MESSAGE_WARNING,
+                                     GTK_BUTTONS_YES_NO,
+                                     _("You say you wanna revolution?"));
       gtk_window_set_title(GTK_WINDOW(shell), _("Revolution!"));
       setup_dialog(shell, toplevel);
 
       g_signal_connect(shell, "destroy",
-	  G_CALLBACK(gtk_widget_destroyed), &shell);
+                       G_CALLBACK(widget_destroyed), &shell);
     }
     g_signal_connect(shell, "response",
-	G_CALLBACK(revolution_response), government);
+                     G_CALLBACK(revolution_response), government);
 
     gtk_window_present(GTK_WINDOW(shell));
   } else {
@@ -307,28 +308,28 @@ void popup_revolution_dialog(struct government *government)
 }
 
 /**********************************************************************//**
-  NB: 'data' is a value of enum tile_special_type casted to a pointer.
+  Callback for pillage dialog.
 **************************************************************************/
-static void pillage_callback(GtkWidget *w, gpointer data)
-{
-  struct unit *punit;
-  int what = GPOINTER_TO_INT(data);
-
-  punit = game_unit_by_number(unit_to_use_to_pillage);
-  if (punit) {
-    struct extra_type *target = extra_by_number(what);
-
-    request_new_unit_activity_targeted(punit, ACTIVITY_PILLAGE,
-                                       target);
-  }
-}
-
-/**********************************************************************//**
-  Pillage dialog destroyed
-**************************************************************************/
-static void pillage_destroy_callback(GtkWidget *w, gpointer data)
+static void pillage_callback(GtkWidget *dlg, gint arg)
 {
   is_showing_pillage_dialog = FALSE;
+
+  if (arg == GTK_RESPONSE_YES) {
+    int au_id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(dlg),
+                                                  "actor"));
+    struct unit *actor = game_unit_by_number(au_id);
+
+    int tgt_id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(dlg),
+                                                   "target"));
+    struct extra_type *tgt_extra = extra_by_number(tgt_id);
+
+    if (actor && tgt_extra) {
+      request_new_unit_activity_targeted(actor, ACTIVITY_PILLAGE,
+                                         tgt_extra);
+    }
+  }
+
+  gtk_window_destroy(GTK_WINDOW(dlg));
 }
 
 /**********************************************************************//**
@@ -336,36 +337,36 @@ static void pillage_destroy_callback(GtkWidget *w, gpointer data)
 **************************************************************************/
 void popup_pillage_dialog(struct unit *punit, bv_extras extras)
 {
-  GtkWidget *shl;
-
   if (!is_showing_pillage_dialog) {
+    /* Possibly legal target extras. */
+    bv_extras alternative;
+    /* Selected by default. */
+    struct extra_type *preferred_tgt;
+    /* Current target to check. */
     struct extra_type *tgt;
 
     is_showing_pillage_dialog = TRUE;
-    unit_to_use_to_pillage = punit->id;
 
-    shl = choice_dialog_start(GTK_WINDOW(toplevel),
-			       _("What To Pillage"),
-			       _("Select what to pillage:"));
+    BV_CLR_ALL(alternative);
+    preferred_tgt = get_preferred_pillage(extras);
 
     while ((tgt = get_preferred_pillage(extras))) {
       int what;
 
       what = extra_index(tgt);
       BV_CLR(extras, what);
-
-      choice_dialog_add(shl, extra_name_translation(tgt),
-                        G_CALLBACK(pillage_callback),
-                        GINT_TO_POINTER(what),
-                        FALSE, NULL);
+      BV_SET(alternative, what);
     }
 
-    choice_dialog_add(shl, _("Cancel"), 0, 0, FALSE, NULL);
-
-    choice_dialog_end(shl);
-
-    g_signal_connect(shl, "destroy", G_CALLBACK(pillage_destroy_callback),
-		     NULL);   
+    select_tgt_extra(punit, unit_tile(punit), alternative, preferred_tgt,
+                     /* TRANS: Pillage dialog title. */
+                     _("What To Pillage"),
+                     /* TRANS: Pillage dialog actor text. */
+                     _("Looking for target extra:"),
+                     /* TRANS: Pillage dialog target text. */
+                     _("Select what to pillage:"),
+                     /* TRANS: Pillage dialog do button text. */
+                     _("Pillage"), G_CALLBACK(pillage_callback));
   }
 }
 
@@ -382,7 +383,7 @@ void unit_select_dialog_popup(struct tile *ptile)
   Update unit selection dialog. It is a wrapper for the main function; see
   unitselect.c:unit_select_dialog_popup_main().
 **************************************************************************/
-void unit_select_dialog_update_real(void)
+void unit_select_dialog_update_real(void *unused)
 {
   unit_select_dialog_popup_main(NULL, FALSE);
 }
@@ -415,6 +416,7 @@ static GtkTreePath *path_to_nation_on_list(Nation_type_id nation,
         break;
       }
     } while (gtk_tree_model_iter_next(model, &iter));
+
     return path;
   }
 }
@@ -516,6 +518,8 @@ static void select_nation(int nation,
                           const char *leadername, bool is_male,
                           int style_id)
 {
+  GtkEntryBuffer *buffer = gtk_entry_get_buffer(GTK_ENTRY(gtk_combo_box_get_child(GTK_COMBO_BOX(races_leader))));
+
   selected_nation = nation;
 
   /* Refresh the available leaders. */
@@ -525,11 +529,10 @@ static void select_nation(int nation,
 
     /* Select leader name and sex. */
     if (leadername) {
-      gtk_entry_set_text(GTK_ENTRY(gtk_bin_get_child(GTK_BIN(races_leader))),
-                         leadername);
+      gtk_entry_buffer_set_text(buffer, leadername, -1);
       /* Assume is_male is valid too. */
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(races_sex[is_male]),
-                                   TRUE);
+      gtk_check_button_set_active(GTK_CHECK_BUTTON(races_sex[is_male]),
+                                  TRUE);
     } else {
       int idx = fc_rand(nation_leader_list_size(
                         nation_leaders(nation_by_number(selected_nation))));
@@ -577,13 +580,12 @@ static void select_nation(int nation,
   } else {
     /* No nation selected. Blank properties and make controls insensitive. */
     /* Leader name */
-    gtk_entry_set_text(GTK_ENTRY(gtk_bin_get_child(GTK_BIN(races_leader))),
-                       "");
+    gtk_entry_buffer_set_text(buffer, "", -1);
     /* Leader sex (*shrug*) */
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(races_sex[0]), TRUE);
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(races_sex[0]), TRUE);
     /* City style */
     {
-      GtkTreeSelection* select
+      GtkTreeSelection *select
         = gtk_tree_view_get_selection(GTK_TREE_VIEW(races_style_list));
 
       gtk_tree_selection_unselect_all(select);
@@ -608,7 +610,7 @@ static void select_nation(int nation,
   the group has no nations)
   If group == NULL, create a list of all nations
 **************************************************************************/
-static GtkWidget* create_list_of_nations_in_group(struct nation_group* group,
+static GtkWidget *create_list_of_nations_in_group(struct nation_group *group,
                                                   int index)
 {
   GtkWidget *sw = NULL;
@@ -655,13 +657,12 @@ static GtkWidget* create_list_of_nations_in_group(struct nation_group* group,
       gtk_tree_selection_set_select_function(select, races_selection_func,
           NULL, NULL);
 
-      sw = gtk_scrolled_window_new(NULL, NULL);
-      gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-          GTK_SHADOW_ETCHED_IN);
+      sw = gtk_scrolled_window_new();
+      gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
       gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
           GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
-      gtk_container_add(GTK_CONTAINER(sw), list);
-     
+      gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), list);
+
       render = gtk_cell_renderer_pixbuf_new();
       column = gtk_tree_view_column_new_with_attributes("Flag", render,
           "pixbuf", 2, NULL);
@@ -700,9 +701,9 @@ static void create_nation_selection_lists(void)
   GtkWidget *nation_list;
   GtkWidget *group_name_label;
   int i;
-  
+
   for (i = 0; i < nation_group_count(); i++) {
-    struct nation_group* group = (nation_group_by_number(i));
+    struct nation_group *group = (nation_group_by_number(i));
 
     if (is_nation_group_hidden(group)) {
       races_nation_list[i] = NULL;
@@ -715,7 +716,7 @@ static void create_nation_selection_lists(void)
                                group_name_label);
     }
   }
-  
+
   nation_list = create_list_of_nations_in_group(NULL, nation_group_count());
   /* Even this list can be empty if there are no pickable nations (due to
    * a combination of start position and nationset restrictions). */
@@ -780,10 +781,10 @@ void races_update_pickable(bool nationset_change)
   create_nation_selection_lists();
 
   /* Can't set current tab before child widget is visible */
-  gtk_widget_show(GTK_WIDGET(races_notebook));
+  gtk_widget_set_visible(GTK_WIDGET(races_notebook), TRUE);
 
   /* Restore selected tab */
-  if (groupidx != -1 && races_nation_list[groupidx] != NULL) {
+  if (groupidx != -1 && races_nation_list[groupidx] != nullptr) {
     int i;
 
     tab = 0;
@@ -845,12 +846,13 @@ static void create_races_dialog(struct player *pplayer)
 {
   GtkWidget *shell;
   GtkWidget *cmd;
+  GtkWidget *group;
   GtkWidget *hbox, *table;
   GtkWidget *frame, *label, *combo;
   GtkWidget *text;
   GtkWidget *notebook;
   GtkWidget *sw;
-  GtkWidget *list;  
+  GtkWidget *list;
   GtkListStore *store;
   GtkCellRenderer *render;
   GtkTreeViewColumn *column;
@@ -871,35 +873,33 @@ static void create_races_dialog(struct player *pplayer)
   shell = gtk_dialog_new_with_buttons(title,
                                       NULL,
                                       0,
-                                      _("Cancel"),
+                                      _("_Cancel"),
                                       GTK_RESPONSE_CANCEL,
                                       _("_Random Nation"),
-                                      GTK_RESPONSE_NO, /* arbitrary */
-                                      _("Ok"),
+                                      GTK_RESPONSE_NO, /* Arbitrary */
+                                      _("_OK"),
                                       GTK_RESPONSE_ACCEPT,
                                       NULL);
   races_shell = shell;
   races_player = pplayer;
   setup_dialog(shell, toplevel);
 
-  gtk_window_set_position(GTK_WINDOW(shell), GTK_WIN_POS_CENTER_ON_PARENT);
   gtk_window_set_default_size(GTK_WINDOW(shell), -1, 590);
 
   frame = gtk_frame_new(_("Select a nation"));
-  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell))), frame);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(shell))), frame);
 
-  hbox = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hbox), 18);
+  hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
   gtk_widget_set_margin_start(hbox, 3);
   gtk_widget_set_margin_end(hbox, 3);
   gtk_widget_set_margin_top(hbox, 3);
   gtk_widget_set_margin_bottom(hbox, 3);
 
-  gtk_container_add(GTK_CONTAINER(frame), hbox);
+  gtk_frame_set_child(GTK_FRAME(frame), hbox);
 
   /* Left side: nation list */
   {
-    GtkWidget* nation_selection_list = gtk_grid_new();
+    GtkWidget *nation_selection_list = gtk_grid_new();
 
     nationsets_chooser = NULL;
 
@@ -973,7 +973,7 @@ static void create_races_dialog(struct player *pplayer)
         /* Do our best to turn the text-entry widget into something more
          * like a cell-view: disable editing, and focusing (which removes
          * the caret). */
-        GtkWidget *entry = gtk_bin_get_child(GTK_BIN(nationsets_chooser));
+        GtkWidget *entry = gtk_combo_box_get_child(GTK_COMBO_BOX(nationsets_chooser));
 
         gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
         gtk_widget_set_can_focus(entry, FALSE);
@@ -989,7 +989,7 @@ static void create_races_dialog(struct player *pplayer)
       gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(nationsets_chooser),
                                      renderer, "markup", 1, NULL);
       g_signal_connect(nationsets_chooser, "destroy",
-                       G_CALLBACK(gtk_widget_destroyed), &nationsets_chooser);
+                       G_CALLBACK(widget_destroyed), &nationsets_chooser);
       g_signal_connect(nationsets_chooser, "changed",
                        G_CALLBACK(nationset_callback), NULL);
       {
@@ -1017,7 +1017,7 @@ static void create_races_dialog(struct player *pplayer)
     }
 
     races_notebook = gtk_notebook_new();
-    gtk_notebook_set_tab_pos(GTK_NOTEBOOK(races_notebook), GTK_POS_LEFT);  
+    gtk_notebook_set_tab_pos(GTK_NOTEBOOK(races_notebook), GTK_POS_LEFT);
     gtk_grid_attach(GTK_GRID(nation_selection_list), races_notebook,
                     0, 2, 2, 1);
 
@@ -1050,25 +1050,28 @@ static void create_races_dialog(struct player *pplayer)
     /* Populate treeview */
     create_nation_selection_lists();
 
-    gtk_container_add(GTK_CONTAINER(hbox), nation_selection_list);
+    gtk_box_append(GTK_BOX(hbox), nation_selection_list);
   }
 
   /* Right side. */
   notebook = gtk_notebook_new();
   gtk_notebook_set_tab_pos(GTK_NOTEBOOK(notebook), GTK_POS_BOTTOM);
-  gtk_container_add(GTK_CONTAINER(hbox), notebook);
+  gtk_box_append(GTK_BOX(hbox), notebook);
 
   /* Properties pane. */
   label = gtk_label_new_with_mnemonic(_("_Properties"));
 
   races_properties = table = gtk_grid_new();
   g_signal_connect(table, "destroy",
-      G_CALLBACK(gtk_widget_destroyed), &races_properties);
-  g_object_set(table, "margin", 6, NULL);
+                   G_CALLBACK(widget_destroyed), &races_properties);
+  gtk_widget_set_margin_bottom(table, 6);
+  gtk_widget_set_margin_end(table, 6);
+  gtk_widget_set_margin_start(table, 6);
+  gtk_widget_set_margin_top(table, 6);
   gtk_grid_set_row_spacing(GTK_GRID(table), 2);
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), table, label);
 
-  /* Leader. */ 
+  /* Leader. */
   {
     GtkListStore *model = gtk_list_store_new(1, G_TYPE_STRING);
 
@@ -1089,20 +1092,24 @@ static void create_races_dialog(struct player *pplayer)
   gtk_grid_attach(GTK_GRID(table), label, 0, 0, 1, 2);
   gtk_grid_attach(GTK_GRID(table), combo, 1, 0, 2, 1);
 
-  cmd = gtk_radio_button_new_with_mnemonic(NULL, _("_Female"));
+  cmd = gtk_check_button_new_with_mnemonic(sex_name_mnemonic(SEX_FEMALE,
+                                                             "_"));
   gtk_widget_set_margin_bottom(cmd, 6);
   races_sex[0] = cmd;
   gtk_grid_attach(GTK_GRID(table), cmd, 1, 1, 1, 1);
+  group = cmd;
 
-  cmd = gtk_radio_button_new_with_mnemonic_from_widget(GTK_RADIO_BUTTON(cmd),
-      _("_Male"));
+  cmd = gtk_check_button_new_with_mnemonic(sex_name_mnemonic(SEX_MALE,
+                                                             "_"));
+  gtk_check_button_set_group(GTK_CHECK_BUTTON(cmd),
+                             GTK_CHECK_BUTTON(group));
   gtk_widget_set_margin_bottom(cmd, 6);
   races_sex[1] = cmd;
   gtk_grid_attach(GTK_GRID(table), cmd, 2, 1, 1, 1);
 
   /* City style. */
   store = gtk_list_store_new(3, G_TYPE_INT,
-      GDK_TYPE_PIXBUF, G_TYPE_STRING);
+                             GDK_TYPE_PIXBUF, G_TYPE_STRING);
 
   list = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
   gtk_widget_set_hexpand(list, TRUE);
@@ -1111,15 +1118,14 @@ static void create_races_dialog(struct player *pplayer)
   g_object_unref(store);
   gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(list), FALSE);
   g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(list)), "changed",
-      G_CALLBACK(races_style_callback), NULL);
+                   G_CALLBACK(races_style_callback), NULL);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_widget_set_margin_top(sw, 6);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-      GTK_SHADOW_ETCHED_IN);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
-      GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), list);
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), list);
   gtk_grid_attach(GTK_GRID(table), sw, 1, 2, 2, 2);
 
   label = g_object_new(GTK_TYPE_LABEL,
@@ -1135,11 +1141,11 @@ static void create_races_dialog(struct player *pplayer)
 
   render = gtk_cell_renderer_pixbuf_new();
   column = gtk_tree_view_column_new_with_attributes(NULL, render,
-      "pixbuf", 1, NULL);
+                                                    "pixbuf", 1, NULL);
   gtk_tree_view_append_column(GTK_TREE_VIEW(list), column);
   render = gtk_cell_renderer_text_new();
   column = gtk_tree_view_column_new_with_attributes(NULL, render,
-      "text", 2, NULL);
+                                                    "text", 2, NULL);
   gtk_tree_view_append_column(GTK_TREE_VIEW(list), column);
 
   /* Populate style store. */
@@ -1166,7 +1172,10 @@ static void create_races_dialog(struct player *pplayer)
   label = gtk_label_new_with_mnemonic(_("_Description"));
 
   text = gtk_text_view_new();
-  g_object_set(text, "margin", 6, NULL);
+  gtk_widget_set_margin_bottom(text, 6);
+  gtk_widget_set_margin_end(text, 6);
+  gtk_widget_set_margin_start(text, 6);
+  gtk_widget_set_margin_top(text, 6);
   gtk_widget_set_hexpand(text, TRUE);
   gtk_widget_set_vexpand(text, TRUE);
   races_text = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
@@ -1180,17 +1189,17 @@ static void create_races_dialog(struct player *pplayer)
 
   /* Signals. */
   g_signal_connect(shell, "destroy",
-      G_CALLBACK(gtk_widget_destroyed), &races_shell);
+                   G_CALLBACK(widget_destroyed), &races_shell);
   g_signal_connect(shell, "response",
-      G_CALLBACK(races_response), NULL);
+                   G_CALLBACK(races_response), NULL);
 
   g_signal_connect(GTK_COMBO_BOX(races_leader), "changed",
-      G_CALLBACK(races_leader_callback), NULL);
+                   G_CALLBACK(races_leader_callback), NULL);
 
   g_signal_connect(races_sex[0], "toggled",
-      G_CALLBACK(races_sex_callback), GINT_TO_POINTER(0));
+                   G_CALLBACK(races_sex_callback), GINT_TO_POINTER(SEX_FEMALE));
   g_signal_connect(races_sex[1], "toggled",
-      G_CALLBACK(races_sex_callback), GINT_TO_POINTER(1));
+                   G_CALLBACK(races_sex_callback), GINT_TO_POINTER(SEX_MALE));
 
   /* Finish up. */
   gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_CANCEL);
@@ -1201,7 +1210,8 @@ static void create_races_dialog(struct player *pplayer)
                                       FALSE);
   }
 
-  gtk_widget_show(gtk_dialog_get_content_area(GTK_DIALOG(shell)));
+  gtk_widget_set_visible(gtk_dialog_get_content_area(GTK_DIALOG(shell)),
+                                                     TRUE);
 
   /* Select player's current nation in UI, if any */
   if (races_player->nation) {
@@ -1234,12 +1244,12 @@ void popup_races_dialog(struct player *pplayer)
 }
 
 /**********************************************************************//**
-  Close nations dialog  
+  Close nations dialog
 **************************************************************************/
 void popdown_races_dialog(void)
 {
   if (races_shell) {
-    gtk_widget_destroy(races_shell);
+    gtk_window_destroy(GTK_WINDOW(races_shell));
   }
 
   /* We're probably starting a new game, maybe with a new ruleset.
@@ -1334,14 +1344,14 @@ static void races_leader_callback(void)
   const gchar *name;
 
   name =
-    gtk_entry_get_text(GTK_ENTRY(gtk_bin_get_child(GTK_BIN(races_leader))));
+    gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(gtk_combo_box_get_child(GTK_COMBO_BOX(races_leader)))));
 
   if (selected_nation != -1
       &&(pleader = nation_leader_by_name(nation_by_number(selected_nation),
                                          name))) {
     selected_sex = nation_leader_is_male(pleader);
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(races_sex[selected_sex]),
-                                 TRUE);
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(races_sex[selected_sex]),
+                                TRUE);
   }
 }
 
@@ -1406,10 +1416,11 @@ static void races_response(GtkWidget *w, gint response, gpointer data)
       return;
     }
 
-    s = gtk_entry_get_text(GTK_ENTRY(gtk_bin_get_child(GTK_BIN(races_leader))));
+    s = gtk_entry_buffer_get_text(gtk_entry_get_buffer(
+                                      GTK_ENTRY(gtk_combo_box_get_child(GTK_COMBO_BOX(races_leader)))));
 
     /* Perform a minimum of sanity test on the name. */
-    /* This could call is_allowed_player_name if it were available. */
+    /* This could call is_allowed_player_name() if it were available. */
     if (strlen(s) == 0) {
       output_window_append(ftc_client, _("You must type a legal name."));
       return;
@@ -1421,8 +1432,8 @@ static void races_response(GtkWidget *w, gint response, gpointer data)
                                    selected_style);
   } else if (response == GTK_RESPONSE_NO) {
     dsend_packet_nation_select_req(&client.conn,
-				   player_number(races_player),
-				   -1, FALSE, "", 0);
+                                   player_number(races_player),
+                                   -1, FALSE, "", 0);
   }
 
   popdown_races_dialog();
@@ -1431,9 +1442,28 @@ static void races_response(GtkWidget *w, gint response, gpointer data)
 /**********************************************************************//**
   Adjust tax rates from main window
 **************************************************************************/
-gboolean taxrates_callback(GtkWidget *w, GdkEventButton *ev, gpointer data)
+gboolean taxrates_callback(GtkGestureClick *gesture, int n_press,
+                           double x, double y)
 {
-  common_taxrates_callback((size_t) data);
+  GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+
+  common_taxrates_callback(GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(widget),
+                                                              "rate_button")), FALSE);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Adjust tax rates from main window
+**************************************************************************/
+gboolean reverse_taxrates_callback(GtkGestureClick *gesture, int n_press,
+				   double x, double y)
+{
+  GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+
+  common_taxrates_callback(GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(widget),
+                                                              "rate_button")), TRUE);
+
   return TRUE;
 }
 
@@ -1451,27 +1481,28 @@ void popup_upgrade_dialog(struct unit_list *punits)
 
   if (!get_units_upgrade_info(buf, sizeof(buf), punits)) {
     shell = gtk_message_dialog_new(NULL, 0,
-				   GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
-				   "%s", buf);
+                                   GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
+                                   "%s", buf);
     gtk_window_set_title(GTK_WINDOW(shell), _("Upgrade Unit!"));
     setup_dialog(shell, toplevel);
-    g_signal_connect(shell, "response", G_CALLBACK(gtk_widget_destroy),
-                    NULL);
+    g_signal_connect(shell, "response", G_CALLBACK(gtk_window_destroy),
+                     NULL);
     gtk_window_present(GTK_WINDOW(shell));
   } else {
     shell = gtk_message_dialog_new(NULL, 0,
-				   GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
-				   "%s", buf);
+                                   GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
+                                   "%s", buf);
     gtk_window_set_title(GTK_WINDOW(shell), _("Upgrade Obsolete Units"));
     setup_dialog(shell, toplevel);
     gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_YES);
 
-    if (gtk_dialog_run(GTK_DIALOG(shell)) == GTK_RESPONSE_YES) {
+    /* FIXME: Should not block */
+    if (blocking_dialog(shell) == GTK_RESPONSE_YES) {
       unit_list_iterate(punits, punit) {
-	request_unit_upgrade(punit);
+        request_unit_upgrade(punit);
       } unit_list_iterate_end;
     }
-    gtk_widget_destroy(shell);
+    gtk_window_destroy(GTK_WINDOW(shell));
   }
 }
 
@@ -1489,35 +1520,36 @@ void popup_disband_dialog(struct unit_list *punits)
 
   if (!get_units_disband_info(buf, sizeof(buf), punits)) {
     shell = gtk_message_dialog_new(NULL, 0,
-				   GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
+                                   GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
                                    "%s", buf);
     gtk_window_set_title(GTK_WINDOW(shell), _("Disband Units"));
     setup_dialog(shell, toplevel);
-    g_signal_connect(shell, "response", G_CALLBACK(gtk_widget_destroy),
+    g_signal_connect(shell, "response", G_CALLBACK(gtk_window_destroy),
                     NULL);
     gtk_window_present(GTK_WINDOW(shell));
   } else {
     shell = gtk_message_dialog_new(NULL, 0,
-				   GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
+                                   GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
                                    "%s", buf);
     gtk_window_set_title(GTK_WINDOW(shell), _("Disband Units"));
     setup_dialog(shell, toplevel);
     gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_YES);
 
-    if (gtk_dialog_run(GTK_DIALOG(shell)) == GTK_RESPONSE_YES) {
+    /* FIXME: Should not block */
+    if (blocking_dialog(shell) == GTK_RESPONSE_YES) {
       unit_list_iterate(punits, punit) {
         if (unit_can_do_action(punit, ACTION_DISBAND_UNIT)) {
           request_unit_disband(punit);
         }
       } unit_list_iterate_end;
     }
-    gtk_widget_destroy(shell);
+    gtk_window_destroy(GTK_WINDOW(shell));
   }
 }
 
 /**********************************************************************//**
   This function is called when the client disconnects or the game is
-  over.  It should close all dialog windows for that game.
+  over. It should close all dialog windows for that game.
 **************************************************************************/
 void popdown_all_game_dialogs(void)
 {
@@ -1545,20 +1577,32 @@ void show_tech_gained_dialog(Tech_type_id tech)
   Show tileset error dialog. It's blocking as client will
   shutdown as soon as this function returns.
 **************************************************************************/
-void show_tileset_error(const char *msg)
+void show_tileset_error(bool fatal, const char *tset_name, const char *msg)
 {
   if (is_gui_up()) {
     GtkWidget *dialog;
 
-    dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_DESTROY_WITH_PARENT, GTK_MESSAGE_ERROR,
-                                    GTK_BUTTONS_CLOSE,
-                                    _("Tileset problem, it's probably incompatible with the ruleset:\n%s"),
-                                    msg);
+    if (tset_name != NULL) {
+      dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_DESTROY_WITH_PARENT,
+                                      GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+                                      _("Tileset \"%s\" problem, "
+                                        "it's probably incompatible with "
+                                        "the ruleset:\n%s"),
+                                      tset_name, msg);
+    } else {
+      dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_DESTROY_WITH_PARENT,
+                                      GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+                                      _("Tileset problem, "
+                                        "it's probably incompatible with "
+                                        "the ruleset:\n%s"),
+                                      msg);
+    }
+
     setup_dialog(dialog, toplevel);
 
-    gtk_dialog_run(GTK_DIALOG(dialog));
+    blocking_dialog(dialog);
 
-    gtk_widget_destroy(dialog);
+    gtk_window_destroy(GTK_WINDOW(dialog));
   }
 }
 
@@ -1580,4 +1624,73 @@ void popup_combat_info(int attacker_unit_id, int defender_unit_id,
                        int attacker_hp, int defender_hp,
                        bool make_att_veteran, bool make_def_veteran)
 {
+}
+
+/**********************************************************************//**
+  This is the response callback for the action confirmation dialog.
+**************************************************************************/
+static void act_conf_response(GtkWidget *dialog, gint response,
+                              gpointer data)
+{
+  gtk_window_destroy(GTK_WINDOW(dialog));
+
+  if (response == GTK_RESPONSE_YES) {
+    action_confirmation(data, TRUE);
+  } else {
+    action_confirmation(data, FALSE);
+  }
+}
+
+/**********************************************************************//**
+  Common code wants confirmation for an action.
+**************************************************************************/
+void request_action_confirmation(const char *expl,
+                                 struct act_confirmation_data *data)
+{
+  GtkWidget *dialog;
+  char buf[1024];
+
+  if (expl != NULL) {
+    fc_snprintf(buf, sizeof(buf), _("Are you sure you want to do %s?\n%s"),
+                action_id_name_translation(data->act), expl);
+  } else {
+    fc_snprintf(buf, sizeof(buf), _("Are you sure you want to do %s?"),
+                action_id_name_translation(data->act));
+  }
+
+  dialog = gtk_message_dialog_new(NULL,
+                                  0,
+                                  GTK_MESSAGE_WARNING,
+                                  GTK_BUTTONS_YES_NO,
+                                  "%s", buf);
+  setup_dialog(dialog, toplevel);
+
+  g_signal_connect(dialog, "response",
+                   G_CALLBACK(act_conf_response), data);
+
+  gtk_window_present(GTK_WINDOW(dialog));
+}
+
+/**********************************************************************//**
+  Popup image window
+**************************************************************************/
+void popup_image(const char *tag)
+{
+  struct sprite *spr = load_popup_sprite(tag);
+
+  if (spr != NULL) {
+    GdkPixbuf *pix = sprite_get_pixbuf(spr);
+    GtkWidget *win = gtk_window_new();
+    GtkWidget *img = gtk_image_new_from_pixbuf(pix);
+    int width, height;
+
+    get_sprite_dimensions(spr, &width, &height);
+    gtk_window_set_default_size(GTK_WINDOW(win), width, height);
+    gtk_window_set_child(GTK_WINDOW(win), img);
+    gtk_widget_show(win);
+
+    unload_popup_sprite(tag);
+  } else {
+    log_error(_("No image for tag \"%s\", requested by the server."), tag);
+  }
 }

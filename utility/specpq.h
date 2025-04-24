@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 2002 - The Freeciv Project
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -93,9 +93,9 @@ SPECPQ_PQ_ {
   SPECPQ_CELL_ *cells;
 };
 
-/****************************************************************************
+/************************************************************************//**
   Build a new queue.
-  'initial_size' is the numer of queue items for which memory should be
+  'initial_size' is the number of queue items for which memory should be
   preallocated, that is, the initial size of the item array the queue
   uses. If you insert more than n items to the queue, another n items
   will be allocated automatically.
@@ -111,7 +111,7 @@ static inline SPECPQ_PQ *SPECPQ_FOO(_pq_new)(int initial_size)
   return (SPECPQ_PQ *) pq;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Destructor for queue structure.
 ****************************************************************************/
 static inline void SPECPQ_FOO(_pq_destroy)(SPECPQ_PQ *_pq)
@@ -122,7 +122,7 @@ static inline void SPECPQ_FOO(_pq_destroy)(SPECPQ_PQ *_pq)
   free(pq);
 }
 
-/****************************************************************************
+/************************************************************************//**
   Alternative destructor for queue structure.
 ****************************************************************************/
 static inline void
@@ -132,7 +132,7 @@ SPECPQ_FOO(_pq_destroy_full)(SPECPQ_PQ *_pq,
   SPECPQ_PQ_ *pq = (SPECPQ_PQ_ *) _pq;
   int i;
 
-  if (data_free != NULL) {
+  if (data_free != nullptr) {
     for (i = 1; i < pq->size; i++) {
       data_free(pq->cells[i].data);
     }
@@ -141,7 +141,7 @@ SPECPQ_FOO(_pq_destroy_full)(SPECPQ_PQ *_pq,
   free(pq);
 }
 
-/****************************************************************************
+/************************************************************************//**
   Insert an item into the queue.
 ****************************************************************************/
 static inline void SPECPQ_FOO(_pq_insert)(SPECPQ_PQ *_pq,
@@ -169,7 +169,7 @@ static inline void SPECPQ_FOO(_pq_insert)(SPECPQ_PQ *_pq,
   pq->cells[i].priority = priority;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Set a better priority for datum. Insert if 'data' is not present yet.
 ****************************************************************************/
 static inline void SPECPQ_FOO(_pq_replace)(SPECPQ_PQ *_pq,
@@ -200,9 +200,9 @@ static inline void SPECPQ_FOO(_pq_replace)(SPECPQ_PQ *_pq,
   }
 }
 
-/****************************************************************************
+/************************************************************************//**
   Remove the highest-ranking item from the queue and store it in 'pdata'.
-  'pdata' may be NULL. Return FALSE iff no item could be removed, because
+  'pdata' may be nullptr. Return FALSE iff no item could be removed, because
   the queue was empty.
 ****************************************************************************/
 static inline bool SPECPQ_FOO(_pq_remove)(SPECPQ_PQ *_pq,
@@ -225,6 +225,7 @@ static inline bool SPECPQ_FOO(_pq_remove)(SPECPQ_PQ *_pq,
   s = pq->size / 2;
   i = 1;
   pcelli = pq->cells + 1;
+
   while (i <= s) {
     j = 2 * i;
     pcellj = pq->cells + j;
@@ -243,10 +244,11 @@ static inline bool SPECPQ_FOO(_pq_remove)(SPECPQ_PQ *_pq,
   if (pdata) {
     *pdata = top;
   }
+
   return TRUE;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Store the highest-ranking item in dest without removing it. Return FALSE
   if the queue is empty, in case 'pdata' is not set.
 ****************************************************************************/
@@ -263,13 +265,12 @@ static inline bool SPECPQ_FOO(_pq_peek)(const SPECPQ_PQ *_pq,
   return TRUE;
 }
 
-/****************************************************************************
+/************************************************************************//**
   Set the highest priority of the queue in 'datum_priority'. Return FALSE
   iff the queue is empty.
 ****************************************************************************/
 static inline bool SPECPQ_FOO(_pq_priority)(const SPECPQ_PQ *_pq,
                                             SPECPQ_PRIORITY_TYPE *ppriority)
-
 {
   const SPECPQ_PQ_ *pq = (SPECPQ_PQ_ *) _pq;
 

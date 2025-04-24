@@ -77,14 +77,38 @@ bool server_setting_value_bool_get(server_setting_id id)
 }
 
 /***********************************************************************//**
+  Returns the value of the server setting with the specified id.
+***************************************************************************/
+int server_setting_value_int_get(server_setting_id id)
+{
+  fc_assert_ret_val(fc_funcs, FALSE);
+  fc_assert_ret_val(fc_funcs->server_setting_val_int_get, FALSE);
+  fc_assert_ret_val(server_setting_type_get(id) == SST_INT, FALSE);
+
+  return fc_funcs->server_setting_val_int_get(id);
+}
+
+/***********************************************************************//**
+  Returns the value of the server setting with the specified id.
+***************************************************************************/
+unsigned int server_setting_value_bitwise_get(server_setting_id id)
+{
+  fc_assert_ret_val(fc_funcs, FALSE);
+  fc_assert_ret_val(fc_funcs->server_setting_val_bitwise_get, FALSE);
+  fc_assert_ret_val(server_setting_type_get(id) == SST_BITWISE, FALSE);
+
+  return fc_funcs->server_setting_val_bitwise_get(id);
+}
+
+/***********************************************************************//**
   Returns a server setting - value pair from its setting and value;
 ***************************************************************************/
 ssetv ssetv_from_values(server_setting_id setting, int value)
 {
   /* Only Boolean and TRUE can be supported unless setting value encoding
    * is implemented. */
-  if (value != TRUE) {
-    fc_assert(value == TRUE);
+  if (!value) {
+    fc_assert(value);
     return SSETV_NONE;
   }
 
@@ -152,7 +176,7 @@ const char *ssetv_rule_name(ssetv val)
 }
 
 /***********************************************************************//**
-  Returns the server setting - value pair formated in a user readable way.
+  Returns the server setting - value pair formatted in a user readable way.
 ***************************************************************************/
 const char *ssetv_human_readable(ssetv val, bool present)
 {

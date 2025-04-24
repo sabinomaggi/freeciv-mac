@@ -17,10 +17,10 @@
 
 // Qt
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QGroupBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QScreen>
 #include <QVBoxLayout>
 
 // common
@@ -62,7 +62,7 @@ tax_rates_dialog::tax_rates_dialog(QWidget *parent)
     max = 100;
   }
 
-  /* Trans: Government - max rate (of taxes) x% */
+  // TRANS: Government - max rate (of taxes) x%
   str = QString(_("%1 - max rate: %2%")).
         arg(government_name_for_player(client.conn.playing),
             QString::number(max));
@@ -125,11 +125,11 @@ void tax_rates_dialog::slot_apply_button_pressed()
 }
 
 /**********************************************************************//**
-  Multipler rates dialog constructor
+  Multiplier rates dialog constructor
+  Inheriting from qfc_dialog will cause crash in Qt5.2
 **************************************************************************/
-multipler_rates_dialog::multipler_rates_dialog(QWidget *parent,
-                                               Qt::WindowFlags f)
-  : qfc_dialog(parent)
+multiplier_rates_dialog::multiplier_rates_dialog(QWidget *parent)
+  : QDialog(parent)
 {
   QGroupBox *group_box;
   QHBoxLayout *some_layout;
@@ -151,11 +151,11 @@ multipler_rates_dialog::multipler_rates_dialog(QWidget *parent,
     slider = new QSlider(Qt::Horizontal, this);
     slider->setMinimum(mult_to_scale(pmul, pmul->start));
     slider->setMaximum(mult_to_scale(pmul, pmul->stop));
-    slider->setValue(val);
+    slider->setValue(mult_to_scale(pmul, val));
     connect(slider, &QAbstractSlider::valueChanged,
-            this, &multipler_rates_dialog::slot_set_value);
+            this, &multiplier_rates_dialog::slot_set_value);
     slider_list.append(slider);
-    label = new QLabel(QString::number(val));
+    label = new QLabel(QString::number(mult_to_scale(pmul, val)));
     hb->addWidget(slider);
     slider->setEnabled(multiplier_can_be_changed(pmul, client_player()));
     hb->addWidget(label);
@@ -168,9 +168,9 @@ multipler_rates_dialog::multipler_rates_dialog(QWidget *parent,
   cancel_button->setText(_("Cancel"));
   ok_button->setText(_("Ok"));
   connect(cancel_button, &QAbstractButton::pressed,
-          this, &multipler_rates_dialog::slot_cancel_button_pressed);
+          this, &multiplier_rates_dialog::slot_cancel_button_pressed);
   connect(ok_button, &QAbstractButton::pressed,
-          this, &multipler_rates_dialog::slot_ok_button_pressed);
+          this, &multiplier_rates_dialog::slot_ok_button_pressed);
   some_layout->addWidget(cancel_button);
   some_layout->addWidget(ok_button);
   main_layout->addSpacing(20);
@@ -181,7 +181,7 @@ multipler_rates_dialog::multipler_rates_dialog(QWidget *parent,
 /**********************************************************************//**
   Slider value changed
 **************************************************************************/
-void multipler_rates_dialog::slot_set_value(int i)
+void multiplier_rates_dialog::slot_set_value(int i)
 {
   QSlider *qo;
   qo = (QSlider *) QObject::sender();
@@ -196,16 +196,16 @@ void multipler_rates_dialog::slot_set_value(int i)
 /**********************************************************************//**
   Cancel pressed
 **************************************************************************/
-void multipler_rates_dialog::slot_cancel_button_pressed()
+void multiplier_rates_dialog::slot_cancel_button_pressed()
 {
   close();
   deleteLater();
 }
 
 /**********************************************************************//**
-  Ok pressed - send mulipliers value.
+  Ok pressed - send multipliers' values.
 **************************************************************************/
-void multipler_rates_dialog::slot_ok_button_pressed()
+void multiplier_rates_dialog::slot_ok_button_pressed()
 {
   int j = 0;
   int value;
@@ -245,12 +245,12 @@ int scale_to_mult(const struct multiplier *pmul, int scale)
 **************************************************************************/
 void popup_rates_dialog(void)
 {
+  QRect rect = QApplication::primaryScreen()->availableGeometry();
   QPoint p;
-  QRect rect;
+  tax_rates_dialog *trd;
 
   p = QCursor::pos();
-  rect = QApplication::desktop()->availableGeometry();
-  tax_rates_dialog *trd = new tax_rates_dialog(gui()->central_wdg);
+  trd = new tax_rates_dialog(gui()->central_wdg);
   p.setY(p.y() - trd->height() / 2);
   if (p.y() < 50) {
     p.setY(50);
@@ -268,9 +268,9 @@ void popup_rates_dialog(void)
 /**********************************************************************//**
   Update multipliers (policies) dialog.
 **************************************************************************/
-void real_multipliers_dialog_update(void)
+void real_multipliers_dialog_update(void *unused)
 {
-  /* PORTME */
+  // PORTME
 }
 
 /**********************************************************************//**
@@ -278,12 +278,12 @@ void real_multipliers_dialog_update(void)
 **************************************************************************/
 void popup_multiplier_dialog(void)
 {
-  multipler_rates_dialog *mrd;
+  multiplier_rates_dialog *mrd;
 
   if (!can_client_issue_orders()) {
     return;
   }
-  mrd = new multipler_rates_dialog(gui()->central_wdg);
+  mrd = new multiplier_rates_dialog(gui()->central_wdg);
   mrd->show();
 }
 
@@ -387,7 +387,7 @@ void fc_double_edge::paintEvent(QPaintEvent *event)
 void fc_double_edge::mousePressEvent(QMouseEvent *event)
 {
   if (event->buttons() & Qt::LeftButton) {
-    mouse_x = static_cast<double>(event->x());
+    mouse_x = static_cast<double>(event->pos().x());
 
     if (mouse_x <= current_max * width() / 10 - 2 * cursor_size) {
       moved = 1;
@@ -414,18 +414,18 @@ void fc_double_edge::mouseMoveEvent(QMouseEvent *event)
     setCursor(Qt::ArrowCursor);
   }
 
-  x_mouse = static_cast<float>(event->x());
+  x_mouse = static_cast<float>(event->pos().x());
   x_min = static_cast<float>(current_min) / 10 *
           ((width() - 1)  - 2 * cursor_size) + cursor_size;
   x_max = static_cast<float>(current_max) / 10 *
           ((width() - 1) - 2 * cursor_size) + cursor_size;
 
-  on_min = (((x_mouse > (x_min - cursor_size * 1.1)) &&
-             (x_mouse < (x_min + cursor_size * 1.1)))
+  on_min = (((x_mouse > (x_min - cursor_size * 1.1))
+             && (x_mouse < (x_min + cursor_size * 1.1)))
             && (!on_max))
            || (moved == 1);
-  on_max = (((x_mouse > (x_max - cursor_size * 1.1)) &&
-             (x_mouse < (x_max + cursor_size * 1.1)))
+  on_max = (((x_mouse > (x_max - cursor_size * 1.1))
+             && (x_mouse < (x_max + cursor_size * 1.1)))
             && !on_min)
            || (moved == 2);
   if (event->buttons() & Qt::LeftButton) {

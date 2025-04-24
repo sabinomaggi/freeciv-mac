@@ -33,8 +33,9 @@
 
 /* common */
 #include "game.h"
-#include "government.h"		/* government_graphic() */
+#include "government.h"	        /* government_graphic() */
 #include "map.h"
+#include "nation.h"
 #include "player.h"
 
 /* client */
@@ -94,6 +95,8 @@ void update_turn_done_button(bool do_restore)
                                       "}\n",
                                       -1, NULL);
 
+      /* Turn Done button is persistent, so we only need to do this
+       * once too. */
       gtk_style_context_add_provider(scontext,
                                      GTK_STYLE_PROVIDER(tdb_provider),
                                      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -135,7 +138,7 @@ void update_timeout_label(void)
 void update_info_label(void)
 {
   GtkWidget *label;
-  const struct player *pplayer = client.conn.playing;
+  const struct player *pplayer = client_player();
 
   label = gtk_frame_get_label_widget(GTK_FRAME(main_frame_civ_name));
   if (pplayer != NULL) {
@@ -147,17 +150,30 @@ void update_info_label(void)
     name = nation_plural_for_player(pplayer);
     c = g_utf8_get_char_validated(name, -1);
     if ((gunichar) -1 != c && (gunichar) -2 != c) {
-      gchar nation[MAX_LEN_NAME];
-      gchar *next;
-      gint len;
+      const char *obstext = NULL;
+      int obstextlen = 0;
 
-      len = g_unichar_to_utf8(g_unichar_toupper(c), nation);
-      nation[len] = '\0';
-      next = g_utf8_find_next_char(name, NULL);
-      if (NULL != next) {
-        sz_strlcat(nation, next);
+      if (client_is_observer()) {
+        obstext = _(" (observer)");
+        obstextlen = strlen(obstext);
       }
-      gtk_label_set_text(GTK_LABEL(label), nation);
+
+      {
+        gchar nation[MAX_LEN_NAME + obstextlen];
+        gchar *next;
+        gint len;
+
+        len = g_unichar_to_utf8(g_unichar_toupper(c), nation);
+        nation[len] = '\0';
+        next = g_utf8_find_next_char(name, NULL);
+        if (NULL != next) {
+          sz_strlcat(nation, next);
+        }
+        if (obstext != NULL) {
+          sz_strlcat(nation, obstext);
+        }
+        gtk_label_set_text(GTK_LABEL(label), nation);
+      }
     } else {
       gtk_label_set_text(GTK_LABEL(label), name);
     }
@@ -173,17 +189,17 @@ void update_info_label(void)
                       client_cooling_sprite(),
                       client_government_sprite());
 
-  if (NULL != client.conn.playing) {
+  if (NULL != pplayer) {
     int d = 0;
 
-    for (; d < client.conn.playing->economic.luxury /10; d++) {
+    for (; d < pplayer->economic.luxury / 10; d++) {
       struct sprite *spr = get_tax_sprite(tileset, O_LUXURY);
 
       gtk_image_set_from_surface(GTK_IMAGE(econ_label[d]), spr->surface);
     }
 
-    for (; d < (client.conn.playing->economic.science
-		+ client.conn.playing->economic.luxury) / 10; d++) {
+    for (; d < (pplayer->economic.science
+                + pplayer->economic.luxury) / 10; d++) {
       struct sprite *spr = get_tax_sprite(tileset, O_SCIENCE);
 
       gtk_image_set_from_surface(GTK_IMAGE(econ_label[d]), spr->surface);
@@ -198,7 +214,7 @@ void update_info_label(void)
 
   update_timeout_label();
 
-  /* update tooltips. */
+  /* Update tooltips. */
   gtk_widget_set_tooltip_text(econ_ebox,
                               _("Shows your current luxury/science/tax rates; "
                                 "click to toggle them."));
@@ -393,6 +409,16 @@ gboolean map_canvas_configure(GtkWidget *w, GdkEventConfigure *ev,
 }
 
 /**********************************************************************//**
+  Refresh map canvas size information
+**************************************************************************/
+void map_canvas_size_refresh(void)
+{
+  /* Needed only with full screen zoom mode.
+   * Not needed, nor implemented, in this client. */
+  fc_assert(FALSE);
+}
+
+/**********************************************************************//**
   Redraw map canvas.
 **************************************************************************/
 gboolean map_canvas_draw(GtkWidget *w, cairo_t *cr, gpointer data)
@@ -408,19 +434,6 @@ gboolean map_canvas_draw(GtkWidget *w, cairo_t *cr, gpointer data)
     cairo_paint(cr);
   }
   return TRUE;
-}
-
-/**********************************************************************//**
-  Flush the given part of the canvas buffer (if there is one) to the
-  screen.
-**************************************************************************/
-void flush_mapcanvas(int canvas_x, int canvas_y,
-                     int pixel_width, int pixel_height)
-{
-  GdkRectangle rectangle = {canvas_x, canvas_y, pixel_width, pixel_height};
-  if (gtk_widget_get_realized(map_canvas) && !mapview_is_frozen()) {
-    gdk_window_invalidate_rect(gtk_widget_get_window(map_canvas), &rectangle, FALSE);
-  }
 }
 
 /**********************************************************************//**
@@ -557,6 +570,7 @@ void pixmap_put_overlay_tile_draw(struct canvas *pcanvas,
 {
   cairo_t *cr;
   int sswidth, ssheight;
+  const double bright = 0.65; /* Fogged brightness compared to unfogged */
 
   if (!ssprite) {
     return;
@@ -565,31 +579,34 @@ void pixmap_put_overlay_tile_draw(struct canvas *pcanvas,
   get_sprite_dimensions(ssprite, &sswidth, &ssheight);
 
   if (fog) {
-    struct color *fogcol = color_alloc(0.0, 0.0, 0.0);
+    struct color *fogcol = color_alloc(0.0, 0.0, 0.0); /* black */
     cairo_surface_t *fog_surface;
     struct sprite *fogged;
     unsigned char *mask_in;
     unsigned char *mask_out;
     int i, j;
 
-    /* Create sprites fully transparent */
+    /* Create sprites initially fully transparent */
     fogcol->color.alpha = 0.0;
     fogged = create_sprite(sswidth, ssheight, fogcol);
     fog_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, sswidth, ssheight);
 
-    /* Calculate black fog mask from the original sprite,
-     * we don't want to blacken transparent parts of the sprite */
+    /* Calculate black fog mask from the original sprite's alpha channel;
+     * we don't want to blacken transparent parts of the sprite. */
     mask_in = cairo_image_surface_get_data(ssprite->surface);
     mask_out = cairo_image_surface_get_data(fog_surface);
 
     for (i = 0; i < sswidth; i++) {
       for (j = 0; j < ssheight; j++) {
+        /* In order to darken pixels of ssprite to 'bright' fraction of
+         * their original value, we need to overlay blackness of
+         * (1-bright) transparency. */
         if (!is_bigendian()) {
           mask_out[(j * sswidth + i) * 4 + 3]
-            = 0.65 * mask_in[(j * sswidth + i) * 4 + 3];
+            = (1-bright) * mask_in[(j * sswidth + i) * 4 + 3];
         } else {
           mask_out[(j * sswidth + i) * 4 + 0]
-            = 0.65 * mask_in[(j * sswidth + i) * 4 + 0];
+            = (1-bright) * mask_in[(j * sswidth + i) * 4 + 0];
         }
       }
     }
@@ -601,7 +618,7 @@ void pixmap_put_overlay_tile_draw(struct canvas *pcanvas,
     cairo_set_source_surface(cr, ssprite->surface, 0, 0);
     cairo_paint(cr);
 
-    /* Then apply created fog to the intermediate sprite */
+    /* Then apply created fog to the intermediate sprite to darken it */
     cairo_set_source_surface(cr, fog_surface, 0, 0);
     cairo_paint(cr);
     cairo_destroy(cr);
@@ -627,7 +644,7 @@ void put_cross_overlay_tile(struct tile *ptile)
 {
   float canvas_x, canvas_y;
 
-  if (tile_to_canvas_pos(&canvas_x, &canvas_y, ptile)) {
+  if (tile_to_canvas_pos(&canvas_x, &canvas_y, map_zoom, ptile)) {
     pixmap_put_overlay_tile(gtk_widget_get_window(map_canvas), map_zoom,
 			    canvas_x / map_zoom, canvas_y / map_zoom,
 			    get_attention_crosshair_sprite(tileset));
@@ -717,7 +734,7 @@ void scrollbar_jump_callback(GtkAdjustment *adj, gpointer hscrollbar)
     scroll_y = gtk_adjustment_get_value(adj);
   }
 
-  set_mapview_scroll_pos(scroll_x, scroll_y);
+  set_mapview_scroll_pos(scroll_x, scroll_y, mouse_zoom);
 }
 
 /**********************************************************************//**
@@ -781,3 +798,9 @@ void tileset_changed(void)
   }
 #endif /* FREECIV_MSWINDOWS */
 }
+
+/**********************************************************************//**
+  New turn callback
+**************************************************************************/
+void start_turn(void)
+{}

@@ -80,6 +80,7 @@ bool has_handicap(const struct player *pplayer, enum handicap_type htype)
 const char *handicap_desc(enum handicap_type htype, bool *inverted)
 {
   *inverted = FALSE;
+
   switch (htype) {
   case H_DIPLOMAT:
     return _("Doesn't build offensive diplomatic units.");
@@ -126,14 +127,14 @@ const char *handicap_desc(enum handicap_type htype, bool *inverted)
   case H_PRODCHGPEN:
     *inverted = TRUE;
     return _("Can change city production type without penalty.");
-#ifdef FREECIV_WEB
   case H_ASSESS_DANGER_LIMITED:
     return _("Limits the distance to search for threatening enemy units.");    
-#endif
   case H_LAST:
     break; /* fall through -- should never see this */
   }
 
   /* Should never reach here */
-  fc_assert_ret_val(FALSE, NULL);
+  fc_assert(FALSE);
+
+  return NULL;
 }

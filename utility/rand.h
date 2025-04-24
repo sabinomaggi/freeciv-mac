@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,10 +25,32 @@ extern "C" {
 
 typedef uint32_t RANDOM_TYPE;
 
+/* Usually random number generator results are logged at LOG_DEBUG level
+ * Uncommenting this, and using RANDLOG_ON and RANDLOG_OFF macros in
+ * the code will make them logged at LOG_NORMAL level, between such
+ * RANDLOG_ON / RANDLOG_OFF calls.
+ * Single RANDLOG_OFF will cancel any number of RANDLOG_ONs -
+ * there's no reference count involved. */
+/* #define LOG_RAND_VALUES */
+
+#ifdef LOG_RAND_VALUES
+
+void enable_randlog(bool enable);
+
+#define RANDLOG_ON  enable_randlog(TRUE);
+#define RANDLOG_OFF enable_randlog(FALSE);
+
+#else  /* LOG_RAND_VALUES */
+
+#define RANDLOG_ON
+#define RANDLOG_OFF
+
+#endif /* LOG_RAND_VALUES */
+
 typedef struct {
   RANDOM_TYPE v[56];
   int j, k, x;
-  bool is_init;			/* initially 0 for static storage */
+  bool is_init;                 /* Initially FALSE for static storage */
 } RANDOM_STATE;
 
 #define fc_rand(_size) \
@@ -39,6 +61,7 @@ RANDOM_TYPE fc_rand_debug(RANDOM_TYPE size, const char *called_as,
 
 void fc_srand(RANDOM_TYPE seed);
 
+void fc_rand_uninit(void);
 bool fc_rand_is_init(void);
 RANDOM_STATE fc_rand_state(void);
 void fc_rand_set_state(RANDOM_STATE state);
@@ -58,4 +81,4 @@ RANDOM_TYPE fc_randomly_debug(RANDOM_TYPE seed, RANDOM_TYPE size,
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__RAND_H */
+#endif /* FC__RAND_H */

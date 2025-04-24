@@ -74,6 +74,8 @@ struct fcdb_option {
 
 struct fcdb_option_hash *fcdb_config = NULL;
 
+char *fcdb_script = NULL;
+
 static bool fcdb_set_option(const char *key, const char *value,
                             enum fcdb_option_source source);
 static bool fcdb_load_config(const char *filename);
@@ -118,6 +120,7 @@ static bool fcdb_set_option(const char *key, const char *value,
 static bool fcdb_load_config(const char *filename)
 {
   struct section_file *secfile;
+  const char *val;
 
   fc_assert_ret_val(NULL != filename, FALSE);
 
@@ -127,17 +130,23 @@ static bool fcdb_load_config(const char *filename)
     return FALSE;
   }
 
+  val = secfile_lookup_str_default(secfile, NULL, "meta.lua");
+  if (val != NULL) {
+    fcdb_script = fc_strdup(val);
+  }
+
   entry_list_iterate(section_entries(secfile_section_by_name(secfile,
                                                              "fcdb")),
                      pentry) {
-    if (entry_type(pentry) == ENTRY_STR) {
+    if (entry_type_get(pentry) == ENTRY_STR) {
       const char *value;
 #ifndef FREECIV_NDEBUG
       bool entry_str_get_success =
-#endif
+#endif /* FREECIV_NDEBUG */
         entry_str_get(pentry, &value);
 
       fc_assert(entry_str_get_success);
+
       fcdb_set_option(entry_name(pentry), value, AOS_FILE);
     } else {
       log_error("Value for '%s' in '%s' is not of string type, ignoring",
@@ -168,7 +177,7 @@ bool fcdb_init(const char *conf_file)
     log_debug("No fcdb config file.");
   }
 
-  return script_fcdb_init(NULL);
+  return script_fcdb_init(fcdb_script);
 }
 
 /************************************************************************//**

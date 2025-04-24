@@ -1,8 +1,53 @@
-# Check for mysql
-#
-# http://ac-archive.sourceforge.net/ac-archive/ax_lib_mysql.html
 #
 # FC_CHECK_MYSQL([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND[, VERSION]]])
+# Modified version of AX_LIB_MYSQL(), for freeciv use.
+# Header of original AX_LIB_MYSQL() below.
+# Upstream version is that of 2009-04-27 from
+# https://git.savannah.gnu.org/gitweb/?p=autoconf-archive.git;a=history;f=m4/ax_lib_mysql.m4
+
+# ===========================================================================
+#              http://autoconf-archive.cryp.to/ax_lib_mysql.html
+# ===========================================================================
+#
+# SYNOPSIS
+#
+#   AX_LIB_MYSQL([MINIMUM-VERSION])
+#
+# DESCRIPTION
+#
+#   This macro provides tests of availability of MySQL client library of
+#   particular version or newer.
+#
+#   AX_LIB_MYSQL macro takes only one argument which is optional. If there
+#   is no required version passed, then macro does not run version test.
+#
+#   The --with-mysql option takes one of three possible values:
+#
+#   no - do not check for MySQL client library
+#
+#   yes - do check for MySQL library in standard locations (mysql_config
+#   should be in the PATH)
+#
+#   path - complete path to mysql_config utility, use this option if
+#   mysql_config can't be found in the PATH
+#
+#   This macro calls:
+#
+#     AC_SUBST(MYSQL_CFLAGS)
+#     AC_SUBST(MYSQL_LDFLAGS)
+#     AC_SUBST(MYSQL_VERSION)
+#
+#   And sets:
+#
+#     HAVE_MYSQL
+#
+# LICENSE
+#
+#   Copyright (c) 2008 Mateusz Loskot <mateusz@loskot.net>
+#
+#   Copying and distribution of this file, with or without modification, are
+#   permitted in any medium without royalty provided the copyright notice
+#   and this notice are preserved.
 
 AC_DEFUN([FC_CHECK_MYSQL],
 [
@@ -19,7 +64,8 @@ AC_DEFUN([FC_CHECK_MYSQL],
   dnl
 
   if test -z "$MYSQL_CONFIG" -o test; then
-    AC_PATH_PROG([MYSQL_CONFIG], [mysql_config], [no])
+    AC_PATH_PROGS([MYSQL_CONFIG],
+      [mysql_config mariadb-config mariadb_config], [no])
   fi
 
   if test "$MYSQL_CONFIG" != "no"; then
@@ -29,7 +75,7 @@ AC_DEFUN([FC_CHECK_MYSQL],
     mysql_ldflags="`$MYSQL_CONFIG --libs`"
     MYSQL_VERSION=`$MYSQL_CONFIG --version`
 
-    # remove NDEBUG from MYSQL_CFLAGS
+    # Remove NDEBUG from MYSQL_CFLAGS
     mysql_cflags=`echo $mysql_cflags | $SED -e 's/-DNDEBUG//g'`
 
     found_mysql="yes"
@@ -46,7 +92,7 @@ AC_DEFUN([FC_CHECK_MYSQL],
 
   if test "$found_mysql" = "yes" -a -n "$mysql_version_req"; then
 
-    AC_MSG_CHECKING([if MySQL version is &gt;= $mysql_version_req])
+    AC_MSG_CHECKING([if MySQL version is >= $mysql_version_req])
 
     dnl Decompose required version string of MySQL
     dnl and calculate its number representation
@@ -74,7 +120,7 @@ AC_DEFUN([FC_CHECK_MYSQL],
                           \+ $mysql_version_minor \* 1000 \
                           \+ $mysql_version_micro`
 
-    mysql_version_check=`expr $mysql_version_number \&gt;\= $mysql_version_req_number`
+    mysql_version_check=`expr $mysql_version_number \>\= $mysql_version_req_number`
     if test "$mysql_version_check" = "1"; then
       AC_MSG_RESULT([yes])
     else

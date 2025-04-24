@@ -33,99 +33,99 @@
 /**********************************************************************//**
   Set state of the widget.
 **************************************************************************/
-void set_wstate(struct widget *pWidget, enum widget_state state)
+void set_wstate(struct widget *pwidget, enum widget_state state)
 {
-  pWidget->state_types_flags &= ~STATE_MASK;
-  pWidget->state_types_flags |= state;
+  pwidget->state_types_flags &= ~STATE_MASK;
+  pwidget->state_types_flags |= state;
 }
 
 /**********************************************************************//**
   Set type of the widget.
 **************************************************************************/
-void set_wtype(struct widget *pWidget, enum widget_type type)
+void set_wtype(struct widget *pwidget, enum widget_type type)
 {
-  pWidget->state_types_flags &= ~TYPE_MASK;
-  pWidget->state_types_flags |= type;
+  pwidget->state_types_flags &= ~TYPE_MASK;
+  pwidget->state_types_flags |= type;
 }
 
 /**********************************************************************//**
   Set flags of the widget.
 **************************************************************************/
-void set_wflag(struct widget *pWidget, enum widget_flag flag)
+void set_wflag(struct widget *pwidget, enum widget_flag flag)
 {
-  (pWidget)->state_types_flags |= ((flag) & FLAG_MASK);
+  (pwidget)->state_types_flags |= ((flag) & FLAG_MASK);
 }
 
 /**********************************************************************//**
   Clear flag from the widget.
 **************************************************************************/
-void clear_wflag(struct widget *pWidget, enum widget_flag flag)
+void clear_wflag(struct widget *pwidget, enum widget_flag flag)
 {
-  (pWidget)->state_types_flags &= ~((flag) & FLAG_MASK);
+  (pwidget)->state_types_flags &= ~((flag) & FLAG_MASK);
 }
 
 /**********************************************************************//**
   Get state of the widget.
 **************************************************************************/
-enum widget_state get_wstate(const struct widget *pWidget)
+enum widget_state get_wstate(const struct widget *pwidget)
 {
-  return ((enum widget_state)(pWidget->state_types_flags & STATE_MASK));
+  return ((enum widget_state)(pwidget->state_types_flags & STATE_MASK));
 }
 
 /**********************************************************************//**
   Get type of the widget.
 **************************************************************************/
-enum widget_type get_wtype(const struct widget *pWidget)
+enum widget_type get_wtype(const struct widget *pwidget)
 {
-  return ((enum widget_type)(pWidget->state_types_flags & TYPE_MASK));
+  return ((enum widget_type)(pwidget->state_types_flags & TYPE_MASK));
 }
 
 /**********************************************************************//**
   Get all flags of the widget.
 **************************************************************************/
-enum widget_flag get_wflags(const struct widget *pWidget)
+enum widget_flag get_wflags(const struct widget *pwidget)
 {
-  return ((enum widget_flag)(pWidget->state_types_flags & FLAG_MASK));
+  return ((enum widget_flag)(pwidget->state_types_flags & FLAG_MASK));
 }
 
 /**********************************************************************//**
    Free resources allocated for the widget.
 **************************************************************************/
-void widget_free(struct widget **pWidget)
+void widget_free(struct widget **pwidget)
 {
-  struct widget *pGUI = *pWidget;
+  struct widget *gui = *pwidget;
 
-  if (get_wflags(pGUI) & WF_FREE_STRING) {
-    FREEUTF8STR(pGUI->string_utf8);
+  if (get_wflags(gui) & WF_FREE_STRING) {
+    FREEUTF8STR(gui->string_utf8);
   }
-  if (get_wflags(pGUI) & WF_WIDGET_HAS_INFO_LABEL) {
-    FREEUTF8STR(pGUI->info_label);
+  if (get_wflags(gui) & WF_WIDGET_HAS_INFO_LABEL) {
+    FREEUTF8STR(gui->info_label);
   }
-  if (get_wflags(pGUI) & WF_FREE_GFX) {
-    FREESURFACE(pGUI->gfx);
+  if (get_wflags(gui) & WF_FREE_GFX) {
+    FREESURFACE(gui->gfx);
   }
-  if (get_wflags(pGUI) & WF_FREE_THEME) {
-    if (get_wtype(pGUI) == WT_CHECKBOX) {
-      FREESURFACE(pGUI->private_data.cbox->pTRUE_Theme);
-      FREESURFACE(pGUI->private_data.cbox->pFALSE_Theme);
+  if (get_wflags(gui) & WF_FREE_THEME) {
+    if (get_wtype(gui) == WT_CHECKBOX) {
+      FREESURFACE(gui->private_data.cbox->true_theme);
+      FREESURFACE(gui->private_data.cbox->false_theme);
     } else {
-      FREESURFACE(pGUI->theme);
+      FREESURFACE(gui->theme);
     }
   }
-  if (get_wflags(pGUI) & WF_FREE_THEME2) {
-    FREESURFACE(pGUI->theme2);
+  if (get_wflags(gui) & WF_FREE_THEME2) {
+    FREESURFACE(gui->theme2);
   }
-  if (get_wflags(pGUI) & WF_FREE_DATA) {
-    FC_FREE(pGUI->data.ptr);
+  if (get_wflags(gui) & WF_FREE_DATA) {
+    FC_FREE(gui->data.ptr);
   }
-  if (get_wflags(pGUI) & WF_FREE_PRIVATE_DATA) {
-    FC_FREE(pGUI->private_data.ptr);
+  if (get_wflags(gui) & WF_FREE_PRIVATE_DATA) {
+    FC_FREE(gui->private_data.ptr);
   }
-  if (NULL != pGUI->destroy) {
-    pGUI->destroy(pGUI);
+  if (NULL != gui->destroy) {
+    gui->destroy(gui);
   }
 
-  FC_FREE(*pWidget);
+  FC_FREE(*pwidget);
 }
 
 /**********************************************************************//**
@@ -251,18 +251,18 @@ static void widget_core_unselect(struct widget *pwidget)
 **************************************************************************/
 struct widget *widget_new(void)
 {
-  struct widget *pWidget = fc_calloc(1, sizeof(struct widget));
+  struct widget *pwidget = fc_calloc(1, sizeof(struct widget));
 
-  pWidget->set_area = widget_core_set_area;
-  pWidget->set_position = widget_core_set_position;
-  pWidget->resize = widget_core_resize;
-  pWidget->redraw = widget_core_redraw;
-  pWidget->draw_frame = widget_core_draw_frame;
-  pWidget->mark_dirty = widget_core_mark_dirty;
-  pWidget->flush = widget_core_flush;
-  pWidget->undraw = widget_core_undraw;
-  pWidget->select = widget_core_select;
-  pWidget->unselect = widget_core_unselect;
+  pwidget->set_area = widget_core_set_area;
+  pwidget->set_position = widget_core_set_position;
+  pwidget->resize = widget_core_resize;
+  pwidget->redraw = widget_core_redraw;
+  pwidget->draw_frame = widget_core_draw_frame;
+  pwidget->mark_dirty = widget_core_mark_dirty;
+  pwidget->flush = widget_core_flush;
+  pwidget->undraw = widget_core_undraw;
+  pwidget->select = widget_core_select;
+  pwidget->unselect = widget_core_unselect;
 
-  return pWidget;
+  return pwidget;
 }

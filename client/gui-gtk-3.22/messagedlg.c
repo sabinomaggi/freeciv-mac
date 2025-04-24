@@ -50,8 +50,9 @@ static void item_toggled(GtkCellRendererToggle *cell,
 **************************************************************************/
 void popup_messageopt_dialog(void)
 {
-  if (!shell)
+  if (shell == NULL) {
     create_messageopt_dialog();
+  }
 
   gui_dialog_raise(shell);
 }
@@ -69,8 +70,8 @@ static void create_messageopt_dialog(void)
 
   gui_dialog_set_default_size(shell, -1, 450);
 
-  gui_dialog_add_button(shell, NULL, _("OK"), GTK_RESPONSE_OK);
-  gui_dialog_add_button(shell, NULL, _("Cancel"), GTK_RESPONSE_CANCEL);
+  gui_dialog_add_button(shell, NULL, _("_OK"), GTK_RESPONSE_OK);
+  gui_dialog_add_button(shell, NULL, _("_Cancel"), GTK_RESPONSE_CANCEL);
 
   explanation = gtk_label_new(NULL);
   g_object_set(explanation, "margin", 4, NULL);

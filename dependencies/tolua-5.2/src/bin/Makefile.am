@@ -36,7 +36,11 @@ EXTRA_tolua_SOURCES = \
 
 tolua_LDADD = \
 	$(LUA_LIBS) \
-	../lib/libtolua.la
+	../lib/libtolua.la \
+	$(LUA_LIBS)
 
 EXTRA_DIST = \
 	tolua.pkg
+
+# To trick 'make dist' to build tolua, needed later to generate source files
+tolua.pkg : tolua$(EXEEXT)

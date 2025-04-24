@@ -21,7 +21,9 @@ extern "C" {
 #include "bitvector.h"
 #include "support.h"            /* bool type */
 
+struct cm_parameter;
 struct worklist;
+struct unit_order;
 struct requirement;
 struct act_prob;
 
@@ -33,7 +35,7 @@ struct data_in {
 struct raw_data_out {
   void *dest;
   size_t dest_size, used, current;
-  bool too_short;		/* set to 1 if try to read past end */
+  bool too_short;              /* set to 1 if try to read past end */
 };
 
 /* Used for dio_<put|get>_type() methods.
@@ -63,8 +65,9 @@ struct plocation {
   enum plocation_kind kind;
 
   union {
+    // PTZ190716 int is too small for indexing
     /* Used if this is an array element */
-    int number;
+    size_t number;
 
     /* Used if this is a field. */
     char *name;
@@ -72,7 +75,7 @@ struct plocation {
 
   /* If the full address is to a location inside this this field should
    * point to it. If this location is the final location this field should
-   * be NULL. */
+   * be nullptr. */
   struct plocation *sub_location;
 };
 
@@ -89,7 +92,7 @@ typedef char *(*DIO_PUT_CONV_FUN) (const char *src, size_t *length);
 void dio_set_put_conv_callback(DIO_PUT_CONV_FUN fun);
 
 typedef bool(*DIO_GET_CONV_FUN) (char *dst, size_t ndst,
-				 const char *src, size_t nsrc);
+                                 const char *src, size_t nsrc);
 void dio_set_get_conv_callback(DIO_GET_CONV_FUN fun);
 
 bool dataio_get_conv_callback(char *dst, size_t ndst, const char *src,
@@ -97,7 +100,7 @@ bool dataio_get_conv_callback(char *dst, size_t ndst, const char *src,
 
 /* General functions */
 void dio_output_init(struct raw_data_out *dout, void *destination,
-		     size_t dest_size);
+                     size_t dest_size);
 void dio_output_rewind(struct raw_data_out *dout);
 size_t dio_output_used(struct raw_data_out *dout);
 
@@ -138,13 +141,11 @@ bool dio_get_memory_raw(struct data_in *din, void *dest, size_t dest_size)
     fc__attribute((nonnull (2)));
 bool dio_get_string_raw(struct data_in *din, char *dest, size_t max_dest_size)
     fc__attribute((nonnull (2)));
-bool dio_get_tech_list_raw(struct data_in *din, int *dest)
-    fc__attribute((nonnull (2)));
-bool dio_get_unit_list_raw(struct data_in *din, int *dest)
-    fc__attribute((nonnull (2)));
-bool dio_get_building_list_raw(struct data_in *din, int *dest)
+bool dio_get_cm_parameter_raw(struct data_in *din, struct cm_parameter *param)
     fc__attribute((nonnull (2)));
 bool dio_get_worklist_raw(struct data_in *din, struct worklist *pwl)
+    fc__attribute((nonnull (2)));
+bool dio_get_unit_order_raw(struct data_in *din, struct unit_order *order)
     fc__attribute((nonnull (2)));
 bool dio_get_requirement_raw(struct data_in *din, struct requirement *preq)
     fc__attribute((nonnull (2)));
@@ -161,6 +162,10 @@ bool dio_get_uint16_vec8_raw(struct data_in *din, int **values, int stop_value)
 #define dio_get_estring_raw dio_get_string_raw
 #define dio_put_estring_raw dio_put_string_raw
 
+/* In the binary protocol, just encode the array lengths. */
+#define dio_get_arraylen_raw dio_get_uint16_raw
+#define dio_put_arraylen_raw dio_put_uint16_raw
+
 #ifndef FREECIV_JSON_CONNECTION
 
 /* Should be a function but we need some macro magic. */
@@ -172,34 +177,34 @@ bool dio_get_uint16_vec8_raw(struct data_in *din, int **values, int stop_value)
 #endif /* FREECIV_JSON_CONNECTION */
 
 /* puts */
-void dio_put_type_raw(struct raw_data_out *dout, enum data_type type, int value);
+int dio_put_type_raw(struct raw_data_out *dout, enum data_type type, int value);
 
-void dio_put_uint8_raw(struct raw_data_out *dout, int value);
-void dio_put_uint16_raw(struct raw_data_out *dout, int value);
-void dio_put_uint32_raw(struct raw_data_out *dout, int value);
+int dio_put_uint8_raw(struct raw_data_out *dout, int value);
+int dio_put_uint16_raw(struct raw_data_out *dout, int value);
+int dio_put_uint32_raw(struct raw_data_out *dout, int value);
 
-void dio_put_sint8_raw(struct raw_data_out *dout, int value);
-void dio_put_sint16_raw(struct raw_data_out *dout, int value);
-void dio_put_sint32_raw(struct raw_data_out *dout, int value);
+int dio_put_sint8_raw(struct raw_data_out *dout, int value);
+int dio_put_sint16_raw(struct raw_data_out *dout, int value);
+int dio_put_sint32_raw(struct raw_data_out *dout, int value);
 
-void dio_put_bool8_raw(struct raw_data_out *dout, bool value);
-void dio_put_bool32_raw(struct raw_data_out *dout, bool value);
-void dio_put_ufloat_raw(struct raw_data_out *dout, float value, int float_factor);
-void dio_put_sfloat_raw(struct raw_data_out *dout, float value, int float_factor);
+int dio_put_bool8_raw(struct raw_data_out *dout, bool value);
+int dio_put_bool32_raw(struct raw_data_out *dout, bool value);
+int dio_put_ufloat_raw(struct raw_data_out *dout, float value, int float_factor);
+int dio_put_sfloat_raw(struct raw_data_out *dout, float value, int float_factor);
 
-void dio_put_memory_raw(struct raw_data_out *dout, const void *value, size_t size);
-void dio_put_string_raw(struct raw_data_out *dout, const char *value);
-void dio_put_city_map_raw(struct raw_data_out *dout, const char *value);
-void dio_put_tech_list_raw(struct raw_data_out *dout, const int *value);
-void dio_put_unit_list_raw(struct raw_data_out *dout, const int *value);
-void dio_put_building_list_raw(struct raw_data_out *dout, const int *value);
-void dio_put_worklist_raw(struct raw_data_out *dout, const struct worklist *pwl);
-void dio_put_requirement_raw(struct raw_data_out *dout, const struct requirement *preq);
-void dio_put_action_probability_raw(struct raw_data_out *dout,
-                                    const struct act_prob *aprob);
+int dio_put_memory_raw(struct raw_data_out *dout, const void *value, size_t size);
+int dio_put_string_raw(struct raw_data_out *dout, const char *value);
+int dio_put_cm_parameter_raw(struct raw_data_out *dout,
+                             const struct cm_parameter *param);
+int dio_put_worklist_raw(struct raw_data_out *dout, const struct worklist *pwl);
+int dio_put_unit_order_raw(struct raw_data_out *dout,
+                           const struct unit_order *order);
+int dio_put_requirement_raw(struct raw_data_out *dout, const struct requirement *preq);
+int dio_put_action_probability_raw(struct raw_data_out *dout,
+                                   const struct act_prob *aprob);
 
-void dio_put_uint8_vec8_raw(struct raw_data_out *dout, int *values, int stop_value);
-void dio_put_uint16_vec8_raw(struct raw_data_out *dout, int *values, int stop_value);
+int dio_put_uint8_vec8_raw(struct raw_data_out *dout, int *values, int stop_value);
+int dio_put_uint16_vec8_raw(struct raw_data_out *dout, int *values, int stop_value);
 
 #ifndef FREECIV_JSON_CONNECTION
 

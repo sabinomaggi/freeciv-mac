@@ -18,21 +18,21 @@
   A common technique is to have some memory dynamically allocated
   (using malloc etc), to avoid compiled-in limits, but only allocate
   enough space as initially needed, and then realloc later if/when
-  require more space.  Typically, the realloc is made a bit more than
+  require more space. Typically, the realloc is made a bit more than
   immediately necessary, to avoid frequent reallocs if the object
-  grows incrementally.  Also, don't usually realloc at all if the
-  object shrinks.  This is straightforward, but just requires a bit
+  grows incrementally. Also, don't usually realloc at all if the
+  object shrinks. This is straightforward, but just requires a bit
   of book-keeping to keep track of how much has been allocated etc.
   This module provides some tools to make this a bit easier.
 
-  This is deliberately simple and light-weight.  The user is allowed
+  This is deliberately simple and light-weight. The user is allowed
   full access to the struct elements rather than use accessor
   functions etc.
 
   Note one potential hazard: when the size is increased (astr_reserve()),
-  realloc (really fc_realloc) is used, which retains any data which
+  realloc (really fc_realloc()) is used, which retains any data which
   was there previously, _but_: any external pointers into the allocated
-  memory may then become wild.  So you cannot safely use such external
+  memory may then become wild. So you cannot safely use such external
   pointers into the astring data, except strictly between times when
   the astring size may be changed.
 
@@ -48,9 +48,9 @@
   One pattern for using astr_str() is to replace static buffers in
   functions that return a pointer to static storage. Where previously
   you would have had e.g. "static struct buf[128]" with an arbitrary
-  size limit, you can have "static struct astring buf", and re-use the
-  same astring on subsequent calls; the caller should behave the
-  same (only reading the string and not freeing it).
+  size limit, you can have "static struct astring buf", and reuse
+  the same astring on subsequent calls; the caller should behave
+  the same (only reading the string and not freeing it).
 
 ***********************************************************************/
 
@@ -66,9 +66,10 @@
 
 /* utility */
 #include "fcintl.h"
-#include "log.h"                /* fc_assert */
+#include "fcthread.h"
+#include "log.h"                /* fc_assert() */
 #include "mem.h"
-#include "support.h"            /* fc_vsnprintf, fc_strlcat */
+#include "support.h"            /* fc_vsnprintf(), fc_strlcat() */
 
 #include "astring.h"
 
@@ -77,38 +78,50 @@
 #define n_alloc _private_n_alloc_
 
 static const struct astring zero_astr = ASTRING_INIT;
-static char *astr_buffer = NULL;
+static char *astr_buffer = nullptr;
 static size_t astr_buffer_alloc = 0;
 
-static inline char *astr_buffer_get(size_t *alloc);
-static inline char *astr_buffer_grow(size_t *alloc);
-static void astr_buffer_free(void);
+static fc_mutex astr_mutex;
 
+static inline char *astr_buffer_get(size_t *alloc);
+static inline char *astr_buffer_grow(size_t request, size_t *alloc);
+static void astr_buffer_free(void);
 
 /************************************************************************//**
   Returns the astring buffer. Create it if necessary.
 ****************************************************************************/
 static inline char *astr_buffer_get(size_t *alloc)
 {
-  if (!astr_buffer) {
-    astr_buffer_alloc = 65536;
+  if (astr_buffer == nullptr) {
+    astr_buffer_alloc = 4096;
     astr_buffer = fc_malloc(astr_buffer_alloc);
     atexit(astr_buffer_free);
   }
 
   *alloc = astr_buffer_alloc;
+
   return astr_buffer;
 }
 
 /************************************************************************//**
   Grow the astring buffer.
 ****************************************************************************/
-static inline char *astr_buffer_grow(size_t *alloc)
+static inline char *astr_buffer_grow(size_t request, size_t *alloc)
 {
-  astr_buffer_alloc *= 2;
+  if (request > astr_buffer_alloc) {
+    /* We simply set buffer size to the requested one here.
+     * Old implementation went on by doubling the buffer size,
+     * presumably to match what low level memory handling does
+     * anyway. But need to increase the buffer size is so rare
+     * that we can as well call this function again, even when
+     * the increase would fall within limits of what doubling
+     * would have given us. */
+    astr_buffer_alloc = request;
+  }
   astr_buffer = fc_realloc(astr_buffer, astr_buffer_alloc);
 
   *alloc = astr_buffer_alloc;
+
   return astr_buffer;
 }
 
@@ -130,14 +143,15 @@ void astr_init(struct astring *astr)
 
 /************************************************************************//**
   Free the memory associated with astr, and return astr to same
-  state as after astr_init.
+  state as after astr_init().
 ****************************************************************************/
 void astr_free(struct astring *astr)
 {
   if (astr->n_alloc > 0) {
-    fc_assert_ret(NULL != astr->str);
+    fc_assert_ret(astr->str != nullptr);
     free(astr->str);
   }
+
   *astr = zero_astr;
 }
 
@@ -149,23 +163,23 @@ void astr_free(struct astring *astr)
 char *astr_to_str(struct astring *astr)
 {
   char *str = astr->str;
+
   *astr = zero_astr;
+
   return str;
 }
 
 /************************************************************************//**
   Check that astr has enough size to hold n, and realloc to a bigger
-  size if necessary.  Here n must be big enough to include the trailing
-  ascii-null if required.  The requested n is stored in astr->n.
+  size if necessary. Here n must be big enough to include the trailing
+  ascii-null if required. The requested n is stored in astr->n.
   The actual amount allocated may be larger than n, and is stored
   in astr->n_alloc.
 ****************************************************************************/
 void astr_reserve(struct astring *astr, size_t n)
 {
-  int n1;
+  unsigned int n1;
   bool was_null = (astr->n == 0);
-
-  fc_assert_ret(NULL != astr);
 
   astr->n = n;
   if (n <= astr->n_alloc) {
@@ -187,36 +201,48 @@ void astr_reserve(struct astring *astr, size_t n)
 void astr_clear(struct astring *astr)
 {
   if (astr->n == 0) {
-    /* astr_reserve is really astr_size, so we don't want to reduce the
-     * size. */
+    /* astr_reserve() is really astr_size(), so we don't want to reduce
+     * the size. */
     astr_reserve(astr, 1);
   }
   astr->str[0] = '\0';
 }
 
 /************************************************************************//**
-  Add the text to the string.
+  Helper: add the text to the specified place in the string.
 ****************************************************************************/
-static void astr_vadd(struct astring *astr, size_t at,
-                      const char *format, va_list ap)
+static inline void astr_vadd_at(struct astring *astr, size_t at,
+                                const char *format, va_list ap)
 {
   char *buffer;
   size_t buffer_size;
-  size_t new_len;
+  size_t req_len;
+  va_list copy;
+
+  fc_mutex_allocate(&astr_mutex);
 
   buffer = astr_buffer_get(&buffer_size);
-  for (;;) {
-    new_len = fc_vsnprintf(buffer, buffer_size, format, ap);
-    if (new_len < buffer_size && (size_t) -1 != new_len) {
-      break;
+
+  va_copy(copy, ap);
+
+  req_len = fc_vsnprintf(buffer, buffer_size, format, ap);
+  if (req_len + 1 > buffer_size) {
+    buffer = astr_buffer_grow(req_len + 1, &buffer_size);
+    /* Even if buffer is *still* too small, we fill what we can */
+    req_len = fc_vsnprintf(buffer, buffer_size, format, copy);
+    if (req_len > buffer_size) {
+      /* What we actually got */
+      req_len = buffer_size;
     }
-    buffer = astr_buffer_grow(&buffer_size);
   }
+  va_end(copy);
 
-  new_len += at + 1;
+  req_len += at + 1;
 
-  astr_reserve(astr, new_len);
+  astr_reserve(astr, req_len);
   fc_strlcpy(astr->str + at, buffer, astr->n_alloc - at);
+
+  fc_mutex_release(&astr_mutex);
 }
 
 /************************************************************************//**
@@ -227,10 +253,17 @@ void astr_set(struct astring *astr, const char *format, ...)
   va_list args;
 
   va_start(args, format);
-  astr_vadd(astr, 0, format, args);
+  astr_vadd_at(astr, 0, format, args);
   va_end(args);
 }
 
+/************************************************************************//**
+  Add the text to the string (varargs version).
+****************************************************************************/
+void astr_vadd(struct astring *astr, const char *format, va_list ap)
+{
+  astr_vadd_at(astr, astr_len(astr), format, ap);
+}
 
 /************************************************************************//**
   Add the text to the string.
@@ -240,7 +273,7 @@ void astr_add(struct astring *astr, const char *format, ...)
   va_list args;
 
   va_start(args, format);
-  astr_vadd(astr, astr_len(astr), format, args);
+  astr_vadd_at(astr, astr_len(astr), format, args);
   va_end(args);
 }
 
@@ -254,17 +287,17 @@ void astr_add_line(struct astring *astr, const char *format, ...)
 
   va_start(args, format);
   if (0 < len) {
-    astr_vadd(astr, len + 1, format, args);
+    astr_vadd_at(astr, len + 1, format, args);
     astr->str[len] = '\n';
   } else {
-    astr_vadd(astr, len, format, args);
+    astr_vadd_at(astr, len, format, args);
   }
   va_end(args);
 }
 
 /************************************************************************//**
-  Replace the spaces by line breaks when the line lenght is over the desired
-  one.
+  Replace the spaces by line breaks when the line length is over
+  the desired one.
 ****************************************************************************/
 void astr_break_lines(struct astring *astr, size_t desired_len)
 {
@@ -280,9 +313,9 @@ void astr_break_lines(struct astring *astr, size_t desired_len)
 const char *astr_build_or_list(struct astring *astr,
                                const char *const *items, size_t number)
 {
-  fc_assert_ret_val(NULL != astr, NULL);
-  fc_assert_ret_val(0 < number, NULL);
-  fc_assert_ret_val(NULL != items, NULL);
+  fc_assert_ret_val(astr != nullptr, nullptr);
+  fc_assert_ret_val(0 < number, nullptr);
+  fc_assert_ret_val(items != nullptr, nullptr);
 
   if (1 == number) {
     /* TRANS: "or"-separated string list with one single item. */
@@ -293,16 +326,16 @@ const char *astr_build_or_list(struct astring *astr,
   } else {
     /* Estimate the space we need. */
     astr_reserve(astr, number * 64);
-    /* TRANS: start of an "or"-separated string list with more than two
-     * items. */
+    /* TRANS: start of an "or"-separated string list with more than
+     * two items. */
     astr_set(astr, Q_("?or-list:%s"), *items++);
     while (1 < --number) {
       /* TRANS: next elements of an "or"-separated string list with more
        * than two items. */
       astr_add(astr, Q_("?or-list:, %s"), *items++);
     }
-    /* TRANS: end of an "or"-separated string list with more than two
-     * items. */
+    /* TRANS: end of an "or"-separated string list with more than
+     * two items. */
     astr_add(astr, Q_("?or-list:, or %s"), *items);
   }
 
@@ -318,9 +351,9 @@ const char *astr_build_or_list(struct astring *astr,
 const char *astr_build_and_list(struct astring *astr,
                                 const char *const *items, size_t number)
 {
-  fc_assert_ret_val(NULL != astr, NULL);
-  fc_assert_ret_val(0 < number, NULL);
-  fc_assert_ret_val(NULL != items, NULL);
+  fc_assert_ret_val(astr != nullptr, nullptr);
+  fc_assert_ret_val(0 < number, nullptr);
+  fc_assert_ret_val(items != nullptr, nullptr);
 
   if (1 == number) {
     /* TRANS: "and"-separated string list with one single item. */
@@ -331,16 +364,16 @@ const char *astr_build_and_list(struct astring *astr,
   } else {
     /* Estimate the space we need. */
     astr_reserve(astr, number * 64);
-    /* TRANS: start of an "and"-separated string list with more than two
-     * items. */
+    /* TRANS: start of an "and"-separated string list with more than
+     * two items. */
     astr_set(astr, Q_("?and-list:%s"), *items++);
     while (1 < --number) {
       /* TRANS: next elements of an "and"-separated string list with more
        * than two items. */
       astr_add(astr, Q_("?and-list:, %s"), *items++);
     }
-    /* TRANS: end of an "and"-separated string list with more than two
-     * items. */
+    /* TRANS: end of an "and"-separated string list with more than
+     * two items. */
     astr_add(astr, Q_("?and-list:, and %s"), *items);
   }
 
@@ -357,4 +390,20 @@ void astr_copy(struct astring *dest, const struct astring *src)
   } else {
     astr_set(dest, "%s", src->str);
   }
+}
+
+/************************************************************************//**
+  Initialize astr API
+****************************************************************************/
+void fc_astr_init(void)
+{
+  fc_mutex_init(&astr_mutex);
+}
+
+/************************************************************************//**
+  Free astr handling API resources
+****************************************************************************/
+void fc_astr_free(void)
+{
+  fc_mutex_destroy(&astr_mutex);
 }

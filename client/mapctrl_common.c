@@ -44,6 +44,7 @@
 #include "options.h"
 #include "overview_common.h"
 #include "tilespec.h"
+#include "zoom.h"
 
 /* Selection Rectangle */
 static float rec_anchor_x, rec_anchor_y;  /* canvas coordinates for anchor */
@@ -79,15 +80,16 @@ static void define_tiles_within_rectangle(bool append);
 
 /**********************************************************************//**
   Called when Right Mouse Button is depressed. Record the canvas
-  coordinates of the center of the tile, which may be unreal. This
-  anchor is not the drawing start point, but is used to calculate
+  coordinates of the center of the tile, which may be unreal.
+  This anchor is not the drawing start point, but is used to calculate
   width, height. Also record the current mapview centering.
 **************************************************************************/
 void anchor_selection_rectangle(int canvas_x, int canvas_y)
 {
-  struct tile *ptile = canvas_pos_to_nearest_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_nearest_tile(canvas_x, canvas_y,
+                                                  mouse_zoom);
 
-  tile_to_canvas_pos(&rec_anchor_x, &rec_anchor_y, ptile);
+  tile_to_canvas_pos(&rec_anchor_x, &rec_anchor_y, map_zoom, ptile);
   rec_anchor_x += tileset_tile_width(tileset) / 2;
   rec_anchor_y += tileset_tile_height(tileset) / 2;
   /* FIXME: This may be off-by-one. */
@@ -98,7 +100,7 @@ void anchor_selection_rectangle(int canvas_x, int canvas_y)
 /**********************************************************************//**
   Iterate over the pixel boundaries of the rectangle and pick the tiles
   whose center falls within. Axis pixel incrementation is half tile size to
-  accomodate tilesets with varying tile shapes and proportions of X/Y.
+  accomodate tilesets with varying tile shapes and proportions of X / Y.
 
   These operations are performed on the tiles:
   -  Make tiles that contain owned cities hilited
@@ -141,7 +143,7 @@ static void define_tiles_within_rectangle(bool append)
 	continue;
       }
 
-      ptile = canvas_pos_to_tile(x, y);
+      ptile = canvas_pos_to_tile(x, y, map_zoom);
       if (!ptile) {
 	continue;
       }
@@ -149,7 +151,7 @@ static void define_tiles_within_rectangle(bool append)
       /*  "Half-tile" indentation must match, or we'll process
        *  some tiles twice in the case of rectangular shape tiles.
        */
-      tile_to_canvas_pos(&x2, &y2, ptile);
+      tile_to_canvas_pos(&x2, &y2, map_zoom, ptile);
 
       if ((yy % 2) != 0 && ((rec_corner_x % W) ^ abs((int)x2 % W)) != 0) {
 	continue;
@@ -198,17 +200,17 @@ static void define_tiles_within_rectangle(bool append)
 **************************************************************************/
 void update_selection_rectangle(float canvas_x, float canvas_y)
 {
-  const int W = tileset_tile_width(tileset),    half_W = W / 2;
-  const int H = tileset_tile_height(tileset),   half_H = H / 2;
+  const int W = tileset_tile_width(tileset),  half_W = W / 2;
+  const int H = tileset_tile_height(tileset), half_H = H / 2;
   static struct tile *rec_tile = NULL;
   int diff_x, diff_y;
   struct tile *center_tile;
   struct tile *ptile;
 
-  ptile = canvas_pos_to_nearest_tile(canvas_x, canvas_y);
+  ptile = canvas_pos_to_nearest_tile(canvas_x, canvas_y, mouse_zoom);
 
-  /*  Did mouse pointer move beyond the current tile's
-   *  boundaries? Avoid macros; tile may be unreal!
+  /* Did mouse pointer move beyond the current tile's
+   * boundaries? Avoid macros; tile may be unreal!
    */
   if (ptile == rec_tile) {
     return;
@@ -218,21 +220,19 @@ void update_selection_rectangle(float canvas_x, float canvas_y)
   /* Clear previous rectangle. */
   draw_selection_rectangle(rec_corner_x, rec_corner_y, rec_w, rec_h);
 
-  /*  Fix canvas coords to the center of the tile.
-   */
-  tile_to_canvas_pos(&canvas_x, &canvas_y, ptile);
+  /* Fix canvas coords to the center of the tile. */
+  tile_to_canvas_pos(&canvas_x, &canvas_y, map_zoom, ptile);
   canvas_x += half_W;
   canvas_y += half_H;
 
-  rec_w = rec_anchor_x - canvas_x;  /* width */
-  rec_h = rec_anchor_y - canvas_y;  /* height */
+  rec_w = rec_anchor_x - canvas_x;  /* Width */
+  rec_h = rec_anchor_y - canvas_y;  /* Height */
 
   /* FIXME: This may be off-by-one. */
   center_tile = get_center_tile_mapcanvas();
   map_distance_vector(&diff_x, &diff_y, center_tile, rec_canvas_center_tile);
 
-  /*  Adjust width, height if mapview has recentered.
-   */
+  /* Adjust width, height if mapview has recentered. */
   if (diff_x != 0 || diff_y != 0) {
 
     if (tileset_is_isometric(tileset)) {
@@ -240,8 +240,8 @@ void update_selection_rectangle(float canvas_x, float canvas_y)
       rec_h += (diff_x + diff_y) * half_H;
 
       /* Iso wrapping */
-      if (abs(rec_w) > wld.map.xsize * half_W / 2) {
-        int wx = wld.map.xsize * half_W, wy = wld.map.xsize * half_H;
+      if (abs(rec_w) > MAP_NATIVE_WIDTH * half_W / 2) {
+        int wx = MAP_NATIVE_WIDTH * half_W, wy = MAP_NATIVE_WIDTH * half_H;
 
         rec_w > 0 ? (rec_w -= wx, rec_h -= wy) : (rec_w += wx, rec_h += wy);
       }
@@ -251,8 +251,8 @@ void update_selection_rectangle(float canvas_x, float canvas_y)
       rec_h += diff_y * H;
 
       /* X wrapping */
-      if (abs(rec_w) > wld.map.xsize * half_W) {
-        int wx = wld.map.xsize * W;
+      if (abs(rec_w) > MAP_NATIVE_WIDTH * half_W) {
+        int wx = MAP_NATIVE_WIDTH * W;
 
         rec_w > 0 ? (rec_w -= wx) : (rec_w += wx);
       }
@@ -358,7 +358,7 @@ void toggle_tile_hilite(struct tile *ptile)
 **************************************************************************/
 void key_city_overlay(int canvas_x, int canvas_y)
 {
-  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
   if (can_client_change_view() && ptile) {
     struct unit *punit;
@@ -392,16 +392,20 @@ bool clipboard_copy_production(struct tile *ptile)
     clipboard = pcity->production;
   } else {
     struct unit *punit = find_visible_unit(ptile);
+
     if (!punit) {
       return FALSE;
     }
+
     if (!can_player_build_unit_direct(client.conn.playing,
-                                      unit_type_get(punit)))  {
+                                      unit_type_get(punit),
+                                      FALSE))  {
       create_event(ptile, E_BAD_COMMAND, ftc_client,
                    _("You don't know how to build %s!"),
                    unit_name_translation(punit));
       return TRUE;
     }
+
     clipboard.kind = VUT_UTYPE;
     clipboard.value.utype = unit_type_get(punit);
   }
@@ -449,7 +453,7 @@ void clipboard_paste_production(struct city *pcity)
 static void clipboard_send_production_packet(struct city *pcity)
 {
   if (are_universals_equal(&pcity->production, &clipboard)
-      || !can_city_build_now(pcity, &clipboard)) {
+      || !can_city_build_now(&(wld.map), pcity, &clipboard)) {
     return;
   }
 
@@ -468,7 +472,7 @@ void upgrade_canvas_clipboard(void)
     return;
   }
   if (VUT_UTYPE == clipboard.kind)  {
-    struct unit_type *u =
+    const struct unit_type *u =
       can_upgrade_unittype(client.conn.playing, clipboard.value.utype);
 
     if (u)  {
@@ -482,13 +486,13 @@ void upgrade_canvas_clipboard(void)
 **************************************************************************/
 void release_goto_button(int canvas_x, int canvas_y)
 {
-  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
-  if (keyboardless_goto_active && hover_state == HOVER_GOTO && ptile) {
+  if (keyboardless_goto_active
+      && (hover_state == HOVER_GOTO || hover_state == HOVER_GOTO_SEL_TGT)
+      && ptile) {
     do_unit_goto(ptile);
-    set_hover_state(NULL, HOVER_NONE,
-                    ACTIVITY_LAST, NULL,
-                    EXTRA_NONE, ACTION_NONE, ORDER_LAST);
+    clear_hover_state();
     update_unit_info_label(get_units_in_focus());
   }
   keyboardless_goto_active = FALSE;
@@ -497,18 +501,18 @@ void release_goto_button(int canvas_x, int canvas_y)
 }
 
 /**********************************************************************//**
- The goto hover state is only activated when the mouse pointer moves
- beyond the tile where the button was depressed, to avoid mouse typos.
+  The goto hover state is only activated when the mouse pointer moves
+  beyond the tile where the button was depressed, to avoid mouse typos.
 **************************************************************************/
 void maybe_activate_keyboardless_goto(int canvas_x, int canvas_y)
 {
-  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
   if (ptile && get_num_units_in_focus() > 0
       && !same_pos(keyboardless_goto_start_tile, ptile)
       && can_client_issue_orders()) {
     keyboardless_goto_active = TRUE;
-    request_unit_goto(ORDER_LAST, ACTION_NONE, EXTRA_NONE);
+    request_unit_goto(ORDER_LAST, ACTION_NONE, -1);
   }
 }
 
@@ -542,7 +546,7 @@ bool can_end_turn(void)
 }
 
 /**********************************************************************//**
-  Scroll the mapview half a screen in the given direction.  This is a GUI
+  Scroll the mapview half a screen in the given direction. This is a GUI
   direction; i.e., DIR8_NORTH is "up" on the mapview.
 **************************************************************************/
 void scroll_mapview(enum direction8 gui_dir)
@@ -555,18 +559,18 @@ void scroll_mapview(enum direction8 gui_dir)
 
   gui_x += DIR_DX[gui_dir] * mapview.width / 2;
   gui_y += DIR_DY[gui_dir] * mapview.height / 2;
-  set_mapview_origin(gui_x, gui_y);
+  set_mapview_origin(gui_x, gui_y, map_zoom);
 }
 
 /**********************************************************************//**
   Do some appropriate action when the "main" mouse button (usually
-  left-click) is pressed.  For more sophisticated user control use (or
-  write) a different xxx_button_pressed function.
+  left-click) is pressed. For more sophisticated user control use
+  (or write) a different xxx_button_pressed function.
 **************************************************************************/
 void action_button_pressed(int canvas_x, int canvas_y,
                            enum quickselect_type qtype)
 {
-  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
   if (can_client_change_view() && ptile) {
     /* FIXME: Some actions here will need to check can_client_issue_orders.
@@ -580,7 +584,7 @@ void action_button_pressed(int canvas_x, int canvas_y,
 **************************************************************************/
 void wakeup_button_pressed(int canvas_x, int canvas_y)
 {
-  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
   if (can_client_issue_orders() && ptile) {
     wakeup_sentried_units(ptile);
@@ -592,22 +596,24 @@ void wakeup_button_pressed(int canvas_x, int canvas_y)
 **************************************************************************/
 void adjust_workers_button_pressed(int canvas_x, int canvas_y)
 {
-  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
   if (NULL != ptile && can_client_issue_orders()) {
     struct city *pcity = find_city_near_tile(ptile);
 
     if (pcity && !cma_is_city_under_agent(pcity, NULL)) {
+#ifndef FREECIV_NDEBUG
       int city_x, city_y;
+#endif
 
       fc_assert_ret(city_base_to_city_map(&city_x, &city_y, pcity, ptile));
 
       if (NULL != tile_worked(ptile) && tile_worked(ptile) == pcity) {
-	dsend_packet_city_make_specialist(&client.conn, pcity->id,
-					  city_x, city_y);
+        dsend_packet_city_make_specialist(&client.conn,
+                                          pcity->id, ptile->index);
       } else if (city_can_work_tile(pcity, ptile)) {
-	dsend_packet_city_make_worker(&client.conn, pcity->id,
-				      city_x, city_y);
+        dsend_packet_city_make_worker(&client.conn,
+                                      pcity->id, ptile->index);
       } else {
 	return;
       }
@@ -627,7 +633,8 @@ void adjust_workers_button_pressed(int canvas_x, int canvas_y)
 void recenter_button_pressed(int canvas_x, int canvas_y)
 {
   /* We use the "nearest" tile here so off-map clicks will still work. */
-  struct tile *ptile = canvas_pos_to_nearest_tile(canvas_x, canvas_y);
+  struct tile *ptile = canvas_pos_to_nearest_tile(canvas_x, canvas_y,
+                                                  mouse_zoom);
 
   if (can_client_change_view() && ptile) {
     center_tile_mapcanvas(ptile);
@@ -658,15 +665,26 @@ void update_turn_done_button_state(void)
 void update_line(int canvas_x, int canvas_y)
 {
   struct tile *ptile;
+  struct unit_list *punits;
 
   switch (hover_state) {
   case HOVER_GOTO:
   case HOVER_PATROL:
   case HOVER_CONNECT:
-    ptile = canvas_pos_to_tile(canvas_x, canvas_y);
+    ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
 
     is_valid_goto_draw_line(ptile);
+    break;
+  case HOVER_GOTO_SEL_TGT:
+    ptile = canvas_pos_to_tile(canvas_x, canvas_y, mouse_zoom);
+    punits = get_units_in_focus();
+
+    set_hover_state(punits, hover_state, connect_activity, connect_tgt,
+                    ptile->index, goto_last_sub_tgt,
+                    goto_last_action, goto_last_order);
+    break;
   case HOVER_NONE:
+  case HOVER_TELEPORT:
   case HOVER_PARADROP:
   case HOVER_ACT_SEL_TGT:
     break;
@@ -679,6 +697,7 @@ void update_line(int canvas_x, int canvas_y)
 void overview_update_line(int overview_x, int overview_y)
 {
   struct tile *ptile;
+  struct unit_list *punits;
   int x, y;
 
   switch (hover_state) {
@@ -689,7 +708,18 @@ void overview_update_line(int overview_x, int overview_y)
     ptile = map_pos_to_tile(&(wld.map), x, y);
 
     is_valid_goto_draw_line(ptile);
+    break;
+  case HOVER_GOTO_SEL_TGT:
+    overview_to_map_pos(&x, &y, overview_x, overview_y);
+    ptile = map_pos_to_tile(&(wld.map), x, y);
+    punits = get_units_in_focus();
+
+    set_hover_state(punits, hover_state, connect_activity, connect_tgt,
+                    ptile->index, goto_last_sub_tgt,
+                    goto_last_action, goto_last_order);
+    break;
   case HOVER_NONE:
+  case HOVER_TELEPORT:
   case HOVER_PARADROP:
   case HOVER_ACT_SEL_TGT:
     break;

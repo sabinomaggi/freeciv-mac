@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -37,13 +37,13 @@ GUI_FUNC_PROTO(void, update_city_descriptions, void)
 GUI_FUNC_PROTO(void, set_indicator_icons, struct sprite *bulb, struct sprite *sol,
                struct sprite *flake, struct sprite *gov)
 
+GUI_FUNC_PROTO(void, start_turn, void)
+
 GUI_FUNC_PROTO(void, overview_size_changed, void)
 GUI_FUNC_PROTO(void, update_overview_scroll_window_pos, int x, int y)
 GUI_FUNC_PROTO(void, get_overview_area_dimensions, int *width, int *height)
 GUI_FUNC_PROTO(struct canvas *, get_overview_window, void)
 
-GUI_FUNC_PROTO(void, flush_mapcanvas, int canvas_x, int canvas_y,
-               int pixel_width, int pixel_height)
 GUI_FUNC_PROTO(void, dirty_rect, int canvas_x, int canvas_y,
                int pixel_width, int pixel_height)
 GUI_FUNC_PROTO(void, dirty_all, void)
@@ -53,10 +53,12 @@ GUI_FUNC_PROTO(void, gui_flush, void)
 GUI_FUNC_PROTO(void, update_map_canvas_scrollbars, void)
 GUI_FUNC_PROTO(void, update_map_canvas_scrollbars_size, void)
 
+GUI_FUNC_PROTO(void, map_canvas_size_refresh, void)
+
 GUI_FUNC_PROTO(void, put_cross_overlay_tile, struct tile *ptile)
 
 GUI_FUNC_PROTO(void, draw_selection_rectangle, int canvas_x, int canvas_y,
                int w, int h)
 GUI_FUNC_PROTO(void, tileset_changed, void)
 
-#endif  /* FC__MAPVIEW_G_H */
+#endif /* FC__MAPVIEW_G_H */

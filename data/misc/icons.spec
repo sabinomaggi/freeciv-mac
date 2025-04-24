@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -12,7 +12,7 @@ artists = "
 "
 
 [extra]
-sprites = 
+sprites =
 	{	"tag", "file"
 		"icon.freeciv", "misc/civicon"
 		"icon.citydlg", "misc/cityicon"

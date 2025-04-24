@@ -1,10 +1,9 @@
 [nation_srivijaya]
 
-name=_("Sri Vijaya")
-plural=_("?plural:Sri Vijaya")
-groups="Asian", "Medieval"
-
-legend=_("Sri Vijaya was an empire centered on Palembang in eastern\
+name   = _("Sri Vijaya")
+plural = _("?plural:Sri Vijaya")
+groups = "Asian", "Medieval"
+legend = _("Sri Vijaya was an empire centered on Palembang in eastern\
  Sumatra and extended its control through much of the coastal regions of\
  Sumatra, Java, Borneo and the Malay peninsula. It was founded sometime in\
  the 3rd century CE and lasted until roughly 1400, falling first to Jambi,\
@@ -30,11 +29,11 @@ flag         = "srivijaya"
 flag_alt     = "-"
 style        = "Tropical"
 
-init_techs=""
-init_buildings=""
-init_units=""
+init_techs = ""
+init_buildings = ""
+init_units = ""
 
-civilwar_nations="Majapahit", "indonesian", "malaysian"
+civilwar_nations = "Majapahit", "indonesian", "malaysian"
 
 cities =
  "Palembang",

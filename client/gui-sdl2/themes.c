@@ -28,6 +28,7 @@
 #include "string_vector.h"
 
 /* client/gui-sdl2 */
+#include "gui_main.h"
 #include "themespec.h"
 
 #include "themes_common.h"
@@ -41,20 +42,22 @@ void gui_load_theme(const char *directory, const char *theme_name)
   char buf[strlen(directory) + strlen(DIR_SEPARATOR) + strlen(theme_name)
            + strlen(DIR_SEPARATOR "theme") + 1];
 
-  if (theme != NULL) {
+  if (active_theme != NULL) {
     /* We don't support changing theme once it has been loaded */
     return;
   }
 
-  /* free previous loaded theme, if any */
-  theme_free(theme);
-  theme = NULL;
+  /* Free previous loaded theme, if any */
+  theme_free(active_theme);
+  active_theme = NULL;
 
   fc_snprintf(buf, sizeof(buf), "%s" DIR_SEPARATOR "%s" DIR_SEPARATOR "theme",
               directory, theme_name);
 
   themespec_try_read(buf);
-  theme_load_sprites(theme);
+  theme_load_sprites(active_theme);
+
+  update_font_from_theme(default_font_size(active_theme));
 }
 
 /*************************************************************************//**
@@ -62,10 +65,11 @@ void gui_load_theme(const char *directory, const char *theme_name)
 *****************************************************************************/
 void gui_clear_theme(void)
 {
-  if (!load_theme(gui_options.gui_sdl2_default_theme_name)) {
+  if (!load_theme(GUI_SDL_OPTION(default_theme_name))) {
     /* TRANS: No full stop after the URL, could cause confusion. */
     log_fatal(_("No Sdl2-client theme was found. For instructions on how to "
-                "get one, please visit %s"), WIKI_URL);
+                "get one, please visit %s"), HOMEPAGE_URL);
+
     exit(EXIT_FAILURE);
   }
 }
@@ -97,10 +101,10 @@ char **get_gui_specific_themes_directories(int *count)
 /*************************************************************************//**
   Return an array of names of usable themes in the given directory.
   Array size is stored in count.
-  Useable theme for gui-sdl2 is a directory which contains file theme.themespec.
+  Usable theme for gui-sdl2 is a directory which contains file theme.themespec.
   The caller is responsible for freeing the array and the names
 *****************************************************************************/
-char **get_useable_themes_in_directory(const char *directory, int *count)
+char **get_usable_themes_in_directory(const char *directory, int *count)
 {
   DIR *dir;
   struct dirent *entry;
@@ -121,7 +125,7 @@ char **get_useable_themes_in_directory(const char *directory, int *count)
     struct stat stat_result;
 
     fc_snprintf(buf, sizeof(buf),
-		"%s/%s/theme.themespec", directory, entry->d_name);
+                "%s/%s/theme.themespec", directory, entry->d_name);
 
     if (fc_stat(buf, &stat_result) != 0) {
       /* File doesn't exist */

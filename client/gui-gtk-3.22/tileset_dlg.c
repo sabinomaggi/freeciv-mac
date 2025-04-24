@@ -44,9 +44,9 @@ static void tileset_suggestion_callback(GtkWidget *dlg, gint arg)
   if (arg == GTK_RESPONSE_YES) {
     /* User accepted tileset loading */
     sz_strlcpy(forced_tileset_name, game.control.preferred_tileset);
-    if (!tilespec_reread(game.control.preferred_tileset, FALSE, 1.0)) {
-      tileset_error(LOG_ERROR, _("Can't load requested tileset %s."),
-                    game.control.preferred_tileset);
+    if (!tilespec_reread(game.control.preferred_tileset, TRUE, 1.0)) {
+      tileset_error(LOG_ERROR, game.control.preferred_tileset,
+                    _("Can't load requested tileset."));
     }
   }
 }
@@ -63,9 +63,9 @@ void popup_tileset_suggestion_dialog(void)
   dialog = gtk_dialog_new_with_buttons(_("Preferred tileset"),
                                        NULL,
                                        0,
-                                       _("Load tileset"),
+                                       _("_Load tileset"),
                                        GTK_RESPONSE_YES,
-                                       _("Keep current tileset"),
+                                       _("_Keep current tileset"),
                                        GTK_RESPONSE_NO,
                                        NULL);
   setup_dialog(dialog, toplevel);

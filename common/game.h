@@ -17,23 +17,24 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#include <time.h>	/* time_t */
+#include <time.h>       /* time_t */
 
 #ifdef FREECIV_HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
 
 /* utility */
-#include "fcthread.h"
+#include "randseed.h"
 #include "shared.h"
 #include "timing.h"
 
 /* common */
-#include "connection.h"		/* struct conn_list */
+#include "connection.h"         /* struct conn_list */
 #include "fc_types.h"
-#include "player.h"
 #include "packets.h"
-#include "world_object.h"
+#include "traits.h"
+
+struct world;
 
 enum debug_globals {
   DEBUG_FERRIES,
@@ -74,8 +75,8 @@ struct user_flag
   char *helptxt;
 };
 
-/* The number of turns that the first user needs to be attached to a 
- * player for that user to be ranked as that player */
+/* The number of turns that the first user needs to be attached to
+ * a player for that user to be ranked as that player */
 #define TURNS_NEEDED_TO_RANK 10
 
 struct civ_game {
@@ -89,16 +90,19 @@ struct civ_game {
   struct packet_calendar_info calendar;
   struct packet_timeout_info tinfo;
 
-  struct government *default_government; /* may be overridden by nation */
+  struct government *default_government; /* May be overridden by nation */
   struct government *government_during_revolution;
 
-  struct conn_list *all_connections;   /* including not yet established */
-  struct conn_list *est_connections;   /* all established client conns */
-  struct conn_list *glob_observers;    /* global observers */
+  struct conn_list *all_connections;   /* Including not yet established */
+  struct conn_list *est_connections;   /* All established client conns */
+  struct conn_list *glob_observers;    /* Global observers */
+  struct conn_list *web_client_connections; /* Connections from web client */
 
-  struct veteran_system *veteran; /* veteran system */
+  struct veteran_system *veteran; /* Veteran system */
 
   struct rgbcolor *plr_bg_color;
+
+  int lua_timeout;
 
   struct {
     /* Items given to all players at game start.
@@ -113,6 +117,8 @@ struct civ_game {
 
       bool ruleset_init;
       bool ruleset_ready;
+
+      bool fog_of_war;
     } client;
 
     struct {
@@ -121,7 +127,6 @@ struct civ_game {
       /* Defined in the ruleset. */
 
       /* Game settings & other data. */
-
       enum city_names_mode allowed_city_names;
       enum plrcolor_mode plrcolormode;
       int aqueductloss;
@@ -136,6 +141,8 @@ struct civ_game {
       int diplchance;
       int diplbulbcost;
       int diplgoldcost;
+      int incite_gold_loss_chance;
+      int incite_gold_capt_chance;
       int dispersion;
       int end_turn;
       bool endspaceship;
@@ -147,7 +154,7 @@ struct civ_game {
       int incite_unit_factor;
       int init_vis_radius_sq;
       int kick_time;
-      int killunhomed;    /* slowly killing unhomed units */
+      int killunhomed;    /* Slowly killing unhomed units */
       int maxconnectionsperhost;
       int max_players;
       char nationset[MAX_LEN_NAME];
@@ -156,6 +163,7 @@ struct civ_game {
       int mgr_nationchance;
       int mgr_turninterval;
       int mgr_worldchance;
+      bool multiresearch;
       bool migration;
       enum trait_dist_mode trait_dist;
       int min_players;
@@ -166,10 +174,12 @@ struct civ_game {
       int onsetbarbarian;
       int pingtime;
       int pingtimeout;
+      bool ip_hide;
       int ransom_gold;
       int razechance;
       unsigned revealmap;
       int revolution_length;
+      int spaceship_travel_pct;
       bool threaded_save;
       int save_compress_level;
       enum fz_method save_compress_type;
@@ -182,24 +192,23 @@ struct civ_game {
       char start_units[MAX_LEN_STARTUNIT];
       bool start_city;
       int start_year;
-      int techloss_forgiveness;
       int techloss_restore;
       int techlost_donor;
       int techlost_recv;
       int tcptimeout;
       int techpenalty;
       bool turnblock;
-      int unitwaittime;   /* minimal time between two movements of a unit */
+      int unitwaittime;   /* Minimal time between two movements of a unit */
       int upgrade_veteran_loss;
       bool vision_reveal_tiles;
 
       bool debug[DEBUG_LAST];
-      int timeoutint;     /* increase timeout every N turns... */
+      int timeoutint;     /* Increase timeout every N turns... */
       int timeoutinc;     /* ... by this amount ... */
       int timeoutincmult; /* ... and multiply timeoutinc by this amount ... */
       int timeoutintinc;  /* ... and increase timeoutint by this amount */
       int timeoutcounter; /* timeoutcounter - timeoutint = turns to next inc. */
-      int timeoutaddenemymove; /* minimum timeout after an enemy move is seen */
+      int timeoutaddenemymove; /* Minimum timeout after an enemy move is seen */
 
       time_t last_ping;
       struct timer *phase_timer;   /* Time since seconds_to_phase_done was set. */
@@ -212,20 +221,24 @@ struct civ_game {
       float turn_change_time;
       char connectmsg[MAX_LEN_MSG];
       char save_name[MAX_LEN_NAME];
+      char orig_game_version[MAX_LEN_NAME];
       bool scorelog;
       enum scorelog_level scoreloglevel;
-      char scorefile[MAX_LEN_NAME];
-      int scoreturn;    /* next make_history_report() */
-      int seed_setting;
-      int seed;
+      char scorefile[MAX_LEN_PATH];
+      int scoreturn;    /* Next make_history_report() */
+      randseed seed_setting;
+      randseed seed;
 
       bool global_warming;
+      int global_warming_percent;
       bool nuclear_winter;
+      int nuclear_winter_percent;
 
-      bool fogofwar_old; /* as the fog_of_war bit get changed by setting
+      bool fogofwar_old; /* As the fog_of_war bit get changed by setting
                           * the server we need to remember the old setting */
       bool last_updated_year; /* last_updated is still counted as year in this
                                * game. */
+      int world_peace_start;
       char rulesetdir[MAX_LEN_NAME];
       char demography[MAX_LEN_DEMOGRAPHY];
       char allow_take[MAX_LEN_ALLOW_TAKE];
@@ -235,6 +248,7 @@ struct civ_game {
       struct rgbcolor_list *plr_colors;
 
       struct section_file *luadata;
+      int dbid;
 
       struct {
         int turns;
@@ -243,11 +257,11 @@ struct civ_game {
         bool info;
       } event_cache;
 
-      /* used by the map editor to control game_save. */
+      /* Used by the map editor to control game_save. */
       struct {
-        bool save_known; /* loading will just reveal the squares around
+        bool save_known; /* Loading will just reveal the squares around
                           * cities and units */
-        bool save_starts; /* start positions will be auto generated */
+        bool save_starts; /* Start positions will be auto generated */
         bool save_private_map; /* FoW map; will be created if not saved */
       } save_options;
 
@@ -261,6 +275,10 @@ struct civ_game {
       } mutexes;
 
       struct trait_limits default_traits[TRAIT_COUNT];
+
+      struct player *random_move_time;
+
+      char default_ai_type_name[256];
 
       struct {
         char *description_file;
@@ -277,6 +295,7 @@ struct civ_game {
         char **nc_astyles;
         size_t as_count;
         int named_teams;
+        bool std_tileset_compat;
       } ruledit;
     } server;
   };
@@ -287,13 +306,19 @@ struct civ_game {
   } callbacks;
 };
 
-bool is_server(void);
-void i_am_server(void);
-void i_am_client(void);
-static inline void i_am_tool(void)
+extern struct civ_game game;
+
+#ifdef FREECIV_WEB
+/**********************************************************************//**
+  Is there currently any connections from web-client(s)
+**************************************************************************/
+static inline bool any_web_conns(void)
 {
-  i_am_server(); /* No difference between a tool and server at the moment */
+  return conn_list_size(game.web_client_connections) > 0;
 }
+#else  /* FREECIV_WEB */
+#define any_web_conns() (FALSE)
+#endif /* FREECIV_WEB */
 
 void game_init(bool keep_ruleset_value);
 void game_map_init(void);
@@ -325,8 +350,23 @@ void user_flag_free(struct user_flag *flag);
 
 int current_turn_timeout(void);
 
-extern struct civ_game game;
-extern struct world wld;
+extern bool _ruleset_compat_mode;
+
+/**********************************************************************//**
+  Set ruleset compat mode indicator
+**************************************************************************/
+static inline void set_ruleset_compat_mode(bool active)
+{
+  _ruleset_compat_mode = active;
+}
+
+/**********************************************************************//**
+  Get ruleset compat mode indicator
+**************************************************************************/
+static inline bool is_ruleset_compat_mode(void)
+{
+  return _ruleset_compat_mode;
+}
 
 #define GAME_DEFAULT_SEED        0
 #define GAME_MIN_SEED            0
@@ -335,6 +375,10 @@ extern struct world wld;
 #define GAME_DEFAULT_GOLD        50
 #define GAME_MIN_GOLD            0
 #define GAME_MAX_GOLD            50000
+
+#define GAME_DEFAULT_INFRA       0
+#define GAME_MIN_INFRA           0
+#define GAME_MAX_INFRA           50000
 
 #define GAME_DEFAULT_START_UNITS  "ccwwx"
 #define GAME_DEFAULT_START_CITY  FALSE
@@ -350,7 +394,7 @@ extern struct world wld;
 #define GAME_DEFAULT_ANGRYCITIZEN TRUE
 
 #define GAME_DEFAULT_END_TURN    5000
-#define GAME_MIN_END_TURN        0
+#define GAME_MIN_END_TURN        1
 #define GAME_MAX_END_TURN        32767
 
 #define GAME_DEFAULT_MIN_PLAYERS     1
@@ -387,12 +431,29 @@ extern struct world wld;
 #define GAME_MIN_DIPLGOLDCOST        0
 #define GAME_MAX_DIPLGOLDCOST        100
 
+#define GAME_DEFAULT_INCITE_GOLD_LOSS_CHANCE    0
+#define GAME_MIN_INCITE_GOLD_LOSS_CHANCE        0
+#define GAME_MAX_INCITE_GOLD_LOSS_CHANCE        100
+
+#define GAME_DEFAULT_INCITE_GOLD_CAPT_CHANCE    0
+#define GAME_MIN_INCITE_GOLD_CAPT_CHANCE        0
+#define GAME_MAX_INCITE_GOLD_CAPT_CHANCE        100
+
 #define GAME_DEFAULT_FOGOFWAR        TRUE
 
 #define GAME_DEFAULT_FOGGEDBORDERS   FALSE
 
 #define GAME_DEFAULT_GLOBAL_WARMING  TRUE
+
+#define GAME_DEFAULT_GLOBAL_WARMING_PERCENT 100
+#define GAME_MIN_GLOBAL_WARMING_PERCENT 1
+#define GAME_MAX_GLOBAL_WARMING_PERCENT 10000
+
 #define GAME_DEFAULT_NUCLEAR_WINTER  TRUE
+
+#define GAME_DEFAULT_NUCLEAR_WINTER_PERCENT 100
+#define GAME_MIN_NUCLEAR_WINTER_PERCENT 1
+#define GAME_MAX_NUCLEAR_WINTER_PERCENT 10000
 
 #define GAME_DEFAULT_BORDERS         BORDERS_ENABLED
 
@@ -419,6 +480,10 @@ extern struct world wld;
 #define GAME_DEFAULT_TECHLOSSREST    50
 #define GAME_MIN_TECHLOSSREST        -1
 #define GAME_MAX_TECHLOSSREST        100
+
+#define GAME_DEFAULT_TECHLEAK        100
+#define GAME_MIN_TECHLEAK            0
+#define GAME_MAX_TECHLEAK            300
 
 #define GAME_DEFAULT_CITYMINDIST     2
 #define GAME_MIN_CITYMINDIST         1
@@ -461,7 +526,7 @@ extern struct world wld;
 
 #define GAME_DEFAULT_MGR_FOODNEEDED   TRUE
 
-/* definition of the migration distance in relation to the current city
+/* Definition of the migration distance in relation to the current city
  * radius; 0 means that migration is possible if the second city is within
  * the city radius */
 #define GAME_DEFAULT_MGR_DISTANCE     0
@@ -500,6 +565,7 @@ extern struct world wld;
 #define GAME_MAX_TECHLOST_DONOR      100
 
 #define GAME_DEFAULT_TEAM_POOLED_RESEARCH TRUE
+#define GAME_DEFAULT_MULTIRESEARCH   FALSE
 
 #define GAME_DEFAULT_RAZECHANCE      20
 #define GAME_MIN_RAZECHANCE          0
@@ -518,6 +584,10 @@ extern struct world wld;
 
 #define GAME_DEFAULT_VICTORY_CONDITIONS (1 << VC_SPACERACE | 1 << VC_ALLIED)
 #define GAME_DEFAULT_END_SPACESHIP   TRUE
+
+#define GAME_DEFAULT_SPACESHIP_TRAVEL_PCT 100
+#define GAME_MIN_SPACESHIP_TRAVEL_PCT     50
+#define GAME_MAX_SPACESHIP_TRAVEL_PCT     1000
 
 #define GAME_DEFAULT_TURNBLOCK       TRUE
 
@@ -563,6 +633,8 @@ extern struct world wld;
 #define GAME_MIN_PINGTIMEOUT         60
 #define GAME_MAX_PINGTIMEOUT         1800
 
+#define GAME_DEFAULT_IPHIDE          FALSE
+
 #define GAME_DEFAULT_NOTRADESIZE     0
 #define GAME_MIN_NOTRADESIZE         0
 #define GAME_MAX_NOTRADESIZE         49
@@ -579,9 +651,13 @@ extern struct world wld;
 #define GAME_DEFAULT_TRADING_GOLD    TRUE
 #define GAME_DEFAULT_TRADING_CITY    TRUE
 
+#define GAME_DEFAULT_CARAVAN_BONUS_STYLE CBS_CLASSIC
+
 #define GAME_DEFAULT_TRADEMINDIST    9
 #define GAME_MIN_TRADEMINDIST        1
 #define GAME_MAX_TRADEMINDIST        999
+
+#define GAME_DEFAULT_TRADE_REVENUE_STYLE TRS_CLASSIC
 
 #define GAME_DEFAULT_BARBARIANRATE   BARBS_NORMAL
 
@@ -623,6 +699,10 @@ extern struct world wld;
 #define GAME_HARDCODED_DEFAULT_SKILL_LEVEL 3 /* that was 'easy' in old saves */
 #define GAME_OLD_DEFAULT_SKILL_LEVEL 5  /* normal; for oldest save games */
 
+#define GAME_DEFAULT_TOP_CITIES_COUNT 5
+#define GAME_MIN_TOP_CITIES_COUNT     0
+#define GAME_MAX_TOP_CITIES_COUNT     40
+
 #define GAME_DEFAULT_DEMOGRAPHY      "NASRLPEMOCqrb"
 #define GAME_DEFAULT_ALLOW_TAKE      "HAhadOo"
 
@@ -642,7 +722,9 @@ extern struct world wld;
 #define GAME_MIN_COMPRESS_LEVEL     1
 #define GAME_MAX_COMPRESS_LEVEL     9
 
-#if defined(FREECIV_HAVE_LIBLZMA)
+#if defined(FREECIV_HAVE_LIBZSTD)
+#  define GAME_DEFAULT_COMPRESS_TYPE FZ_ZSTD
+#elif defined(FREECIV_HAVE_LIBLZMA)
 #  define GAME_DEFAULT_COMPRESS_TYPE FZ_XZ
 #elif defined(FREECIV_HAVE_LIBZ)
 #  define GAME_DEFAULT_COMPRESS_TYPE FZ_ZLIB
@@ -659,26 +741,30 @@ extern struct world wld;
 #define GAME_MIN_REVOLUTION_LENGTH      1
 #define GAME_MAX_REVOLUTION_LENGTH      20
 
-#define GAME_START_YEAR -4000
+#define GAME_DEFAULT_START_YEAR -4000
 
 #define GAME_DEFAULT_AIRLIFTINGSTYLE AIRLIFTING_CLASSICAL
 #define GAME_DEFAULT_PERSISTENTREADY PERSISTENTR_DISABLED
 
-#define GAME_MAX_READ_RECURSION 10 /* max recursion for the read command */
+#define GAME_MAX_READ_RECURSION 10 /* Max recursion for the read command */
 
 #define GAME_DEFAULT_KICK_TIME 1800     /* 1800 seconds = 30 minutes. */
 #define GAME_MIN_KICK_TIME 0            /* 0 = disabling. */
 #define GAME_MAX_KICK_TIME 86400        /* 86400 seconds = 24 hours. */
 
-/* Max distance from the capital used to calculat the bribe cost. */
+#define GAME_DEFAULT_LUA_TIMEOUT 5
+#define GAME_MIN_LUA_TIMEOUT     5
+#define GAME_MAX_LUA_TIMEOUT     30
+
+/* Max distance from the capital used to calculate the bribe cost. */
 #define GAME_UNIT_BRIBE_DIST_MAX 32
 
 /* Max number of recursive transports. */
 #define GAME_TRANSPORT_MAX_RECURSIVE 5
 
-/* ruleset settings */
+/* Ruleset settings */
 
-#define RS_MAX_VALUE                             10000
+#define RS_MAX_VALUE                             1000000
 
 /* TRANS: year label (Anno Domini) */
 #define RS_DEFAULT_POS_YEAR_LABEL                N_("AD")
@@ -763,15 +849,19 @@ extern struct world wld;
 
 #define RS_DEFAULT_HAPPY_COST                    2
 #define RS_MIN_HAPPY_COST                        0
-#define RS_MAX_HAPPY_COST                        100
+#define RS_MAX_HAPPY_COST                        10000
 
 #define RS_DEFAULT_FOOD_COST                     2
 #define RS_MIN_FOOD_COST                         0
-#define RS_MAX_FOOD_COST                         100
-
-#define RS_DEFAULT_SLOW_INVASIONS                TRUE
+#define RS_MAX_FOOD_COST                         10000
 
 #define RS_DEFAULT_TIRED_ATTACK                  FALSE
+#define RS_DEFAULT_NUKE_POP_LOSS_PCT             49
+#define RS_MIN_NUKE_POP_LOSS_PCT                 0
+#define RS_MAX_NUKE_POP_LOSS_PCT                 100
+#define RS_DEFAULT_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 0
+#define RS_MIN_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 0
+#define RS_MAX_NUKE_DEFENDER_SURVIVAL_CHANCE_PCT 100
 
 #define RS_DEFAULT_BASE_BRIBE_COST               750
 #define RS_MIN_BASE_BRIBE_COST                   0
@@ -791,17 +881,15 @@ extern struct world wld;
 #define RS_MIN_TECH_UPKEEP_DIVIDER       1
 #define RS_MAX_TECH_UPKEEP_DIVIDER       100000
 
-#define RS_DEFAULT_BASE_TECH_COST                20
-#define RS_MIN_BASE_TECH_COST                    0
-#define RS_MAX_BASE_TECH_COST                    200
-
-#define RS_DEFAULT_FORCE_TRADE_ROUTE             FALSE
-#define RS_DEFAULT_FORCE_CAPTURE_UNITS           FALSE
-#define RS_DEFAULT_FORCE_BOMBARD                 FALSE
-#define RS_DEFAULT_FORCE_EXPLODE_NUCLEAR         FALSE
-
 #define RS_DEFAULT_POISON_EMPTIES_FOOD_STOCK     FALSE
-#define RS_DEFAULT_BOMBARD_MAX_RANGE             1
+#define RS_DEFAULT_STEAL_MAP_REVEALS_CITIES      TRUE
+#define RS_DEFAULT_ACTION_ACTOR_CONSUMING_ALWAYS FALSE
+#define RS_DEFAULT_USER_ACTION_TARGET_KIND       ATK_UNIT
+#define RS_DEFAULT_ACTION_MIN_RANGE              0
+#define RS_DEFAULT_ACTION_MAX_RANGE              1
+/* Can't move less than one step, or it's not move at all */
+#define RS_DEFAULT_MOVE_MIN_RANGE                1
+#define RS_DEFAULT_EXPLODE_NUCLEAR_MAX_RANGE     0
 
 #define RS_ACTION_NO_MAX_DISTANCE                "unlimited"
 
@@ -809,4 +897,4 @@ extern struct world wld;
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__GAME_H */
+#endif /* FC__GAME_H */

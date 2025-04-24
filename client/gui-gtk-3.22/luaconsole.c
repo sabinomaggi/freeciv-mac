@@ -239,7 +239,7 @@ static void luaconsole_dialog_create(struct luaconsole_data *pdialog)
                    &pdialog->entry);
 
   /* Load lua script command button. */
-  gui_dialog_add_button(pdialog->shell, "window-close", _("Close"),
+  gui_dialog_add_button(pdialog->shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
 
   gui_dialog_add_button(pdialog->shell, "document-open",
@@ -314,8 +314,8 @@ static void luaconsole_load_file_popup(void)
   /* Create the selector */
   filesel = gtk_file_chooser_dialog_new("Load Lua file", GTK_WINDOW(toplevel),
                                         GTK_FILE_CHOOSER_ACTION_OPEN,
-                                        _("Cancel"), GTK_RESPONSE_CANCEL,
-                                        _("Open"), GTK_RESPONSE_OK,
+                                        _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                        _("_Open"), GTK_RESPONSE_OK,
                                         NULL);
   setup_dialog(filesel, toplevel);
   gtk_window_set_position(GTK_WINDOW(filesel), GTK_WIN_POS_MOUSE);
@@ -475,11 +475,11 @@ void real_luaconsole_append(const char *astring,
   if (GUI_GTK_OPTION(show_chat_message_time)) {
     char timebuf[64];
     time_t now;
-    struct tm *now_tm;
+    struct tm now_tm;
 
     now = time(NULL);
-    now_tm = localtime(&now);
-    strftime(timebuf, sizeof(timebuf), "[%H:%M:%S] ", now_tm);
+    fc_localtime(&now, &now_tm);
+    strftime(timebuf, sizeof(timebuf), "[%H:%M:%S] ", &now_tm);
     gtk_text_buffer_insert(buf, &iter, timebuf, -1);
   }
 

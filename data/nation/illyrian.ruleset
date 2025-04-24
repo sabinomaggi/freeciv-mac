@@ -1,9 +1,9 @@
 [nation_illyrian]
 
-name=_("Illyrian")
-plural=_("?plural:Illyrians")
-groups="Ancient", "European"
-legend=_("Illyrians were Indo-European tribes who appeared in the\
+name   = _("Illyrian")
+plural = _("?plural:Illyrians")
+groups = "Ancient", "European"
+legend = _("Illyrians were Indo-European tribes who appeared in the\
  western part of the Balkan Peninsula before 1000 BCE, including\
  Corcyra island and Ambracia bay in prehistoric Epirus to the south.\
  They mixed with Thracians in Dardania to the east,\
@@ -30,9 +30,10 @@ flag = "illyria"
 flag_alt = "-"
 style = "Classical"
 
-init_techs=""
-init_buildings=""
-init_units=""
+init_techs = ""
+init_buildings = ""
+init_units = ""
+
 civilwar_nations = "thracian", "paeonian", "epirote", "liburnian"
 
 ; known regional capitals listed first.
@@ -89,7 +90,7 @@ cities =
   ; |Apollonia
   "Scampa (mountains, plains, river)",	;+100 41:06N 20:04E
   ; |Elbasan
-  "Dimal (hills, river, !ocean)",	
+  "Dimal (hills, river, !ocean)",
   ; |Dimallium
   "Colchinium (hills, ocean)",	;-500 41:55N 19:12E
   ; |Olcinium|Dulcinium|Dulcigno|Ulcinj

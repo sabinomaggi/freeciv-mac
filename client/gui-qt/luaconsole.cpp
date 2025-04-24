@@ -24,7 +24,7 @@
 // common
 #include "featured_text.h"
 
-/* client/luascript */
+// client/luascript
 #include "script_client.h"
 
 // gui-qt
@@ -39,7 +39,7 @@ QString qlua_filename;
 *****************************************************************************/
 void luaconsole_dialog_popup(bool raise)
 {
-  /* lua output is in chat */
+  // Lua output is in chat
 }
 
 /*************************************************************************//**
@@ -73,12 +73,13 @@ void real_luaconsole_append(const char *astring,
 void qload_lua_script()
 {
   QString str;
+
   str = QString(_("Lua scripts")) + QString(" (*.lua)");
   qlua_filename = QFileDialog::getOpenFileName(gui()->central_wdg,
                                               _("Load lua script"),
                                               QDir::homePath(), str);
-  if (qlua_filename.isEmpty() == false) {
-    script_client_do_file(qlua_filename.toLocal8Bit().constData());
+  if (!qlua_filename.isEmpty()) {
+    script_client_do_file(qlua_filename.toUtf8().constData());
   }
 }
 
@@ -87,7 +88,7 @@ void qload_lua_script()
 *****************************************************************************/
 void qreload_lua_script()
 {
-  if (qlua_filename.isEmpty() == false) {
-    script_client_do_file(qlua_filename.toLocal8Bit().constData());
+  if (!qlua_filename.isEmpty()) {
+    script_client_do_file(qlua_filename.toUtf8().constData());
   }
 }

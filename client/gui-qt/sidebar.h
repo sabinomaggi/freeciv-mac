@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,7 +14,13 @@
 #ifndef FC__SIDEBAR_H
 #define FC__SIDEBAR_H
 
+// Needed for the moc-generated meta file
+#ifdef HAVE_CONFIG_H
+#include <fc_config.h>
+#endif
+
 // Qt
+#include <QEnterEvent>
 #include <QWidget>
 
 enum { SW_STD = 0, SW_TAX = 1, SW_INDICATORS = 2 };
@@ -26,6 +32,7 @@ typedef void (*pfcn_bool)(bool);
 typedef void (*pfcn)(void);
 
 void side_blink_endturn(bool do_restore);
+void update_turn_done_tooltip();
 void side_center_unit();
 void side_disable_endturn(bool do_restore);
 void side_finish_turn(bool nothing);
@@ -35,6 +42,7 @@ void side_right_click_diplomacy();
 void side_right_click_science();
 void side_left_click_science(bool nothing);
 void side_show_map(bool nothing);
+
 /***************************************************************************
   Class representing single widget(icon) on sidebar
 ***************************************************************************/
@@ -46,7 +54,7 @@ public:
                  int type = SW_STD);
   ~fc_sidewidget();
   int get_priority();
-  QPixmap* get_pixmap();
+  QPixmap *get_pixmap();
   void paint(QPainter *painter, QPaintEvent *event);
   void resize_pixmap(int width, int height);
   void set_custom_labels(QString l);
@@ -58,6 +66,7 @@ public:
   void set_wheel_down(pfcn func);
   void set_wheel_up(pfcn func);
   void update_final_pixmap();
+  void update_fonts();
 
   bool blink;
   bool keep_blinking;
@@ -68,8 +77,8 @@ public slots:
   void sblink();
   void some_slot();
 protected:
-  void contextMenuEvent(QContextMenuEvent  *event);
-  void enterEvent(QEvent *event);
+  void contextMenuEvent(QContextMenuEvent *event);
+  void enterEvent(QEnterEvent *event);
   void leaveEvent(QEvent *event);
   void mousePressEvent(QMouseEvent *event);
   void paintEvent(QPaintEvent *event);
@@ -103,7 +112,8 @@ public:
   ~fc_sidebar();
   void add_widget(fc_sidewidget *fsw);
   void paint(QPainter *painter, QPaintEvent *event);
-  void resize_me(int width, int height, bool force = false);
+  void resize_me(int height, bool force = false);
+  void update_fonts();
   QList<fc_sidewidget*> objects;
 protected:
   void paintEvent(QPaintEvent *event);
@@ -111,6 +121,4 @@ private:
   QVBoxLayout *layout;
 };
 
-
-#endif /* FC__SIDEBAR_H */
-
+#endif // FC__SIDEBAR_H

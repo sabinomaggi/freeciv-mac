@@ -25,6 +25,7 @@
 
 /* client */
 #include "connectdlg_common.h"
+#include "pages_g.h"
 
 /* gui-sdl2 */
 #include "chatline.h"
@@ -41,26 +42,28 @@
 #include "themespec.h"
 #include "widget.h"
 
-#include "pages.h"
 
 static enum client_pages old_page = PAGE_MAIN;
 
 /**************************************************************************
                                   MAIN PAGE
 **************************************************************************/
-static struct SMALL_DLG *pStartMenu = NULL;
+static struct small_dialog *start_menu = NULL;
 
 static void popdown_start_menu(void);
 
 /**********************************************************************//**
   User interacted with the Start New Game button.
 **************************************************************************/
-static int start_new_game_callback(struct widget *pWidget)
+static int start_new_game_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     popdown_start_menu();
-    if (is_server_running() || client_start_server()) {
-      /* saved settings are sent in client/options.c load_settable_options() */
+    if (!is_server_running()) {
+      client_start_server();
+
+      /* Saved settings are sent in client/options.c
+       * resend_desired_settable_options() */
     }
   }
 
@@ -70,9 +73,9 @@ static int start_new_game_callback(struct widget *pWidget)
 /**********************************************************************//**
   User interacted with the Load Game button.
 **************************************************************************/
-static int load_game_callback(struct widget *pWidget)
+static int load_game_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     set_client_page(PAGE_LOAD);
   }
 
@@ -82,9 +85,9 @@ static int load_game_callback(struct widget *pWidget)
 /**********************************************************************//**
   User interacted with the Join Game button.
 **************************************************************************/
-static int join_game_callback(struct widget *pWidget)
+static int join_game_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     set_client_page(PAGE_NETWORK);
   }
 
@@ -94,10 +97,10 @@ static int join_game_callback(struct widget *pWidget)
 /**********************************************************************//**
   User interacted with the Join Pubserver button - open connection dialog.
 **************************************************************************/
-static int servers_callback(struct widget *pWidget)
+static int servers_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
-    bool lan_scan = (pWidget->ID != ID_JOIN_META_GAME);
+  if (PRESSED_EVENT(main_data.event)) {
+    bool lan_scan = (pwidget->id != ID_JOIN_META_GAME);
 
     popdown_start_menu();
     popup_connection_dialog(lan_scan);
@@ -109,9 +112,9 @@ static int servers_callback(struct widget *pWidget)
 /**********************************************************************//**
   User interacted with the Options button - open options dialog.
 **************************************************************************/
-static int options_callback(struct widget *pWidget)
+static int options_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     queue_flush();
     popdown_start_menu();
     popup_optiondlg();
@@ -123,9 +126,9 @@ static int options_callback(struct widget *pWidget)
 /**********************************************************************//**
   User interacted with the Quit button.
 **************************************************************************/
-static int quit_callback(struct widget *pWidget)
+static int quit_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     popdown_start_menu();
   }
 
@@ -140,157 +143,164 @@ static void show_main_page(void)
   SDL_Color bg_color = {255, 255, 255, 96};
   SDL_Color line_color = {128, 128, 128, 255};
   int count = 0;
-  struct widget *pWidget = NULL, *pWindow = NULL;
-  SDL_Surface *pBackground;
+  struct widget *pwidget = NULL, *pwindow = NULL;
+  SDL_Surface *background;
   int h = 0;
   SDL_Rect area;
   char verbuf[200];
   const char *rev_ver;
 
   /* create dialog */
-  pStartMenu = fc_calloc(1, sizeof(struct SMALL_DLG));
+  start_menu = fc_calloc(1, sizeof(struct small_dialog));
 
-  pWindow = create_window_skeleton(NULL, NULL, 0);
-  add_to_gui_list(ID_WINDOW, pWindow);
-  pStartMenu->pEndWidgetList = pWindow;
+  pwindow = create_window_skeleton(NULL, NULL, 0);
+  add_to_gui_list(ID_WINDOW, pwindow);
+  start_menu->end_widget_list = pwindow;
 
-  area = pWindow->area;
+  area = pwindow->area;
 
   /* Freeciv version */
-  /* TRANS: Freeciv 2.4.0 */
+  /* TRANS: Freeciv 3.2.0 */
   fc_snprintf(verbuf, sizeof(verbuf), _("Freeciv %s"), VERSION_STRING);
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, verbuf,
-                                        adj_font(12),
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst, verbuf,
+                                              FONTO_ATTENTION,
                                         (WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND|WF_FREE_DATA));
 
-  pWidget->string_utf8->style |= SF_CENTER | TTF_STYLE_BOLD;
+  pwidget->string_utf8->style |= SF_CENTER | TTF_STYLE_BOLD;
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
-  add_to_gui_list(ID_LABEL, pWidget);
+  add_to_gui_list(ID_LABEL, pwidget);
 
   /* TRANS: gui-sdl2 client */
   fc_snprintf(verbuf, sizeof(verbuf), _("%s client"), client_string);
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, verbuf,
-                                        adj_font(12),
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst, verbuf,
+                                              FONTO_ATTENTION,
                                         (WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND|WF_FREE_DATA));
 
-  pWidget->string_utf8->style |= SF_CENTER | TTF_STYLE_BOLD;
+  pwidget->string_utf8->style |= SF_CENTER | TTF_STYLE_BOLD;
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
-  add_to_gui_list(ID_LABEL, pWidget);
+  add_to_gui_list(ID_LABEL, pwidget);
 
   /* Start New Game */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Start New Game"),
-                                        adj_font(14),
-                                        (WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND|WF_FREE_DATA));
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Start New Game"),
+                                              FONTO_HEADING,
+                   (WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND|WF_FREE_DATA));
 
-  pWidget->action = start_new_game_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  set_wstate(pWidget, FC_WS_NORMAL);
+  pwidget->action = start_new_game_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  set_wstate(pwidget, FC_WS_NORMAL);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
-  add_to_gui_list(ID_START_NEW_GAME, pWidget);
+  add_to_gui_list(ID_START_NEW_GAME, pwidget);
 
   /* Load Game */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Load Game"),
-                                        adj_font(14),
-                                        (WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND));
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Load Game"),
+                                              FONTO_HEADING,
+                               (WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND));
 
-  pWidget->action = load_game_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  set_wstate(pWidget, FC_WS_NORMAL);
+  pwidget->action = load_game_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  set_wstate(pwidget, FC_WS_NORMAL);
 
-  add_to_gui_list(ID_LOAD_GAME, pWidget);
+  add_to_gui_list(ID_LOAD_GAME, pwidget);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
   /* Join Game */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Join Game"),
-                                        adj_font(14),
-                                        WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Join Game"),
+                                              FONTO_HEADING,
+                                 WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
 
-  pWidget->action = join_game_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  set_wstate(pWidget, FC_WS_NORMAL);
+  pwidget->action = join_game_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  set_wstate(pwidget, FC_WS_NORMAL);
 
-  add_to_gui_list(ID_JOIN_GAME, pWidget);
+  add_to_gui_list(ID_JOIN_GAME, pwidget);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
   /* Join Pubserver */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Join Pubserver"),
-                                        adj_font(14),
-                                        WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Join Pubserver"),
+                                              FONTO_HEADING,
+                                WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
 
-  pWidget->action = servers_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  set_wstate(pWidget, FC_WS_NORMAL);
+  pwidget->action = servers_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  set_wstate(pwidget, FC_WS_NORMAL);
 
-  add_to_gui_list(ID_JOIN_META_GAME, pWidget);
+  add_to_gui_list(ID_JOIN_META_GAME, pwidget);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
   /* Join LAN Server */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Join LAN Server"),
-                                        adj_font(14),
-                                        WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Join LAN Server"),
+                                              FONTO_HEADING,
+                                 WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
 
-  pWidget->action = servers_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  set_wstate(pWidget, FC_WS_NORMAL);
+  pwidget->action = servers_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  set_wstate(pwidget, FC_WS_NORMAL);
 
-  add_to_gui_list(ID_JOIN_GAME, pWidget);
+  add_to_gui_list(ID_JOIN_GAME, pwidget);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
   /* Options */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Options"),
-                                        adj_font(14),
-                                        WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Options"),
+                                              FONTO_HEADING,
+                                 WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
 
-  pWidget->action = options_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  set_wstate(pWidget, FC_WS_NORMAL);
+  pwidget->action = options_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  set_wstate(pwidget, FC_WS_NORMAL);
 
-  add_to_gui_list(ID_CLIENT_OPTIONS_BUTTON, pWidget);
+  add_to_gui_list(ID_CLIENT_OPTIONS_BUTTON, pwidget);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
   /* Quit */
-  pWidget = create_iconlabel_from_chars(NULL, pWindow->dst, _("Quit"),
-                                        adj_font(14),
-                                        WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
+  pwidget = create_iconlabel_from_chars_fonto(NULL, pwindow->dst,
+                                              _("Quit"),
+                                              FONTO_HEADING,
+                                 WF_SELECT_WITHOUT_BAR|WF_RESTORE_BACKGROUND);
 
-  pWidget->action = quit_callback;
-  pWidget->string_utf8->style |= SF_CENTER;
-  pWidget->key = SDLK_ESCAPE;
-  set_wstate(pWidget, FC_WS_NORMAL);
-  add_to_gui_list(ID_QUIT, pWidget);
+  pwidget->action = quit_callback;
+  pwidget->string_utf8->style |= SF_CENTER;
+  pwidget->key = SDLK_ESCAPE;
+  set_wstate(pwidget, FC_WS_NORMAL);
+  add_to_gui_list(ID_QUIT, pwidget);
 
-  area.w = MAX(area.w, pWidget->size.w);
-  h = MAX(h, pWidget->size.h);
+  area.w = MAX(area.w, pwidget->size.w);
+  h = MAX(h, pwidget->size.h);
   count++;
 
-  pStartMenu->pBeginWidgetList = pWidget;
+  start_menu->begin_widget_list = pwidget;
 
   /* ------*/
 
@@ -301,40 +311,40 @@ static void show_main_page(void)
 
   /* ------*/
 
-  pBackground = theme_get_background(theme, BACKGROUND_STARTMENU);
-  if (resize_window(pWindow, pBackground, NULL,
-                    (pWindow->size.w - pWindow->area.w) + area.w,
-                    (pWindow->size.h - pWindow->area.h) + area.h)) {
-    FREESURFACE(pBackground);
+  background = theme_get_background(active_theme, BACKGROUND_STARTMENU);
+  if (resize_window(pwindow, background, NULL,
+                    (pwindow->size.w - pwindow->area.w) + area.w,
+                    (pwindow->size.h - pwindow->area.h) + area.h)) {
+    FREESURFACE(background);
   }
 
-  area = pWindow->area;
+  area = pwindow->area;
 
-  group_set_area(pWidget, pWindow->prev, area);
+  group_set_area(pwidget, pwindow->prev, area);
 
-  setup_vertical_widgets_position(1, area.x, area.y, area.w, h, pWidget, pWindow->prev);
+  setup_vertical_widgets_position(1, area.x, area.y, area.w, h, pwidget, pwindow->prev);
 
   area.h = h * 2;
-  fill_rect_alpha(pWindow->theme, &area, &bg_color);
+  fill_rect_alpha(pwindow->theme, &area, &bg_color);
 
-  widget_set_position(pWindow,
-                      (main_window_width() - pWindow->size.w) - adj_size(20),
-                      (main_window_height() - pWindow->size.h) - adj_size(20));
+  widget_set_position(pwindow,
+                      (main_window_width() - pwindow->size.w) - adj_size(20),
+                      (main_window_height() - pwindow->size.h) - adj_size(20));
 
   draw_intro_gfx();
 
-  redraw_group(pStartMenu->pBeginWidgetList, pStartMenu->pEndWidgetList, FALSE);
+  redraw_group(start_menu->begin_widget_list, start_menu->end_widget_list, FALSE);
 
-  create_line(pWindow->dst->surface,
+  create_line(pwindow->dst->surface,
               area.x, area.y + (h * 2 - 1),
               area.x + area.w - 1, area.y + (h * 2 - 1),
               &line_color);
 
   set_output_window_text(_("SDL2-client welcomes you..."));
 
-#if IS_BETA_VERSION
-  set_output_window_text(beta_message());
-#endif /* IS_BETA_VERSION */
+#if IS_BETA_VERSION || IS_DEVEL_VERSION
+  set_output_window_text(unstable_message());
+#endif /* IS_BETA_VERSION || IS_DEVEL_VERSION */
 
   rev_ver = fc_git_revision();
   if (rev_ver != NULL) {
@@ -354,12 +364,12 @@ static void show_main_page(void)
 /**********************************************************************//**
   Close start menu
 **************************************************************************/
-static void popdown_start_menu()
+static void popdown_start_menu(void)
 {
-  if (pStartMenu) {
-    popdown_window_group_dialog(pStartMenu->pBeginWidgetList,
-                                pStartMenu->pEndWidgetList);
-    FC_FREE(pStartMenu);
+  if (start_menu) {
+    popdown_window_group_dialog(start_menu->begin_widget_list,
+                                start_menu->end_widget_list);
+    FC_FREE(start_menu);
     flush_dirty();
   }
 }
@@ -447,5 +457,5 @@ enum client_pages get_current_client_page(void)
 **************************************************************************/
 void update_start_page(void)
 {
-  /* PORTME */
+  conn_list_dialog_update();
 }

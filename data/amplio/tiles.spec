@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -10,6 +10,7 @@ artists = "
     Tatu Rissanen <tatu.rissanen@hut.fi>
     Jeff Mallatt <jjm@codewell.com> (miscellaneous)
     GriffonSpade
+    Sveinung Kvilhaugsvik (action_decision_want)
 "
 
 [file]
@@ -26,8 +27,10 @@ tiles = { "row", "column", "tag"
 ; Unit activity letters:  (note unit icons have just "u.")
 
   0, 18, "unit.auto_attack",
-         "unit.auto_settler"
+         "unit.auto_worker"
   0, 19, "unit.stack"
+  0, 16, "unit.action_decision_want:1"
+  1, 16, "unit.action_decision_want:0"
   1, 17, "unit.loaded"
   1, 18, "unit.connect"
   1, 19, "unit.auto_explore"
@@ -37,7 +40,8 @@ tiles = { "row", "column", "tag"
   2, 15, "unit.plant"
   2, 16, "unit.pollution"
   2, 17, "unit.road"
-  2, 18, "unit.irrigate"
+  2, 18, "unit.cultivate",
+         "unit.irrigate" ; For rulesets still using this tag
   2, 19, "unit.fortifying",
          "unit.fortress",
          "unit.outpost"
@@ -142,7 +146,7 @@ tiles = { "row", "column", "tag"
 ;  7, 18, "upkeep.unhappy2"
 ;  7, 19, "upkeep.shield"
 
-; Nuclear explosion: this could maybe now be handled as one 
+; Nuclear explosion: this could maybe now be handled as one
 ; big graphic (?), but for now is done old way as 3 by 3:
 
   0,  0, "explode.nuke_00"

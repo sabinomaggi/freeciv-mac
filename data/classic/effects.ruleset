@@ -1,8 +1,8 @@
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes,
+; for other "maintenance". If you want to make custom changes,
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
@@ -10,9 +10,22 @@
 ; than minor changes.
 
 [datafile]
-description="Classic effects data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02 web-compatible"
-format_version=20
+description = "Classic effects data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17 web-compatible"
+format_version = 50
+
+; /* <-- avoid gettext warnings
+;
+; User effect types
+;
+; type                    = Effect type to define. Must be one of user effects.
+; ai_valued_as            = Hardcoded effect type that AI considers this to match
+;
+; */ <-- avoid gettext warnings
+
+;[ueff_1]
+;type         = "User_Effect_1"
+;ai_valued_as = ""
 
 ; /* <-- avoid gettext warnings
 ;
@@ -26,6 +39,8 @@ format_version=20
 ; multiplier              = Name of the policy that gives a multiplier for effect's value
 ; reqs                    = Requirements for the effect to be active.
 ;                           See README.effects for help on requirements
+; comment                 = Comment for the benefit to someone examining the ruleset
+;                           Not used by freeciv any other way.
 ;
 ; */ <-- avoid gettext warnings
 
@@ -55,7 +70,7 @@ reqs    =
     { "type", "name", "range", "present"
       "NationGroup", "Barbarian", "Player", TRUE
       "Age", "5", "Local", TRUE
-      "CityTile", "Center", "Local", FALSE
+      "CityTile", "Center", "Tile", FALSE
     }
 
 ; Lone Leader might escape on coast (33% chance)
@@ -69,7 +84,7 @@ reqs    =
       "UnitType", "Barbarian Leader", "Local"
       "Age", "5", "Local"
       "TerrainClass", "Oceanic", "Adjacent"
-      "MaxUnitsOnTile", "1", "Local"
+      "MaxUnitsOnTile", "1", "Tile"
     }
 
 ; Specialist output bonuses
@@ -108,12 +123,22 @@ type    = "Unit_Vision_Radius_Sq"
 value   = 8
 reqs    =
     { "type", "name", "range"
-      "Extra", "Fortress", "tile"
+      "Extra", "Fortress", "Tile"
       "Tech", "Invention", "player"
       "UnitClass", "Land", "Local"
     }
 
-; basic free tech upkeep
+; Vision benefit from mountains (All Land units)
+[effect_mountains_vision]
+type    = "Unit_Vision_Radius_Sq"
+value   = 4
+reqs    =
+    { "type",      "name",      "range"
+      "Terrain",   "Mountains", "Tile"
+      "UnitClass", "Land",      "Local"
+    }
+
+; Basic free tech upkeep
 [effect_upkeep_tech_free]
 type    = "Tech_Upkeep_Free"
 value   = 3
@@ -126,6 +151,49 @@ reqs    =
     { "type", "name", "range"
       "Extra", "Fortress", "Tile"
       "UnitClass", "Land", "Local"
+    }
+
+[effect_fortified]
+type    = "Fortify_Defense_Bonus"
+value   = 50
+reqs    =
+    { "type", "name", "range"
+      "Activity", "Fortified", "Local"
+    }
+
+[effect_city_fortified]
+type    = "Fortify_Defense_Bonus"
+value   = 50
+reqs    =
+    { "type",          "name",         "range", "present"
+      "CityTile",      "Center",       "Tile",  TRUE
+      "Activity",      "Fortified",    "Local", FALSE
+      "UnitClassFlag", "CanFortify",   "Local", TRUE
+      "UnitTypeFlag",  "Cant_Fortify", "Local", FALSE
+    }
+
+[effect_city_min_hp]
+type    = "Min_HP_Pct"
+value   = 33
+reqs    =
+    { "type",     "name",   "range"
+      "CityTile", "Center", "Tile"
+    }
+
+[effect_fortified_regen]
+type    = "HP_Regen_2"
+value   = 10
+reqs    =
+    { "type",     "name",      "range"
+      "Activity", "Fortified", "Local"
+    }
+
+[effect_base_regen]
+type    = "HP_Regen_2"
+value   = 10
+reqs    =
+    { "type",      "name",       "range", "present"
+      "UnitClass", "Helicopter", "Local", FALSE
     }
 
 ; Base vision range - radius of vision is sqrt(5) = 2.24
@@ -533,35 +601,35 @@ reqs	=
     }
 
 [effect_martial_law_each_0]
-type    = "Martial_Law_Each"
+type    = "Martial_Law_By_Unit"
 value   = 1
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Anarchy",   "Player"
+    { "type", "name",    "range"
+      "Gov",  "Anarchy", "Player"
     }
 
 [effect_martial_law_each_1]
-type    = "Martial_Law_Each"
+type    = "Martial_Law_By_Unit"
 value   = 1
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Despotism", "Player"
+    { "type", "name",      "range"
+      "Gov",  "Despotism", "Player"
     }
 
 [effect_martial_law_each_2]
-type    = "Martial_Law_Each"
+type    = "Martial_Law_By_Unit"
 value   = 1
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Monarchy",  "Player"
+    { "type", "name",     "range"
+      "Gov",  "Monarchy", "Player"
     }
 
 [effect_martial_law_each_3]
-type    = "Martial_Law_Each"
+type    = "Martial_Law_By_Unit"
 value   = 2
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Communism", "Player"
+    { "type", "name",      "range"
+      "Gov",  "Communism", "Player"
     }
 
 [effect_martial_law_max_0]
@@ -616,25 +684,27 @@ reqs	=
 type    = "Veteran_Build"
 value   = 1
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Communism", "Player"
-      "UnitFlag", "Diplomat", "Local"
+    { "type",         "name",      "range"
+      "Gov",          "Communism", "Player"
+      "UnitTypeFlag", "Diplomat",  "Local"
     }
 
 [effect_gov_tile_bonus_0]
 type    = "Output_Penalty_Tile"
 value   = 2
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Anarchy", "Player"
+    { "type",       "name",        "range",  "present"
+      "Gov",        "Anarchy",     "Player", TRUE
+      "CityStatus", "Celebration", "City",   FALSE
     }
 
 [effect_gov_tile_bonus_1]
 type    = "Output_Penalty_Tile"
 value   = 2
 reqs	=
-    { "type",       "name",      "range"
-      "Gov", "Despotism", "Player"
+    { "type",       "name",        "range",  "present"
+      "Gov",        "Despotism",   "Player", TRUE
+      "CityStatus", "Celebration", "City",   FALSE
     }
 
 [effect_gov_tile_bonus_2]
@@ -725,33 +795,30 @@ reqs	=
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Airport", "City", TRUE
-      "UnitClass", "Air", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",    "range", "present"
+      "Building",     "Airport", "City",  TRUE
+      "UnitClass",    "Air",     "Local", TRUE
+      "UnitTypeFlag", "NonMil",  "Local", FALSE
     }
 
 [effect_airport_0a]
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Airport", "City", TRUE
-      "UnitClass", "Helicopter", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",       "range", "present"
+      "Building",     "Airport",    "City",  TRUE
+      "UnitClass",    "Helicopter", "Local", TRUE
+      "UnitTypeFlag", "NonMil",     "Local", FALSE
     }
 
 [effect_airport_0b]
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Airport", "City", TRUE
-      "UnitClass", "Missile", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",    "range", "present"
+      "Building",     "Airport", "City",  TRUE
+      "UnitClass",    "Missile", "Local", TRUE
+      "UnitTypeFlag", "NonMil",  "Local", FALSE
     }
 
 [effect_airport_1]
@@ -821,64 +888,23 @@ reqs	=
       "OutputType", "Luxury", "Local"
     }
 
-[effect_barracks]
+[effect_barracks_veteran]
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Barracks", "City", TRUE
-      "UnitClass", "Land", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",      "range", "present"
+      "BuildingFlag", "Barracks",  "City",  TRUE
+      "UnitClass",    "Land",      "Local", TRUE
+      "UnitTypeFlag", "NonMil",    "Local", FALSE
     }
 
-[effect_barracks_1]
+[effect_barracks_regen]
 type    = "HP_Regen"
 value	= 100
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Barracks", "City", TRUE
-      "UnitClass", "Land", "Local", TRUE
-    }
-
-[effect_barracks_ii]
-type    = "Veteran_Build"
-value	= 1
-reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Barracks II", "City", TRUE
-      "UnitClass", "Land", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
-    }
-
-[effect_barracks_ii_1]
-type    = "HP_Regen"
-value	= 100
-reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Barracks II", "City", TRUE
-      "UnitClass", "Land", "Local", TRUE
-    }
-
-[effect_barracks_iii]
-type    = "Veteran_Build"
-value	= 1
-reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Barracks III", "City", TRUE
-      "UnitClass", "Land", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
-    }
-
-[effect_barracks_iii_1]
-type    = "HP_Regen"
-value	= 100
-reqs	=
-    { "type", "name", "range"
-      "Building", "Barracks III", "City"
-      "UnitClass", "Land", "Local"
+    { "type",         "name",     "range", "present"
+      "BuildingFlag", "Barracks", "City",  TRUE
+      "UnitClass",    "Land",     "Local", TRUE
     }
 
 [effect_cathedral]
@@ -943,8 +969,9 @@ reqs	=
 type    = "Visible_Walls"
 value	= 1
 reqs	=
-    { "type", "name", "range"
-      "Building", "City Walls", "City"
+    { "type",     "name",       "range",  "present"
+      "Building", "City Walls", "City",   TRUE
+      "Building", "Great Wall", "Player", FALSE
     }
 
 [effect_coastal_defense]
@@ -1016,7 +1043,7 @@ value	= 300
 reqs	=
     { "type", "name", "range", "present"
       "Building", "Courthouse", "City", TRUE
-      "MaxUnitsOnTile", "0", "Local", FALSE
+      "MaxUnitsOnTile", "0", "Tile", FALSE
     }
 
 [effect_incite_cost_empty_courthouse]
@@ -1024,7 +1051,7 @@ type = "Incite_Cost_Pct"
 value = 100
 reqs	=
     { "type", "name", "range", "present"
-      "MaxUnitsOnTile", "0", "Local", TRUE
+      "MaxUnitsOnTile", "0", "Tile", TRUE
       "Building", "Courthouse", "City", TRUE
     }
 
@@ -1033,7 +1060,7 @@ type    = "Spy_Resistant"
 value   = 25
 reqs    =
     { "type",  "name",     "range"
-      "Extra", "Fortress", "Local"
+      "Extra", "Fortress", "Tile"
     }
 
 [effect_incite_cost_empty]
@@ -1041,7 +1068,7 @@ type = "Incite_Cost_Pct"
 value = -50
 reqs	=
     { "type", "name", "range", "present"
-      "MaxUnitsOnTile", "0", "Local", TRUE
+      "MaxUnitsOnTile", "0", "Tile", TRUE
       "Building", "Courthouse", "City", FALSE
     }
 
@@ -1054,7 +1081,7 @@ reqs	=
       "OutputType", "Shield", "Local"
     }
 
-[effect_granary]
+[effect_granary_grow]
 type    = "Growth_Food"
 value	= 50
 reqs	=
@@ -1062,12 +1089,20 @@ reqs	=
       "Building", "Granary", "City"
     }
 
-[effect_harbour]
+[effect_granary_shrink]
+type    = "Shrink_Food"
+value	= 50
+reqs	=
+    { "type", "name", "range"
+      "Building", "Granary", "City"
+    }
+
+[effect_harbor]
 type    = "Output_Add_Tile"
 value	= 1
 reqs	=
     { "type", "name", "range"
-      "TerrainClass", "Oceanic", "Local"
+      "TerrainClass", "Oceanic", "Tile"
       "Building", "Harbour", "City"
       "OutputType", "Food", "Local"
     }
@@ -1258,7 +1293,7 @@ type    = "Output_Add_Tile"
 value	= 1
 reqs	=
     { "type", "name", "range"
-      "TerrainClass", "Oceanic", "Local"
+      "TerrainClass", "Oceanic", "Tile"
       "Building", "Offshore Platform", "City"
       "OutputType", "Shield", "Local"
     }
@@ -1356,11 +1391,10 @@ reqs	=
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Port Facility", "City", TRUE
-      "UnitClass", "Sea", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",          "range", "present"
+      "Building",     "Port Facility", "City",  TRUE
+      "UnitClass",    "Sea",           "Local", TRUE
+      "UnitTypeFlag", "NonMil",        "Local", FALSE
     }
 
 [effect_port_facility_1]
@@ -1376,11 +1410,10 @@ reqs	=
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Port Facility", "City", TRUE
-      "UnitClass", "Trireme", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",          "range", "present"
+      "Building",     "Port Facility", "City",  TRUE
+      "UnitClass",    "Trireme",       "Local", TRUE
+      "UnitTypeFlag", "NonMil",        "Local", FALSE
     }
 
 [effect_port_facility_trireme_1]
@@ -1650,7 +1683,7 @@ type    = "Output_Per_Tile"
 value	= 50
 reqs	=
     { "type", "name", "range"
-      "Extra", "Road", "Local"
+      "Extra", "Road", "Tile"
       "Building", "Super Highways", "City"
       "OutputType", "Trade", "Local"
     }
@@ -1660,7 +1693,7 @@ type    = "Mining_Pct"
 value   = 100
 reqs    =
     { "type", "name", "range"
-      "Extra", "Mine", "Local"
+      "Extra", "Mine", "Tile"
     }
 
 [effect_oil_well]
@@ -1668,7 +1701,7 @@ type    = "Mining_Pct"
 value   = 100
 reqs    =
     { "type", "name", "range"
-      "Extra", "Oil Well", "Local"
+      "Extra", "Oil Well", "Tile"
     }
 
 [effect_irrigation]
@@ -1676,7 +1709,7 @@ type    = "Irrigation_Pct"
 value   = 100
 reqs    =
     { "type", "name", "range"
-      "Extra", "Irrigation", "Local"
+      "Extra", "Irrigation", "Tile"
     }
 
 [effect_irrigation_center]
@@ -1684,11 +1717,11 @@ type    = "Irrigation_Pct"
 value	= 100
 reqs	=
     { "type", "name", "range", "present"
-      "CityTile", "Center", "Local", TRUE
-      "Extra", "Irrigation", "Local", FALSE
-      "TerrainAlter", "CanIrrigate", "Local", TRUE
-      "Extra", "Mine", "Local", FALSE
-      "Extra", "Oil Well", "Local", FALSE
+      "CityTile", "Center", "Tile", TRUE
+      "Extra", "Irrigation", "Tile", FALSE
+      "TerrainAlter", "CanIrrigate", "Tile", TRUE
+      "Extra", "Mine", "Tile", FALSE
+      "Extra", "Oil Well", "Tile", FALSE
     }
 
 [effect_supermarket]
@@ -1696,7 +1729,7 @@ type    = "Output_Per_Tile"
 value	= 50
 reqs	=
     { "type", "name", "range"
-      "Extra", "Farmland", "Local"
+      "Extra", "Farmland", "Tile"
       "Building", "Supermarket", "City"
       "OutputType", "Food", "Local"
     }
@@ -1706,13 +1739,13 @@ type    = "Output_Per_Tile"
 value	= 50
 reqs	=
     { "type", "name", "range", "present"
-      "CityTile", "Center", "Local", TRUE
-      "Extra", "Farmland", "Local", FALSE
-      "TerrainAlter", "CanIrrigate", "Local", TRUE
+      "CityTile", "Center", "Tile", TRUE
+      "Extra", "Farmland", "Tile", FALSE
+      "TerrainAlter", "CanIrrigate", "Tile", TRUE
       "Building", "Supermarket", "City", TRUE
       "OutputType", "Food", "Local", TRUE
-      "Extra", "Mine", "Local", FALSE
-      "Extra", "Oil Well", "Local", FALSE
+      "Extra", "Mine", "Tile", FALSE
+      "Extra", "Oil Well", "Tile", FALSE
     }
 
 [effect_temple]
@@ -1831,7 +1864,7 @@ reqs	=
     { "type", "name", "range", "present"
       "Building", "Great Wall", "Player", TRUE
       "UnitClass", "Land", "Local", TRUE
-      "CityTile", "Center", "Local", TRUE
+      "CityTile", "Center", "Tile", TRUE
       "UnitType", "Howitzer", "Local", FALSE
     }
 
@@ -1842,7 +1875,7 @@ reqs	=
     { "type", "name", "range"
       "Building", "Great Wall", "Player"
       "UnitClass", "Helicopter", "Local"
-      "CityTile", "Center", "Local"
+      "CityTile", "Center", "Tile"
     }
 
 [effect_great_wall_1]
@@ -1970,12 +2003,11 @@ reqs	=
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Lighthouse", "Player", TRUE
-      "UnitClass", "Sea", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
-      "Building", "Port Facility", "City", FALSE
+    { "type",         "name",          "range", "present"
+      "Building",     "Lighthouse",    "Player", TRUE
+      "UnitClass",    "Sea",           "Local",  TRUE
+      "UnitTypeFlag", "NonMil",        "Local",  FALSE
+      "Building",     "Port Facility", "City",   FALSE
     }
 
 [effect_lighthouse_trireme_move]
@@ -1991,12 +2023,11 @@ reqs	=
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Lighthouse", "Player", TRUE
-      "UnitClass", "Trireme", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
-      "Building", "Port Facility", "City", FALSE
+    { "type",         "name",          "range", "present"
+      "Building",     "Lighthouse",    "Player", TRUE
+      "UnitClass",    "Trireme",       "Local",  TRUE
+      "UnitTypeFlag", "NonMil",        "Local",  FALSE
+      "Building",     "Port Facility", "City",   FALSE
     }
 
 [effect_magellans_expedition]
@@ -2076,8 +2107,16 @@ reqs	=
       "Building", "Oracle", "Player"
     }
 
-[effect_pyramids]
+[effect_pyramids_grow]
 type    = "Growth_Food"
+value	= 25
+reqs	=
+    { "type", "name", "range"
+      "Building", "Pyramids", "Player"
+    }
+
+[effect_pyramids_shrink]
+type    = "Shrink_Food"
 value	= 25
 reqs	=
     { "type", "name", "range"
@@ -2122,21 +2161,20 @@ reqs	=
 type    = "Veteran_Build"
 value	= 1
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Sun Tzu's War Academy", "Player", TRUE
-      "UnitClass", "Land", "Local", TRUE
-      "UnitFlag", "NonMil", "Local", FALSE
-      "UnitFlag", "NoVeteran", "Local", FALSE
+    { "type",         "name",                  "range", "present"
+      "Building",     "Sun Tzu's War Academy", "Player", TRUE
+      "UnitClass",    "Land",                  "Local",  TRUE
+      "UnitTypeFlag", "NonMil",                "Local",  FALSE
     }
 
 [effect_sun_tzus_war_academy_1]
 type    = "Veteran_Combat"
 value	= 50
 reqs	=
-    { "type", "name", "range", "present"
-      "Building", "Sun Tzu's War Academy", "Player", TRUE
-      "UnitClass", "Land", "Local", TRUE
-      "UnitFlag", "Diplomat", "Local", FALSE
+    { "type",         "name",                  "range", "present"
+      "Building",     "Sun Tzu's War Academy", "Player", TRUE
+      "UnitClass",    "Land",                  "Local",  TRUE
+      "UnitTypeFlag", "Diplomat",              "Local",  FALSE
     }
 
 [effect_united_nations]
@@ -2172,7 +2210,7 @@ reqs    =
     { "type", "name", "range"
       "Tech", "Flight", "Player"
     }
-    
+
 [effect_railroad_trade_revenue_reduce]
 type    = "Trade_Revenue_Bonus"
 value   = -585
@@ -2257,13 +2295,17 @@ reqs    =
 type    = "Tech_Cost_Factor"
 value   = 1
 
+[effect_tech_leakage]
+type    = "Tech_Leakage"
+value   = 1
+
 ; Cities can always work tiles
 [effect_tile_workable]
 type    = "Tile_Workable"
 value   = 1
 reqs    =
     { "type", "name", "range", "present"
-      "Terrain", "Inaccessible", "Local", FALSE
+      "Terrain", "Inaccessible", "Tile", FALSE
     }
 
 ; each city has at least one slot to build units
@@ -2303,63 +2345,13 @@ reqs    =
       "MinSize", "16", "City"
     }
 
-[effect_irrigate_src_ocean]
-type    = "Irrig_Possible"
-value   = 1
-reqs    =
-    { "type", "name", "range"
-      "TerrainClass", "Oceanic", "CAdjacent"
-    }
-
-[effect_irrigate_src_river]
-type    = "Irrig_Possible"
-value   = 1
-reqs    =
-    { "type", "name", "range"
-      "Extra", "River", "CAdjacent"
-    }
-
-[effect_irrigate_src_irrigation]
-type    = "Irrig_Possible"
-value   = 1
-reqs    =
-    { "type", "name", "range"
-      "Extra", "Irrigation", "CAdjacent"
-    }
-
-[effect_mining]
-type    = "Mining_Possible"
-value   = 1
-reqs    =
-    { "type", "name", "range", "present"
-      "TerrainFlag", "Oil", "Local", FALSE
-    }
-
-[effect_desert_oil]
-type    = "Mining_Possible"
-value   = 1
-reqs    =
-    { "type", "name", "range"
-      "Terrain", "Desert", "Local"
-      "Tech", "Construction", "Player"
-    }
-
-[effect_glacier_oil]
-type    = "Mining_Possible"
-value   = 1
-reqs    =
-    { "type", "name", "range"
-      "Terrain", "Glacier", "Local"
-      "Tech", "Refining", "Player"
-    }
-
 [effect_pollution]
 type	= "Output_Tile_Punish_Pct"
 value	= 50
 reqs	=
     { "type", "name", "range", "present"
-      "Extra", "Pollution", "Local", TRUE
-      "Extra", "Fallout", "Local", FALSE
+      "Extra", "Pollution", "Tile", TRUE
+      "Extra", "Fallout", "Tile", FALSE
     }
 
 [effect_fallout]
@@ -2367,8 +2359,8 @@ type	= "Output_Tile_Punish_Pct"
 value	= 50
 reqs	=
     { "type", "name", "range", "present"
-      "Extra", "Fallout", "Local", TRUE
-     "Extra", "Pollution", "Local", FALSE
+      "Extra", "Fallout", "Tile", TRUE
+     "Extra", "Pollution", "Tile", FALSE
     }
 
 [effect_pollution_fallout]
@@ -2376,16 +2368,24 @@ type	= "Output_Tile_Punish_Pct"
 value	= 75
 reqs	=
     { "type", "name", "range"
-      "Extra", "Fallout", "Local"
-      "Extra", "Pollution", "Local"
+      "Extra", "Fallout", "Tile"
+      "Extra", "Pollution", "Tile"
+    }
+
+[effect_attack_bombard_no_city_destruction]
+type    = "Unit_No_Lose_Pop"
+value   = 1
+reqs    =
+    { "type",    "name",  "range", "present"
+      "MinSize", "2",     "City",  FALSE
     }
 
 [effect_unit_bribe_cost_settlers]
 type	= "Unit_Bribe_Cost_Pct"
 value	= -50
 reqs	=
-    { "type", "name", "range"
-      "UnitFlag", "Cities", "Local"
+    { "type",         "name",   "range"
+      "UnitTypeFlag", "Cities", "Local"
     }
 
 [effect_illegal_action_move_cost_base]
@@ -2395,6 +2395,10 @@ reqs	=
     { "type", "name", "range", "present"
       "Action", "Found City", "Local", FALSE
       "Action", "Join City", "Local", FALSE
+      "Action", "Transport Board", "Local", FALSE
+      "Action", "Transport Deboard", "Local", FALSE
+      "Action", "Transport Disembark", "Local", FALSE
+      "Action", "Transport Disembark 2", "Local", FALSE
     }
 
 [effect_incident_caught_steal_tech]
@@ -2460,12 +2464,12 @@ reqs	=
       "DiplRel", "War", "Local", FALSE
     }
 
-[effect_incident_success_sabotage_unit]
-type	= "Casus_Belli_Success"
-value	= 1
-reqs	=
+[effect_incident_success_spy_attack]
+type   = "Casus_Belli_Success"
+value  = 1
+reqs   =
     { "type", "name", "range", "present"
-      "Action", "Sabotage Unit Escape", "Local", TRUE
+      "Action", "Spy Attack", "Local", TRUE
       "DiplRel", "War", "Local", FALSE
     }
 
@@ -2487,42 +2491,6 @@ reqs	=
       "DiplRel", "War", "Local", FALSE
     }
 
-[effect_incident_success_poison]
-type	= "Casus_Belli_Success"
-value	= 1
-reqs	=
-    { "type", "name", "range", "present"
-      "Action", "Poison City Escape", "Local", TRUE
-      "DiplRel", "War", "Local", FALSE
-    }
-
-[effect_incident_success_sabotage_city]
-type	= "Casus_Belli_Success"
-value	= 1
-reqs	=
-    { "type", "name", "range", "present"
-      "Action", "Sabotage City", "Local", TRUE
-      "DiplRel", "War", "Local", FALSE
-    }
-
-[effect_incident_success_sabotage_city_esc]
-type	= "Casus_Belli_Success"
-value	= 1
-reqs	=
-    { "type", "name", "range", "present"
-      "Action", "Sabotage City Escape", "Local", TRUE
-      "DiplRel", "War", "Local", FALSE
-    }
-
-[effect_incident_success_tgt_sabotage_city]
-type	= "Casus_Belli_Success"
-value	= 1
-reqs	=
-    { "type", "name", "range", "present"
-      "Action", "Targeted Sabotage City Escape", "Local", TRUE
-      "DiplRel", "War", "Local", FALSE
-    }
-
 [effect_tgt_sabotage_city_half_chance]
 type	= "Action_Odds_Pct"
 value	= -50
@@ -2531,10 +2499,306 @@ reqs	=
       "Action", "Targeted Sabotage City Escape", "Local", TRUE
     }
 
+[effect_sabotage_city_production_city_half_chance]
+type	= "Action_Odds_Pct"
+value	= -50
+reqs	=
+    { "type", "name", "range", "present"
+      "Action", "Sabotage City Production Escape", "Local", TRUE
+    }
+
 [effect_incident_success_explode_nuke]
 type	= "Casus_Belli_Success"
 value	= 1
 reqs	=
     { "type", "name", "range", "present"
       "Action", "Explode Nuclear", "Local", TRUE
+    }
+
+[effect_explode_nuke_blast_radius]
+type	= "Nuke_Blast_Radius_1_Sq"
+value	= 2
+reqs	=
+    { "type", "name", "range", "present"
+      "Action", "Explode Nuclear", "Local", TRUE
+    }
+
+[effect_incident_success_explode_nuke_city]
+type	= "Casus_Belli_Success"
+value	= 1
+reqs	=
+    { "type", "name", "range", "present"
+      "Action", "Nuke City", "Local", TRUE
+    }
+
+[effect_nuke_city_blast_radius]
+type	= "Nuke_Blast_Radius_1_Sq"
+value	= 2
+reqs	=
+    { "type", "name", "range", "present"
+      "Action", "Nuke City", "Local", TRUE
+    }
+
+[effect_incident_success_explode_nuke_units]
+type	= "Casus_Belli_Success"
+value	= 1
+reqs	=
+    { "type", "name", "range", "present"
+      "Action", "Nuke Units", "Local", TRUE
+    }
+
+[effect_nuke_units_blast_radius]
+type	= "Nuke_Blast_Radius_1_Sq"
+value	= 2
+reqs	=
+    { "type", "name", "range", "present"
+      "Action", "Nuke Units", "Local", TRUE
+    }
+
+; Double (+100%) buy cost for Great Wonders
+[effect_great_wonder_buy_cost]
+type    = "Building_Buy_Cost_Pct"
+value   = 100
+reqs    =
+    { "type", "name", "range"
+      "BuildingGenus", "GreatWonder", "Local"
+    }
+
+[effect_action_establish_embassy_success_move_cost]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 1
+reqs    =
+    { "type",   "name",              "range", "quiet"
+      "Action", "Establish Embassy", "Local", TRUE
+    }
+
+[effect_action_success_poison_city_escape]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",               "range", "quiet"
+      "Action", "Poison City Escape", "Local", TRUE
+    }
+
+[effect_action_success_sabotage_city_escape]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",                 "range", "quiet"
+      "Action", "Sabotage City Escape", "Local", TRUE
+    }
+
+[effect_action_success_targeted_sabotage_city_escape]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",                          "range", "quiet"
+      "Action", "Targeted Sabotage City Escape", "Local", TRUE
+    }
+
+[effect_action_success_sabotage_city_production_escape]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",                            "range", "quiet"
+      "Action", "Sabotage City Production Escape", "Local", TRUE
+    }
+
+[effect_action_success_steal_tech_escape_expected]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",                       "range", "quiet"
+      "Action", "Steal Tech Escape Expected", "Local", TRUE
+    }
+
+[effect_action_success_targeted_steal_tech_escape_expected]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",                                "range", "quiet"
+      "Action", "Targeted Steal Tech Escape Expected", "Local", TRUE
+    }
+
+[effect_action_success_incite_city_escape]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",               "range", "quiet"
+      "Action", "Incite City Escape", "Local", TRUE
+    }
+
+[effect_action_success_sabotage_unit_escape]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",   "name",                 "range", "quiet"
+      "Action", "Sabotage Unit Escape", "Local", TRUE
+    }
+
+[effect_action_success_move_cost_investigate]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 1
+reqs    =
+    { "type", "name", "range", "present"
+      "Action", "Investigate City", "Local", TRUE
+    }
+
+[effect_action_success_move_cost_from_non_native]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",          "name",                  "range", "present"
+      "Action",        "Transport Disembark 2", "Local", TRUE
+      "UnitState",     "OnNativeTile",          "Local", TRUE
+      "UnitClassFlag", "TerrainSpeed",          "Local", TRUE
+    }
+
+[effect_action_success_conquer_cost_from_non_native]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",          "name",                  "range", "present"
+      "Action",        "Conquer City Shrink 2", "Local", TRUE
+      "UnitState",     "OnNativeTile",          "Local", TRUE
+      "UnitClassFlag", "TerrainSpeed",          "Local", TRUE
+    }
+
+[effect_action_success_move_cost_hut_entry_from_non_native]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",          "name",                  "range", "present"
+      "Action",        "Enter Hut 2",           "Local", TRUE
+      "UnitState",     "OnNativeTile",          "Local", TRUE
+      "UnitClassFlag", "TerrainSpeed",          "Local", TRUE
+    }
+
+[effect_action_success_move_cost_hut_frighten_from_non_native]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",          "name",                  "range", "present"
+      "Action",        "Frighten Hut 2",        "Local", TRUE
+      "UnitState",     "OnNativeTile",          "Local", TRUE
+      "UnitClassFlag", "TerrainSpeed",          "Local", TRUE
+    }
+
+[effect_action_success_move_cost_conquer_extras_from_non_native]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",          "name",                  "range", "present"
+      "Action",        "Conquer Extras 2",      "Local", TRUE
+      "UnitState",     "OnNativeTile",          "Local", TRUE
+      "UnitClassFlag", "TerrainSpeed",          "Local", TRUE
+    }
+
+[effect_action_success_attack_one_attack]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",         "name",      "range", "quiet"
+      "Action",       "Attack",    "Local", TRUE
+      "UnitTypeFlag", "OneAttack", "Local", TRUE
+    }
+
+[effect_action_success_attack_normal]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 3
+reqs    =
+    { "type",         "name",      "range", "present"
+      "Action",       "Attack",    "Local", TRUE
+      "UnitTypeFlag", "OneAttack", "Local", FALSE
+    }
+
+[effect_action_success_ransom_one_attack]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 65535
+reqs    =
+    { "type",         "name",           "range", "quiet"
+      "Action",       "Collect Ransom", "Local", TRUE
+      "UnitTypeFlag", "OneAttack",      "Local", TRUE
+    }
+
+[effect_action_success_ransom]
+type    = "Action_Success_Actor_Move_Cost"
+value   = 3
+reqs    =
+    { "type",         "name",           "range", "present"
+      "Action",       "Collect Ransom", "Local", TRUE
+      "UnitTypeFlag", "OneAttack",      "Local", FALSE
+    }
+
+[effect_unit_shield_value_recycle]
+type    = "Unit_Shield_Value_Pct"
+value   = -50
+reqs    =
+    { "type",   "name",                 "range", "present"
+      "Action", "Disband Unit Recover", "Local", TRUE
+    }
+
+[effect_unit_shield_value_in_upgrade_price_calc]
+type    = "Unit_Shield_Value_Pct"
+value   = -50
+reqs    =
+    { "type",   "name",         "range", "present"
+      "Action", "Upgrade Unit", "Local", TRUE
+    }
+
+; Note: There are no oceanic border sources, so we don't need to check
+;       the tiles' terrain class
+[effect_claim_land]
+type    = "Tile_Claimable"
+value   = 1
+reqs    =
+    { "type",         "name",        "range"
+;     "TerrainClass", "Land",        "Tile"
+      "TileRel",      "Same Region", "Tile"
+    }
+
+[effect_claim_ocean_adj]
+type    = "Tile_Claimable"
+value   = 1
+reqs    =
+    { "type",          "name",    "range"
+;     "TerrainClass",  "Oceanic", "Tile"
+      "MaxDistanceSq", "2",       "Tile"
+    }
+
+[effect_claim_ocean_lake]
+type    = "Tile_Claimable"
+value   = 1
+reqs    =
+    { "type",           "name",              "range"
+;     "TerrainClass",   "Oceanic",           "Tile"
+      "MaxRegionTiles", "20",                "Continent"
+      "TileRel",        "Region Surrounded", "Tile"
+    }
+
+[effect_claim_ocean_bay]
+type    = "Tile_Claimable"
+value   = 1
+reqs    =
+    { "type",           "name",              "range"
+;     "TerrainClass",   "Oceanic",           "Tile"
+      "MaxRegionTiles", "3",                 "Adjacent"
+      "TileRel",        "Only Other Region", "Adjacent"
+      "TileRel",        "Same Region",       "Adjacent"
+    }
+
+[effect_civil_war_city_celebration]
+type    = "Civil_War_City_Bonus"
+value   = 5
+reqs    =
+    { "type",       "name",        "range"
+      "CityStatus", "Celebration", "City"
+    }
+
+[effect_civil_war_city_disorder]
+type    = "Civil_War_City_Bonus"
+value   = -5
+reqs    =
+    { "type",       "name",     "range"
+      "CityStatus", "Disorder", "City"
     }

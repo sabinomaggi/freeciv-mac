@@ -1,19 +1,19 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes,
+; for other "maintenance". If you want to make custom changes,
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
 [datafile]
-description="Civ2 technology data for Freeciv (incomplete)"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Civ2 technology data for Freeciv (incomplete)"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
 
 [control]
-; Names for custom tech flags. There can be up to 8 of these.
+; Names for custom tech flags. There can be up to 10 of these.
 ; name          = rule name; In some circumstances user may see this
 ;                 as part of some sentences, so try to make it descriptive
 ;                 and sensible.
@@ -47,7 +47,7 @@ format_version=20
 ; /* <-- avoid gettext warnings
 ;
 ; Below: The individual advances, one per section.
-; The number can be variable, up to 196.
+; The number can be variable, up to 400.
 ;
 ; The actual tag used (the * in [advance_*]) does not matter, except
 ; it must be unique within this file, and it may be used in debug
@@ -64,16 +64,21 @@ format_version=20
 ; class         = tech class this tech belongs to, if they have been defined.
 ;                 Default is first one defined above.
 ; req1, req2    = advances required before researching this one
-; root_req      = tech required before acquiring this tech, by any
-;                 means, inherited by all techs that require this tech in turn
-;                 unless "None" is given here explicitly; and you can make
-;                 a tech available only through the init_tech of a nation by
-;                 making it root_req itself.
+; root_req      = tech required before acquiring this tech, by any means.
+;                 All techs with any direct or indirect dependency on this
+;                 one will *also* have this root_req, as well as their own
+;                 and any others they inherit.
+;                 Giving "None" explicitly here prevents a tech from
+;                 inheriting root_reqs in this way, and stops root_req
+;                 inheritance through that tech.
+;                 Specifying a tech's root_req as itself means that the tech
+;                 can only be acquired by special means (nation's init_techs,
+;                 scripting, etc).
 ; research_reqs = requirements before researching this one. Can have non
 ;                 tech requirements because it is a requirement vector.
 ;                 See doc/README.effects to learn more about requirement
 ;                 vectors.
-;                 Requireing a tech here in stead of in req1, req2 or
+;                 Requiring a tech here instead of in req1, req2 or
 ;                 root_req is not supported yet.
 ;                 Requirements that may become fulfilled during the game
 ;                 when they weren't at the start of the game is not
@@ -90,21 +95,18 @@ format_version=20
 ;                 costs.
 ;
 ; Special values for req1 and req2 are "None" (first section below)
-; and "Never" (never available).  If only one tech is required,
+; and "Never" (never available). If only one tech is required,
 ; it should be listed as req1.
 ;
 ; As well as custom flags defined above, the following flag strings are
 ; possible:
 ;
 ; "Bonus_Tech"          = player gets extra tech if reached first
-; "Bridge"              = "Settler" unit types can build roads with
-;                         "RequiresBridge" flag over roads with
-;                         "PreventsOtherRoads" flag (rivers)
+; "Bridge"              = "Settler" unit types can build extras that
+;                         require bridge when occurring with some other
+;                         extra. See "bridged_over" extra property in
+;                         terrain.ruleset.
 ; "Build_Airborne"      = from now on can build air units (for use by AI)
-; "Claim_Ocean"         = Player claims ocean tiles even if they are not
-;                         adjacent to border source
-; "Claim_Ocean_Limited" = Oceanic border sources claim ocean tiles even if
-;                         they are not adjacent to border source
 ;
 ; */ <-- avoid gettext warnings
 
@@ -348,7 +350,7 @@ graphic_alt = "-"
 name     = _("Flight")
 req1     = "Combustion"
 req2     = "Theory of Gravity"
-flags    = ""
+flags    = "Build_Airborne"
 graphic     = "a.flight"
 graphic_alt = "-"
 helptext = _("Decreases one-time revenue from new trade routes.")

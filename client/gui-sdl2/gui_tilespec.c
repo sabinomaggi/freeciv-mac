@@ -51,30 +51,31 @@
 
 #include "gui_tilespec.h"
 
-struct Theme *current_theme = NULL;
-struct City_Icon *pIcons;
+struct theme_icons *current_theme = NULL;
+struct city_icon *icons;
 
 static SDL_Surface *city_surf;
 
-static SDL_Surface *pNeutral_Tech_Icon;
-static SDL_Surface *pNone_Tech_Icon;
-static SDL_Surface *pFuture_Tech_Icon;
+static SDL_Surface *neutral_tech_icon;
+static SDL_Surface *none_tech_icon;
+static SDL_Surface *future_tech_icon;
 
-#define load_GUI_surface(pSpr, pStruct, pSurf, tag)		  \
+#define load_gui_surface(_spr_, _struct_, _surf_, _tag_)	  \
 do {								  \
-  pSpr = theme_lookup_sprite_tag_alt(theme, LOG_FATAL, tag, "", "", ""); \
-  fc_assert_action(pSpr != NULL, break);                          \
-  pStruct->pSurf = GET_SURF_REAL(pSpr);                           \
+  _spr_ = theme_lookup_sprite_tag_alt(active_theme, LOG_FATAL,     \
+                                      _tag_, "", "", "");          \
+  fc_assert_action(_spr_ != NULL, break);                          \
+  _struct_->_surf_ = GET_SURF_REAL(_spr_);                           \
 } while (FALSE)
 
-#define load_theme_surface(pSpr, pSurf, tag)		\
-	load_GUI_surface(pSpr, current_theme, pSurf, tag)
+#define load_theme_surface(spr, surf, tag)		\
+	load_gui_surface(spr, current_theme, surf, tag)
 
-#define load_city_icon_surface(pSpr, pSurf, tag)        \
-        load_GUI_surface(pSpr, pIcons, pSurf, tag)
+#define load_city_icon_surface(spr, surf, tag)        \
+        load_gui_surface(spr, icons, surf, tag)
 
-#define load_order_theme_surface(pSpr, pSurf, tag)	\
-        load_GUI_surface(pSpr, current_theme, pSurf, tag);
+#define load_order_theme_surface(spr, surf, tag)	\
+        load_gui_surface(spr, current_theme, surf, tag);
 
 /***************************************************************************//**
   Reload small citizens "style" icons.
@@ -85,32 +86,32 @@ static void reload_small_citizens_icons(int style)
   int spe_max;
 
   /* free info icons */
-  FREESURFACE(pIcons->pMale_Content);
-  FREESURFACE(pIcons->pFemale_Content);
-  FREESURFACE(pIcons->pMale_Happy);
-  FREESURFACE(pIcons->pFemale_Happy);
-  FREESURFACE(pIcons->pMale_Unhappy);
-  FREESURFACE(pIcons->pFemale_Unhappy);
-  FREESURFACE(pIcons->pMale_Angry);
-  FREESURFACE(pIcons->pFemale_Angry);
+  FREESURFACE(icons->male_content);
+  FREESURFACE(icons->female_content);
+  FREESURFACE(icons->male_happy);
+  FREESURFACE(icons->female_happy);
+  FREESURFACE(icons->male_unhappy);
+  FREESURFACE(icons->female_unhappy);
+  FREESURFACE(icons->male_angry);
+  FREESURFACE(icons->female_angry);
 
   spe_max = specialist_count();
   for (i = 0; i < spe_max; i++) {
-    FREESURFACE(pIcons->specialists[i]);
+    FREESURFACE(icons->specialists[i]);
   }
 
   /* allocate icons */
-  pIcons->pMale_Happy = adj_surf(get_citizen_surface(CITIZEN_HAPPY, 0));
-  pIcons->pFemale_Happy = adj_surf(get_citizen_surface(CITIZEN_HAPPY, 1));
-  pIcons->pMale_Content = adj_surf(get_citizen_surface(CITIZEN_CONTENT, 0));
-  pIcons->pFemale_Content = adj_surf(get_citizen_surface(CITIZEN_CONTENT, 1));
-  pIcons->pMale_Unhappy = adj_surf(get_citizen_surface(CITIZEN_UNHAPPY, 0));
-  pIcons->pFemale_Unhappy = adj_surf(get_citizen_surface(CITIZEN_UNHAPPY, 1));
-  pIcons->pMale_Angry = adj_surf(get_citizen_surface(CITIZEN_ANGRY, 0));
-  pIcons->pFemale_Angry = adj_surf(get_citizen_surface(CITIZEN_ANGRY, 1));
+  icons->male_happy = adj_surf(get_citizen_surface(CITIZEN_HAPPY, 0));
+  icons->female_happy = adj_surf(get_citizen_surface(CITIZEN_HAPPY, 1));
+  icons->male_content = adj_surf(get_citizen_surface(CITIZEN_CONTENT, 0));
+  icons->female_content = adj_surf(get_citizen_surface(CITIZEN_CONTENT, 1));
+  icons->male_unhappy = adj_surf(get_citizen_surface(CITIZEN_UNHAPPY, 0));
+  icons->female_unhappy = adj_surf(get_citizen_surface(CITIZEN_UNHAPPY, 1));
+  icons->male_angry = adj_surf(get_citizen_surface(CITIZEN_ANGRY, 0));
+  icons->female_angry = adj_surf(get_citizen_surface(CITIZEN_ANGRY, 1));
 
   for (i = 0; i < spe_max; i++) {
-    pIcons->specialists[i] = adj_surf(get_citizen_surface(CITIZEN_SPECIALIST + i, 0));
+    icons->specialists[i] = adj_surf(get_citizen_surface(CITIZEN_SPECIALIST + i, 0));
   }
 }
 
@@ -125,17 +126,19 @@ static void reload_small_citizens_icons(int style)
 void reload_citizens_icons(int style)
 {
   reload_small_citizens_icons(style);
-  pIcons->style = style;
+  icons->style = style;
 }
 
 /***************************************************************************//**
   Load theme city screen graphics.
 *******************************************************************************/
-void tilespec_setup_city_gfx(void) {
-  struct sprite *pSpr =
-    theme_lookup_sprite_tag_alt(theme, LOG_FATAL, "theme.city", "", "", "");
+void tilespec_setup_city_gfx(void)
+{
+  struct sprite *spr =
+    theme_lookup_sprite_tag_alt(active_theme, LOG_FATAL,
+                                "theme.city", "", "", "");
 
-  city_surf = (pSpr ? adj_surf(GET_SURF_REAL(pSpr)) : NULL);
+  city_surf = (spr ? adj_surf(GET_SURF_REAL(spr)) : NULL);
 
   fc_assert(city_surf != NULL);
 }
@@ -156,66 +159,66 @@ void tilespec_free_city_gfx(void)
 *******************************************************************************/
 void tilespec_setup_city_icons(void)
 {
-  struct sprite *pSpr = NULL;
+  struct sprite *spr = NULL;
 
-  pIcons = ( struct City_Icon *)fc_calloc(1,  sizeof( struct City_Icon ));
+  icons = (struct city_icon *)fc_calloc(1, sizeof(struct city_icon));
 
-  load_city_icon_surface(pSpr, pBIG_Food_Corr, "city.food_waste");
-  load_city_icon_surface(pSpr, pBIG_Shield_Corr, "city.shield_waste");
-  load_city_icon_surface(pSpr, pBIG_Trade_Corr, "city.trade_waste");
-  load_city_icon_surface(pSpr, pBIG_Food, "city.food");
+  load_city_icon_surface(spr, big_food_corr, "city.food_waste");
+  load_city_icon_surface(spr, big_shield_corr, "city.shield_waste");
+  load_city_icon_surface(spr, big_trade_corr, "city.trade_waste");
+  load_city_icon_surface(spr, big_food, "city.food");
 
-  pIcons->pBIG_Food_Surplus = crop_rect_from_surface(pIcons->pBIG_Food, NULL);
-  SDL_SetSurfaceAlphaMod(pIcons->pBIG_Food_Surplus, 128);
+  icons->big_food_surplus = crop_rect_from_surface(icons->big_food, NULL);
+  SDL_SetSurfaceAlphaMod(icons->big_food_surplus, 128);
 
-  load_city_icon_surface(pSpr, pBIG_Shield, "city.shield");
+  load_city_icon_surface(spr, big_shield, "city.shield");
 
-  pIcons->pBIG_Shield_Surplus = crop_rect_from_surface(pIcons->pBIG_Shield, NULL);
-  SDL_SetSurfaceAlphaMod(pIcons->pBIG_Shield_Surplus, 128);
+  icons->big_shield_surplus = crop_rect_from_surface(icons->big_shield, NULL);
+  SDL_SetSurfaceAlphaMod(icons->big_shield_surplus, 128);
 
-  load_city_icon_surface(pSpr, pBIG_Trade, "city.trade");
-  load_city_icon_surface(pSpr, pBIG_Luxury, "city.lux");
-  load_city_icon_surface(pSpr, pBIG_Coin, "city.coin");
-  load_city_icon_surface(pSpr, pBIG_Colb, "city.colb");
-  load_city_icon_surface(pSpr, pBIG_Face, "city.red_face");
-  load_city_icon_surface(pSpr, pBIG_Coin_Corr, "city.dark_coin");
-  load_city_icon_surface(pSpr, pBIG_Coin_UpKeep, "city.unkeep_coin");
+  load_city_icon_surface(spr, big_trade, "city.trade");
+  load_city_icon_surface(spr, big_luxury, "city.lux");
+  load_city_icon_surface(spr, big_coin, "city.coin");
+  load_city_icon_surface(spr, big_colb, "city.colb");
+  load_city_icon_surface(spr, pBIG_Face, "city.red_face");
+  load_city_icon_surface(spr, big_coin_corr, "city.dark_coin");
+  load_city_icon_surface(spr, big_coin_upkeep, "city.upkeep_coin");
 
-  /* small icon */
-  load_city_icon_surface(pSpr, pFood, "city.small_food");
-  load_city_icon_surface(pSpr, pShield, "city.small_shield");
-  load_city_icon_surface(pSpr, pTrade, "city.small_trade");
-  load_city_icon_surface(pSpr, pFace, "city.small_red_face");
-  load_city_icon_surface(pSpr, pLuxury, "city.small_lux");
-  load_city_icon_surface(pSpr, pCoin, "city.small_coin");
-  load_city_icon_surface(pSpr, pColb, "city.small_colb");
+  /* Small icon */
+  load_city_icon_surface(spr, food, "city.small_food");
+  load_city_icon_surface(spr, shield, "city.small_shield");
+  load_city_icon_surface(spr, trade, "city.small_trade");
+  load_city_icon_surface(spr, face, "city.small_red_face");
+  load_city_icon_surface(spr, pLuxury, "city.small_lux");
+  load_city_icon_surface(spr, coint, "city.small_coin");
+  load_city_icon_surface(spr, pColb, "city.small_colb");
 
-  load_city_icon_surface(pSpr, pPollution, "city.pollution");
+  load_city_icon_surface(spr, pollution, "city.pollution");
   /* ================================================================= */
 
-  load_city_icon_surface(pSpr, pPolice, "city.police");
+  load_city_icon_surface(spr, police, "city.police");
   /* ================================================================= */
-  pIcons->pWorklist = create_surf(9,9, SDL_SWSURFACE);
-  SDL_FillRect(pIcons->pWorklist, NULL,
-               SDL_MapRGB(pIcons->pWorklist->format, 255, 255,255));
+  icons->worklist = create_surf(9,9, SDL_SWSURFACE);
+  SDL_FillRect(icons->worklist, NULL,
+               SDL_MapRGB(icons->worklist->format, 255, 255,255));
 
-  create_frame(pIcons->pWorklist,
-               0, 0, pIcons->pWorklist->w - 1, pIcons->pWorklist->h - 1,
+  create_frame(icons->worklist,
+               0, 0, icons->worklist->w - 1, icons->worklist->h - 1,
                get_theme_color(COLOR_THEME_CITYREP_FRAME));
-  create_line(pIcons->pWorklist,
+  create_line(icons->worklist,
               3, 2, 5, 2,
               get_theme_color(COLOR_THEME_CITYREP_FRAME));
-  create_line(pIcons->pWorklist,
+  create_line(icons->worklist,
               3, 4, 7, 4,
               get_theme_color(COLOR_THEME_CITYREP_FRAME));
-  create_line(pIcons->pWorklist,
+  create_line(icons->worklist,
               3, 6, 6, 6,
               get_theme_color(COLOR_THEME_CITYREP_FRAME));
 
   /* ================================================================= */
 
-  /* force reload citizens icons */
-  pIcons->style = 999;
+  /* Force reload citizens icons */
+  icons->style = 999;
 }
 
 /***************************************************************************//**
@@ -226,26 +229,26 @@ void tilespec_free_city_icons(void)
   int i;
   int spe_max;
 
-  if (!pIcons) {
+  if (!icons) {
     return;
   }
 
   /* small citizens */
-  FREESURFACE(pIcons->pMale_Content);
-  FREESURFACE(pIcons->pFemale_Content);
-  FREESURFACE(pIcons->pMale_Happy);
-  FREESURFACE(pIcons->pFemale_Happy);
-  FREESURFACE(pIcons->pMale_Unhappy);
-  FREESURFACE(pIcons->pFemale_Unhappy);
-  FREESURFACE(pIcons->pMale_Angry);
-  FREESURFACE(pIcons->pFemale_Angry);
+  FREESURFACE(icons->male_content);
+  FREESURFACE(icons->female_content);
+  FREESURFACE(icons->male_happy);
+  FREESURFACE(icons->female_happy);
+  FREESURFACE(icons->male_unhappy);
+  FREESURFACE(icons->female_unhappy);
+  FREESURFACE(icons->male_angry);
+  FREESURFACE(icons->female_angry);
 
   spe_max = specialist_count();
   for (i = 0; i < spe_max; i++) {
-    FREESURFACE(pIcons->specialists[i]);
+    FREESURFACE(icons->specialists[i]);
   }
 
-  FC_FREE(pIcons);
+  FC_FREE(icons);
 }
 
 /* =================================================== */
@@ -257,105 +260,104 @@ void tilespec_free_city_icons(void)
 *******************************************************************************/
 void tilespec_setup_theme(void)
 {
-  struct sprite *pBuf = NULL;
+  struct sprite *buf = NULL;
 
-  current_theme = fc_calloc(1, sizeof(struct Theme));
+  current_theme = fc_calloc(1, sizeof(struct theme_icons));
 
-  load_theme_surface(pBuf, FR_Left, "theme.left_frame");
-  load_theme_surface(pBuf, FR_Right, "theme.right_frame");
-  load_theme_surface(pBuf, FR_Top, "theme.top_frame");
-  load_theme_surface(pBuf, FR_Bottom, "theme.bottom_frame");
-  load_theme_surface(pBuf, Button, "theme.button");
-  load_theme_surface(pBuf, Edit, "theme.edit");
-  load_theme_surface(pBuf, CBOX_Sell_Icon, "theme.sbox");
-  load_theme_surface(pBuf, CBOX_Unsell_Icon, "theme.ubox");
-  load_theme_surface(pBuf, UP_Icon, "theme.UP_scroll");
-  load_theme_surface(pBuf, DOWN_Icon, "theme.DOWN_scroll");
+  load_theme_surface(buf, fr_left, "theme.left_frame");
+  load_theme_surface(buf, fr_right, "theme.right_frame");
+  load_theme_surface(buf, fr_top, "theme.top_frame");
+  load_theme_surface(buf, fr_bottom, "theme.bottom_frame");
+  load_theme_surface(buf, button, "theme.button");
+  load_theme_surface(buf, edit, "theme.edit");
+  load_theme_surface(buf, cbox_sell_icon, "theme.sbox");
+  load_theme_surface(buf, cbox_unsell_icon, "theme.ubox");
+  load_theme_surface(buf, up_icon, "theme.UP_scroll");
+  load_theme_surface(buf, down_icon, "theme.DOWN_scroll");
 #if 0
-  load_theme_surface(pBuf, LEFT_Icon, "theme.LEFT_scroll");
-  load_theme_surface(pBuf, RIGHT_Icon, "theme.RIGHT_scroll");
+  load_theme_surface(buf, left_icon, "theme.LEFT_scroll");
+  load_theme_surface(buf, right_icon, "theme.RIGHT_scroll");
 #endif
-  load_theme_surface(pBuf, Vertic, "theme.vertic_scrollbar");
-  load_theme_surface(pBuf, Horiz, "theme.horiz_scrollbar");
+  load_theme_surface(buf, vertic, "theme.vertic_scrollbar");
+  load_theme_surface(buf, horiz, "theme.horiz_scrollbar");
 
   /* ------------------- */
-  load_theme_surface(pBuf, OK_PACT_Icon, "theme.pact_ok");
-  load_theme_surface(pBuf, CANCEL_PACT_Icon, "theme.pact_cancel");
+  load_theme_surface(buf, ok_pact_icon, "theme.pact_ok");
+  load_theme_surface(buf, cancel_pact_icon, "theme.pact_cancel");
   /* ------------------- */
-  load_theme_surface(pBuf, Small_OK_Icon, "theme.SMALL_OK_button");
-  load_theme_surface(pBuf, Small_CANCEL_Icon, "theme.SMALL_FAIL_button");
+  load_theme_surface(buf, small_ok_icon, "theme.SMALL_OK_button");
+  load_theme_surface(buf, small_cancel_icon, "theme.SMALL_FAIL_button");
   /* ------------------- */
-  load_theme_surface(pBuf, OK_Icon, "theme.OK_button");
-  load_theme_surface(pBuf, CANCEL_Icon, "theme.FAIL_button");
-  load_theme_surface(pBuf, FORWARD_Icon, "theme.NEXT_button");
-  load_theme_surface(pBuf, BACK_Icon, "theme.BACK_button");
-  load_theme_surface(pBuf, L_ARROW_Icon, "theme.LEFT_ARROW_button");
-  load_theme_surface(pBuf, R_ARROW_Icon, "theme.RIGHT_ARROW_button");
-  load_theme_surface(pBuf, MAP_Icon, "theme.MAP_button");
-  load_theme_surface(pBuf, FindCity_Icon, "theme.FIND_CITY_button");
-  load_theme_surface(pBuf, NEW_TURN_Icon, "theme.NEW_TURN_button");
-  load_theme_surface(pBuf, LOG_Icon, "theme.LOG_button");
-  load_theme_surface(pBuf, UNITS_Icon, "theme.UNITS_INFO_button");
-  load_theme_surface(pBuf, Options_Icon, "theme.OPTIONS_button");
-  load_theme_surface(pBuf, Block, "theme.block");
-  load_theme_surface(pBuf, INFO_Icon, "theme.INFO_button");
-  load_theme_surface(pBuf, Army_Icon, "theme.ARMY_button");
-  load_theme_surface(pBuf, Happy_Icon, "theme.HAPPY_button");
-  load_theme_surface(pBuf, Support_Icon, "theme.HOME_button");
-  load_theme_surface(pBuf, Buy_PROD_Icon, "theme.BUY_button");
-  load_theme_surface(pBuf, PROD_Icon, "theme.PROD_button");
-  load_theme_surface(pBuf, QPROD_Icon, "theme.WORK_LIST_button");
-  load_theme_surface(pBuf, CMA_Icon, "theme.CMA_button");
-  load_theme_surface(pBuf, LOCK_Icon, "theme.LOCK_button");
-  load_theme_surface(pBuf, UNLOCK_Icon, "theme.UNLOCK_button");
-  load_theme_surface(pBuf, PLAYERS_Icon, "theme.PLAYERS_button");
-  load_theme_surface(pBuf, UNITS2_Icon, "theme.UNITS_button");
-  load_theme_surface(pBuf, SAVE_Icon, "theme.SAVE_button");
-  load_theme_surface(pBuf, LOAD_Icon, "theme.LOAD_button");
-  load_theme_surface(pBuf, DELETE_Icon, "theme.DELETE_button");
-  load_theme_surface(pBuf, BORDERS_Icon, "theme.BORDERS_button");
+  load_theme_surface(buf, ok_icon, "theme.OK_button");
+  load_theme_surface(buf, cancel_icon, "theme.FAIL_button");
+  load_theme_surface(buf, FORWARD_Icon, "theme.NEXT_button");
+  load_theme_surface(buf, back_icon, "theme.BACK_button");
+  load_theme_surface(buf, l_arrow_icon, "theme.LEFT_ARROW_button");
+  load_theme_surface(buf, r_arrow_icon, "theme.RIGHT_ARROW_button");
+  load_theme_surface(buf, map_icon, "theme.MAP_button");
+  load_theme_surface(buf, find_city_icon, "theme.FIND_CITY_button");
+  load_theme_surface(buf, new_turn_icon, "theme.NEW_TURN_button");
+  load_theme_surface(buf, log_icon, "theme.LOG_button");
+  load_theme_surface(buf, units_icon, "theme.UNITS_INFO_button");
+  load_theme_surface(buf, options_icon, "theme.OPTIONS_button");
+  load_theme_surface(buf, block, "theme.block");
+  load_theme_surface(buf, info_icon, "theme.INFO_button");
+  load_theme_surface(buf, army_icon, "theme.ARMY_button");
+  load_theme_surface(buf, happy_icon, "theme.HAPPY_button");
+  load_theme_surface(buf, support_icon, "theme.HOME_button");
+  load_theme_surface(buf, buy_prod_icon, "theme.BUY_button");
+  load_theme_surface(buf, prod_icon, "theme.PROD_button");
+  load_theme_surface(buf, qprod_icon, "theme.WORK_LIST_button");
+  load_theme_surface(buf, cma_icon, "theme.CMA_button");
+  load_theme_surface(buf, lock_icon, "theme.LOCK_button");
+  load_theme_surface(buf, unlock_icon, "theme.UNLOCK_button");
+  load_theme_surface(buf, players_icon, "theme.PLAYERS_button");
+  load_theme_surface(buf, units2_icon, "theme.UNITS_button");
+  load_theme_surface(buf, save_icon, "theme.SAVE_button");
+  load_theme_surface(buf, load_icon, "theme.LOAD_button");
+  load_theme_surface(buf, delete_icon, "theme.DELETE_button");
   /* ------------------------------ */
-  load_theme_surface(pBuf, Tech_Tree_Icon, "theme.tech_tree");
+  load_theme_surface(buf, tech_tree_icon, "theme.tech_tree");
   /* ------------------------------ */
 
-  load_order_theme_surface(pBuf, Order_Icon, "theme.order_empty");
-  load_order_theme_surface(pBuf, OAutoAtt_Icon, "theme.order_auto_attack");
-  load_order_theme_surface(pBuf, OAutoConnect_Icon, "theme.order_auto_connect");
-  load_order_theme_surface(pBuf, OAutoExp_Icon, "theme.order_auto_explorer");
-  load_order_theme_surface(pBuf, OAutoSett_Icon, "theme.order_auto_settler");
-  load_order_theme_surface(pBuf, OBuildCity_Icon, "theme.order_build_city");
-  load_order_theme_surface(pBuf, OCutDownForest_Icon, "theme.order_cutdown_forest");
-  load_order_theme_surface(pBuf, OPlantForest_Icon, "theme.order_plant_forest");
-  load_order_theme_surface(pBuf, OMine_Icon, "theme.order_build_mining");
-  load_order_theme_surface(pBuf, OIrrigation_Icon, "theme.order_irrigation");
-  load_order_theme_surface(pBuf, ODone_Icon, "theme.order_done");
-  load_order_theme_surface(pBuf, ODisband_Icon, "theme.order_disband");
-  load_order_theme_surface(pBuf, OFortify_Icon, "theme.order_fortify");
-  load_order_theme_surface(pBuf, OGoto_Icon, "theme.order_goto");
-  load_order_theme_surface(pBuf, OGotoCity_Icon, "theme.order_goto_city");
-  load_order_theme_surface(pBuf, OHomeCity_Icon, "theme.order_home");
-  load_order_theme_surface(pBuf, ONuke_Icon, "theme.order_nuke");
-  load_order_theme_surface(pBuf, OParaDrop_Icon, "theme.order_paradrop");
-  load_order_theme_surface(pBuf, OPatrol_Icon, "theme.order_patrol");
-  load_order_theme_surface(pBuf, OPillage_Icon, "theme.order_pillage");
-  load_order_theme_surface(pBuf, ORailRoad_Icon, "theme.order_build_railroad");
-  load_order_theme_surface(pBuf, ORoad_Icon, "theme.order_build_road");
-  load_order_theme_surface(pBuf, OSentry_Icon, "theme.order_sentry");
-  load_order_theme_surface(pBuf, OUnload_Icon, "theme.order_unload");
-  load_order_theme_surface(pBuf, OWait_Icon, "theme.order_wait");
-  load_order_theme_surface(pBuf, OFortress_Icon, "theme.order_build_fortress");
-  load_order_theme_surface(pBuf, OFallout_Icon, "theme.order_clean_fallout");
-  load_order_theme_surface(pBuf, OPollution_Icon, "theme.order_clean_pollution");
-  load_order_theme_surface(pBuf, OAirBase_Icon, "theme.order_build_airbase");
-  load_order_theme_surface(pBuf, OTransform_Icon, "theme.order_transform");
-  load_order_theme_surface(pBuf, OAddCity_Icon, "theme.order_add_to_city");
-  load_order_theme_surface(pBuf, OWonder_Icon, "theme.order_carravan_wonder");
-  load_order_theme_surface(pBuf, OTrade_Icon, "theme.order_carravan_trade_route");
-  load_order_theme_surface(pBuf, OSpy_Icon, "theme.order_spying");
-  load_order_theme_surface(pBuf, OWakeUp_Icon, "theme.order_wakeup");
-  load_order_theme_surface(pBuf, OReturn_Icon, "theme.order_return");
-  load_order_theme_surface(pBuf, OAirLift_Icon, "theme.order_airlift");
-  load_order_theme_surface(pBuf, OLoad_Icon, "theme.order_load");
+  load_order_theme_surface(buf, order_icon, "theme.order_empty");
+  load_order_theme_surface(buf, o_autoconnect_icon, "theme.order_auto_connect");
+  load_order_theme_surface(buf, o_autoexp_icon, "theme.order_auto_explorer");
+  load_order_theme_surface(buf, o_autowork_icon, "theme.order_auto_worker");
+  load_order_theme_surface(buf, o_build_city_icon, "theme.order_build_city");
+  load_order_theme_surface(buf, OCutDownForest_Icon, "theme.order_cutdown_forest");
+  load_order_theme_surface(buf, OPlantForest_Icon, "theme.order_plant_forest");
+  load_order_theme_surface(buf, o_mine_icon, "theme.order_build_mining");
+  load_order_theme_surface(buf, o_irrigation_icon, "theme.order_irrigation");
+  load_order_theme_surface(buf, o_cultivate_icon, "theme.order_cutdown_forest");
+  load_order_theme_surface(buf, o_plant_icon, "theme.order_plant_forest");
+  load_order_theme_surface(buf, o_done_icon, "theme.order_done");
+  load_order_theme_surface(buf, o_disband_icon, "theme.order_disband");
+  load_order_theme_surface(buf, o_fortify_icon, "theme.order_fortify");
+  load_order_theme_surface(buf, o_goto_icon, "theme.order_goto");
+  load_order_theme_surface(buf, o_goto_city_icon, "theme.order_goto_city");
+  load_order_theme_surface(buf, o_homecity_icon, "theme.order_home");
+  load_order_theme_surface(buf, o_nuke_icon, "theme.order_nuke");
+  load_order_theme_surface(buf, o_paradrop_icon, "theme.order_paradrop");
+  load_order_theme_surface(buf, o_patrol_icon, "theme.order_patrol");
+  load_order_theme_surface(buf, o_pillage_icon, "theme.order_pillage");
+  load_order_theme_surface(buf, o_railroad_icon, "theme.order_build_railroad");
+  load_order_theme_surface(buf, o_road_icon, "theme.order_build_road");
+  load_order_theme_surface(buf, o_sentry_icon, "theme.order_sentry");
+  load_order_theme_surface(buf, o_unload_icon, "theme.order_unload");
+  load_order_theme_surface(buf, o_wait_icon, "theme.order_wait");
+  load_order_theme_surface(buf, o_fortress_icon, "theme.order_build_fortress");
+  load_order_theme_surface(buf, o_clean_icon, "theme.order_clean");
+  load_order_theme_surface(buf, o_airbase_icon, "theme.order_build_airbase");
+  load_order_theme_surface(buf, o_transform_icon, "theme.order_transform");
+  load_order_theme_surface(buf, OAddCity_Icon, "theme.order_add_to_city");
+  load_order_theme_surface(buf, o_wonder_icon, "theme.order_carravan_wonder");
+  load_order_theme_surface(buf, o_trade_icon, "theme.order_carravan_trade_route");
+  load_order_theme_surface(buf, o_spy_icon, "theme.order_spying");
+  load_order_theme_surface(buf, o_wakeup_icon, "theme.order_wakeup");
+  load_order_theme_surface(buf, o_return_icon, "theme.order_return");
+  load_order_theme_surface(buf, OAirLift_Icon, "theme.order_airlift");
+  load_order_theme_surface(buf, o_load_icon, "theme.order_load");
 }
 
 /***************************************************************************//**
@@ -377,36 +379,36 @@ void tilespec_free_theme(void)
 void setup_auxiliary_tech_icons(void)
 {
   SDL_Color bg_color = {255, 255, 255, 136};
-  SDL_Surface *pSurf;
-  utf8_str *pstr = create_utf8_from_char(Q_("?tech:None"), adj_font(10));
+  SDL_Surface *surf;
+  utf8_str *pstr = create_utf8_from_char_fonto(Q_("?tech:None"), FONTO_DEFAULT);
 
   pstr->style |= (TTF_STYLE_BOLD | SF_CENTER);
 
-  /* create icons */
-  pSurf = create_surf(adj_size(50), adj_size(50), SDL_SWSURFACE);
-  SDL_FillRect(pSurf, NULL, map_rgba(pSurf->format, bg_color));
-  create_frame(pSurf,
-               0 , 0, pSurf->w - 1, pSurf->h - 1,
+  /* Create icons */
+  surf = create_surf(adj_size(50), adj_size(50), SDL_SWSURFACE);
+  SDL_FillRect(surf, NULL, map_rgba(surf->format, bg_color));
+  create_frame(surf,
+               0 , 0, surf->w - 1, surf->h - 1,
                get_theme_color(COLOR_THEME_SCIENCEDLG_FRAME));
 
-  pNeutral_Tech_Icon = copy_surface(pSurf);
-  pNone_Tech_Icon = copy_surface(pSurf);
-  pFuture_Tech_Icon = pSurf;
+  neutral_tech_icon = copy_surface(surf);
+  none_tech_icon = copy_surface(surf);
+  future_tech_icon = surf;
 
   /* None */
-  pSurf = create_text_surf_from_utf8(pstr);
-  blit_entire_src(pSurf, pNone_Tech_Icon ,
-                  (adj_size(50) - pSurf->w) / 2 , (adj_size(50) - pSurf->h) / 2);
+  surf = create_text_surf_from_utf8(pstr);
+  blit_entire_src(surf, none_tech_icon ,
+                  (adj_size(50) - surf->w) / 2 , (adj_size(50) - surf->h) / 2);
 
-  FREESURFACE(pSurf);
+  FREESURFACE(surf);
 
-  /* TRANS: Future Technology */ 
+  /* TRANS: Future Technology */
   copy_chars_to_utf8_str(pstr, _("FT"));
-  pSurf = create_text_surf_from_utf8(pstr);
-  blit_entire_src(pSurf, pFuture_Tech_Icon,
-                  (adj_size(50) - pSurf->w) / 2 , (adj_size(50) - pSurf->h) / 2);
+  surf = create_text_surf_from_utf8(pstr);
+  blit_entire_src(surf, future_tech_icon,
+                  (adj_size(50) - surf->w) / 2 , (adj_size(50) - surf->h) / 2);
 
-  FREESURFACE(pSurf);
+  FREESURFACE(surf);
 
   FREEUTF8STR(pstr);
 }
@@ -416,9 +418,9 @@ void setup_auxiliary_tech_icons(void)
 *******************************************************************************/
 void free_auxiliary_tech_icons(void)
 {
-  FREESURFACE(pNeutral_Tech_Icon);
-  FREESURFACE(pNone_Tech_Icon);
-  FREESURFACE(pFuture_Tech_Icon);
+  FREESURFACE(neutral_tech_icon);
+  FREESURFACE(none_tech_icon);
+  FREESURFACE(future_tech_icon);
 }
 
 /***************************************************************************//**
@@ -426,20 +428,20 @@ void free_auxiliary_tech_icons(void)
 *******************************************************************************/
 SDL_Surface *get_tech_icon(Tech_type_id tech)
 {
-  switch(tech) {
-    case A_NONE:
-    case A_UNSET:
-    case A_UNKNOWN:
-    case A_LAST:
-      return adj_surf(pNone_Tech_Icon);
-    case A_FUTURE:
-      return adj_surf(pFuture_Tech_Icon);
-    default:
-      if (get_tech_sprite(tileset, tech)) {
-        return adj_surf(GET_SURF(get_tech_sprite(tileset, tech)));
-      } else {
-        return adj_surf(pNeutral_Tech_Icon);
-      }
+  switch (tech) {
+  case A_NONE:
+  case A_UNSET:
+  case A_UNKNOWN:
+  case A_LAST:
+    return adj_surf(none_tech_icon);
+  case A_FUTURE:
+    return adj_surf(future_tech_icon);
+  default:
+    if (get_tech_sprite(tileset, tech)) {
+      return adj_surf(GET_SURF(get_tech_sprite(tileset, tech)));
+    } else {
+      return adj_surf(neutral_tech_icon);
+    }
   }
 
   return NULL;
@@ -454,16 +456,17 @@ SDL_Color *get_tech_color(Tech_type_id tech_id)
                                   tech_id, TRUE)) {
     switch (research_invention_state(research_get(client_player()),
                                      tech_id)) {
-      case TECH_UNKNOWN:
-        return get_game_color(COLOR_REQTREE_UNKNOWN);
-      case TECH_KNOWN:
-        return get_game_color(COLOR_REQTREE_KNOWN);
-      case TECH_PREREQS_KNOWN:
-        return get_game_color(COLOR_REQTREE_PREREQS_KNOWN);
-      default:
-        return get_game_color(COLOR_REQTREE_BACKGROUND);
+    case TECH_UNKNOWN:
+      return get_game_color(COLOR_REQTREE_UNKNOWN);
+    case TECH_KNOWN:
+      return get_game_color(COLOR_REQTREE_KNOWN);
+    case TECH_PREREQS_KNOWN:
+      return get_game_color(COLOR_REQTREE_PREREQS_KNOWN);
+    default:
+      return get_game_color(COLOR_REQTREE_BACKGROUND);
     }
   }
+
   return get_game_color(COLOR_REQTREE_UNREACHABLE);
 }
 
@@ -480,17 +483,18 @@ SDL_Surface *get_city_gfx(void)
 *******************************************************************************/
 void draw_intro_gfx(void)
 {
-  SDL_Surface *pIntro = theme_get_background(theme, BACKGROUND_MAINPAGE);
+  SDL_Surface *intro = theme_get_background(active_theme, BACKGROUND_MAINPAGE);
 
-  if (pIntro->w != main_window_width()) {
-    SDL_Surface *pTmp = ResizeSurface(pIntro, main_window_width(), main_window_height(), 1);
+  if (intro->w != main_window_width()) {
+    SDL_Surface *tmp = resize_surface(intro, main_window_width(),
+                                      main_window_height(), 1);
 
-    FREESURFACE(pIntro);
-    pIntro = pTmp;
+    FREESURFACE(intro);
+    intro = tmp;
   }
 
   /* draw intro gfx center in screen */
-  alphablit(pIntro, NULL, Main.map, NULL, 255);
+  alphablit(intro, NULL, main_data.map, NULL, 255);
 
-  FREESURFACE(pIntro);
+  FREESURFACE(intro);
 }

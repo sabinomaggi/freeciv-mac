@@ -15,12 +15,14 @@
 
 #include "gui_proto_constructor.h"
 
-/* This must be in same order as names in helpdata.c */
+/* This must be in same order as names in helpdata.c.
+ * Update also help_type_by_requirement() when adding new types. */
 enum help_page_type { HELP_ANY, HELP_TEXT, HELP_UNIT, HELP_IMPROVEMENT,
-		      HELP_WONDER, HELP_TECH, HELP_TERRAIN, HELP_EXTRA,
+                      HELP_WONDER, HELP_TECH, HELP_TERRAIN, HELP_EXTRA,
                       HELP_GOODS, HELP_SPECIALIST, HELP_GOVERNMENT,
-                      HELP_RULESET, HELP_TILESET, HELP_NATIONS,
-                      HELP_MULTIPLIER, HELP_LAST };
+                      HELP_RULESET, HELP_TILESET, HELP_MUSICSET,
+                      HELP_NATIONS, HELP_MULTIPLIER,  HELP_COUNTER,
+                      HELP_LAST };
 
 GUI_FUNC_PROTO(void, popup_help_dialog_string, const char *item)
 GUI_FUNC_PROTO(void, popup_help_dialog_typed, const char *item,
@@ -38,6 +40,7 @@ GUI_FUNC_PROTO(void, popdown_help_dialog, void)
 #define HELP_CONTROLS_ITEM N_("Controls")
 #define HELP_RULESET_ITEM N_("About Current Ruleset")
 #define HELP_TILESET_ITEM N_("About Current Tileset")
+#define HELP_MUSICSET_ITEM N_("About Current Musicset")
 #define HELP_NATIONS_ITEM N_("About Nations")
 #define HELP_ECONOMY_ITEM N_("Economy")
 #define HELP_CITIES_ITEM N_("Cities")
@@ -55,5 +58,6 @@ GUI_FUNC_PROTO(void, popdown_help_dialog, void)
 #define HELP_COPYING_ITEM N_("Copying")
 #define HELP_ABOUT_ITEM N_("About Freeciv")
 #define HELP_MULTIPLIER_ITEM N_("Policies")
+#define HELP_COUNTER_ITEM N_("Counters")
 
-#endif  /* FC__HELPDLG_G_H */
+#endif /* FC__HELPDLG_G_H */

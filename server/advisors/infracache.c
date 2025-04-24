@@ -27,45 +27,48 @@
 
 /* server/advisors */
 #include "advbuilding.h"
-#include "autosettlers.h"
+#include "autoworkers.h"
 
 #include "infracache.h"
 
-/* cache activities within the city map */
+/* Cache activities within the city map */
 struct worker_activity_cache {
-  int act[ACTIVITY_LAST];
-  int extra[MAX_EXTRA_TYPES];
-  int rmextra[MAX_EXTRA_TYPES];
+  adv_want act[ACTIVITY_LAST];
+  adv_want extra[MAX_EXTRA_TYPES];
+  adv_want rmextra[MAX_EXTRA_TYPES];
 };
 
-static int adv_calc_irrigate_transform(const struct city *pcity,
-                                       const struct tile *ptile);
-static int adv_calc_mine_transform(const struct city *pcity, const struct tile *ptile);
-static int adv_calc_transform(const struct city *pcity,
-                              const struct tile *ptile);
-static int adv_calc_extra(const struct city *pcity, const struct tile *ptile,
-                          const struct extra_type *pextra);
-static int adv_calc_rmextra(const struct city *pcity, const struct tile *ptile,
-                            const struct extra_type *pextra);
+static adv_want adv_calc_cultivate(const struct city *pcity,
+                                   const struct tile *ptile);
+static adv_want adv_calc_plant(const struct city *pcity,
+                               const struct tile *ptile);
+static adv_want adv_calc_transform(const struct city *pcity,
+                                   const struct tile *ptile);
+static adv_want adv_calc_extra(const struct city *pcity,
+                               const struct tile *ptile,
+                               const struct extra_type *pextra);
+static adv_want adv_calc_rmextra(const struct city *pcity,
+                                 const struct tile *ptile,
+                                 const struct extra_type *pextra);
 
 /**********************************************************************//**
-  Calculate the benefit of irrigating the given tile.
+  Calculate the benefit of cultivating the given tile.
 
-  The return value is the goodness of the tile after the irrigation.  This
-  should be compared to the goodness of the tile currently (see
-  city_tile_value(); note that this depends on the AI's weighting
-  values).
+  The return value is the goodness of the tile after the cultivating.
+  This should be compared to the goodness of the tile currently.
+  (see city_tile_value(); note that this depends on the AI's weighting
+   values).
 **************************************************************************/
-static int adv_calc_irrigate_transform(const struct city *pcity,
-                                       const struct tile *ptile)
+static adv_want adv_calc_cultivate(const struct city *pcity,
+                                   const struct tile *ptile)
 {
-  int goodness;
+  adv_want goodness;
   struct terrain *old_terrain, *new_terrain;
 
   fc_assert_ret_val(ptile != NULL, -1);
 
   old_terrain = tile_terrain(ptile);
-  new_terrain = old_terrain->irrigation_result;
+  new_terrain = old_terrain->cultivate_result;
 
   if (new_terrain != old_terrain && new_terrain != T_NONE) {
     struct tile *vtile;
@@ -89,22 +92,23 @@ static int adv_calc_irrigate_transform(const struct city *pcity,
 }
 
 /**********************************************************************//**
-  Calculate the benefit of mining the given tile.
+  Calculate the benefit of planting to the given tile.
 
-  The return value is the goodness of the tile after the mining.  This
-  should be compared to the goodness of the tile currently (see
-  city_tile_value(); note that this depends on the AI's weighting
-  values).
+  The return value is the goodness of the tile after the planting.
+  This should be compared to the goodness of the tile currently.
+  (see city_tile_value(); note that this depends on the AI's weighting
+   values).
 **************************************************************************/
-static int adv_calc_mine_transform(const struct city *pcity, const struct tile *ptile)
+static adv_want adv_calc_plant(const struct city *pcity,
+                               const struct tile *ptile)
 {
-  int goodness;
+  adv_want goodness;
   struct terrain *old_terrain, *new_terrain;
 
   fc_assert_ret_val(ptile != NULL, -1);
 
   old_terrain = tile_terrain(ptile);
-  new_terrain = old_terrain->mining_result;
+  new_terrain = old_terrain->plant_result;
 
   if (old_terrain != new_terrain && new_terrain != T_NONE) {
     struct tile *vtile;
@@ -130,17 +134,18 @@ static int adv_calc_mine_transform(const struct city *pcity, const struct tile *
 /**********************************************************************//**
   Calculate the benefit of transforming the given tile.
 
-  The return value is the goodness of the tile after the transform.  This
-  should be compared to the goodness of the tile currently (see
-  city_tile_value(); note that this depends on the AI's weighting
-  values).
+  The return value is the goodness of the tile after the transform.
+  This should be compared to the goodness of the tile currently.
+  (see city_tile_value(); note that this depends on the AI's weighting
+   values).
 **************************************************************************/
-static int adv_calc_transform(const struct city *pcity,
-                             const struct tile *ptile)
+static adv_want adv_calc_transform(const struct city *pcity,
+                                   const struct tile *ptile)
 {
-  int goodness;
+  adv_want goodness;
   struct tile *vtile;
   struct terrain *old_terrain, *new_terrain;
+  const struct civ_map *nmap = &(wld.map);
 
   fc_assert_ret_val(ptile != NULL, -1);
 
@@ -151,7 +156,7 @@ static int adv_calc_transform(const struct city *pcity,
     return -1;
   }
 
-  if (!terrain_surroundings_allow_change(ptile, new_terrain)) {
+  if (!terrain_surroundings_allow_change(nmap, ptile, new_terrain)) {
     /* Can't do this terrain conversion here. */
     return -1;
   }
@@ -172,18 +177,19 @@ static int adv_calc_transform(const struct city *pcity,
   Calculate the benefit of building an extra at the given tile.
 
   The return value is the goodness of the tile after the extra is built.
-  This should be compared to the goodness of the tile currently (see
-  city_tile_value(); note that this depends on the AI's weighting
-  values).
+  This should be compared to the goodness of the tile currently.
+  (see city_tile_value(); note that this depends on the AI's weighting
+   values).
 
   This function does not calculate the benefit of being able to quickly
-  move units (i.e., of connecting the civilization).  See road_bonus() for
+  move units (i.e., of connecting the civilization). See road_bonus() for
   that calculation.
 **************************************************************************/
-static int adv_calc_extra(const struct city *pcity, const struct tile *ptile,
-                          const struct extra_type *pextra)
+static adv_want adv_calc_extra(const struct city *pcity,
+                               const struct tile *ptile,
+                               const struct extra_type *pextra)
 {
-  int goodness = -1;
+  adv_want goodness = -1;
 
   fc_assert_ret_val(ptile != NULL, -1);
 
@@ -210,14 +216,15 @@ static int adv_calc_extra(const struct city *pcity, const struct tile *ptile,
   Calculate the benefit of removing an extra from the given tile.
 
   The return value is the goodness of the tile after the extra is removed.
-  This should be compared to the goodness of the tile currently (see
-  city_tile_value(); note that this depends on the AI's weighting
-  values).
+  This should be compared to the goodness of the tile currently.
+  (see city_tile_value(); note that this depends on the AI's weighting
+   values).
 **************************************************************************/
-static int adv_calc_rmextra(const struct city *pcity, const struct tile *ptile,
-                            const struct extra_type *pextra)
+static adv_want adv_calc_rmextra(const struct city *pcity,
+                                 const struct tile *ptile,
+                                 const struct extra_type *pextra)
 {
-  int goodness = -1;
+  adv_want goodness = -1;
 
   fc_assert_ret_val(ptile != NULL, -1);
 
@@ -237,26 +244,29 @@ static int adv_calc_rmextra(const struct city *pcity, const struct tile *ptile,
   Do all tile improvement calculations and cache them for later.
 
   These values are used in settler_evaluate_improvements() so this function
-  must be called before doing that.  Currently this is only done when handling
+  must be called before doing that. Currently this is only done when handling
   auto-settlers or when the AI contemplates building worker units.
 **************************************************************************/
 void initialize_infrastructure_cache(struct player *pplayer)
 {
+  const struct civ_map *nmap = &(wld.map);
+
   city_list_iterate(pplayer->cities, pcity) {
     struct tile *pcenter = city_tile(pcity);
     int radius_sq = city_map_radius_sq_get(pcity);
 
     city_map_iterate(radius_sq, city_index, city_x, city_y) {
-      as_transform_activity_iterate(act) {
-        adv_city_worker_act_set(pcity, city_index, act, -1);
-      } as_transform_activity_iterate_end;
+      aw_transform_action_iterate(act) {
+        adv_city_worker_act_set(pcity, city_index, action_id_get_activity(act),
+                                -1);
+      } aw_transform_action_iterate_end;
     } city_map_iterate_end;
 
-    city_tile_iterate_index(radius_sq, pcenter, ptile, cindex) {
+    city_tile_iterate_index(nmap, radius_sq, pcenter, ptile, cindex) {
       adv_city_worker_act_set(pcity, cindex, ACTIVITY_MINE,
-                              adv_calc_mine_transform(pcity, ptile));
+                              adv_calc_plant(pcity, ptile));
       adv_city_worker_act_set(pcity, cindex, ACTIVITY_IRRIGATE,
-                              adv_calc_irrigate_transform(pcity, ptile));
+                              adv_calc_cultivate(pcity, ptile));
       adv_city_worker_act_set(pcity, cindex, ACTIVITY_TRANSFORM,
                               adv_calc_transform(pcity, ptile));
 
@@ -273,7 +283,8 @@ void initialize_infrastructure_cache(struct player *pplayer)
         } else {
           adv_city_worker_extra_set(pcity, cindex, pextra, 0);
         }
-        if (tile_has_extra(ptile, pextra) && is_extra_removed_by_worker_action(pextra)) {
+        if (tile_has_extra(ptile, pextra)
+            && is_extra_removed_by_worker_action(pextra)) {
           adv_city_worker_rmextra_set(pcity, cindex, pextra,
                                       adv_calc_rmextra(pcity, ptile, pextra));
         } else {
@@ -289,16 +300,16 @@ void initialize_infrastructure_cache(struct player *pplayer)
 
   FIXME: foodneed and prodneed are always 0.
 **************************************************************************/
-int city_tile_value(const struct city *pcity, const struct tile *ptile,
-                    int foodneed, int prodneed)
+adv_want city_tile_value(const struct city *pcity, const struct tile *ptile,
+                         int foodneed, int prodneed)
 {
   int food = city_tile_output_now(pcity, ptile, O_FOOD);
   int shield = city_tile_output_now(pcity, ptile, O_SHIELD);
   int trade = city_tile_output_now(pcity, ptile, O_TRADE);
-  int value = 0;
+  adv_want value = 0;
 
-  /* Each food, trade, and shield gets a certain weighting.  We also benefit
-   * tiles that have at least one of an item - this promotes balance and 
+  /* Each food, trade, and shield gets a certain weighting. We also benefit
+   * tiles that have at least one of an item - this promotes balance and
    * also accounts for INC_TILE effects. */
   value += food * FOOD_WEIGHTING;
   if (food > 0) {
@@ -321,7 +332,7 @@ int city_tile_value(const struct city *pcity, const struct tile *ptile,
   city 'pcity'.
 **************************************************************************/
 void adv_city_worker_act_set(struct city *pcity, int city_tile_index,
-                             enum unit_activity act_id, int value)
+                             enum unit_activity act_id, adv_want value)
 {
   if (pcity->server.adv->act_cache_radius_sq
       != city_map_radius_sq_get(pcity)) {
@@ -346,8 +357,9 @@ void adv_city_worker_act_set(struct city *pcity, int city_tile_index,
   Return the value for activity 'doing' on tile 'city_tile_index' of
   city 'pcity'.
 **************************************************************************/
-int adv_city_worker_act_get(const struct city *pcity, int city_tile_index,
-                            enum unit_activity act_id)
+adv_want adv_city_worker_act_get(const struct city *pcity,
+                                 int city_tile_index,
+                                 enum unit_activity act_id)
 {
   fc_assert_ret_val(NULL != pcity, 0);
   fc_assert_ret_val(NULL != pcity->server.adv, 0);
@@ -480,7 +492,7 @@ void adv_city_alloc(struct city *pcity)
 
   pcity->server.adv->act_cache = NULL;
   pcity->server.adv->act_cache_radius_sq = -1;
-  /* allocate memory for pcity->ai->act_cache */
+  /* Allocate memory for pcity->ai->act_cache */
   adv_city_update(pcity);
 }
 

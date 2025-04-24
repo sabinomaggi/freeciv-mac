@@ -36,30 +36,6 @@ struct strvec;          /* Actually defined in "utility/string_vector.h". */
 #define SPECENUM_VALUE2NAME "Other"
 #include "specenum_gen.h"
 
-/* Used in the network protocol. */
-#define SPECENUM_NAME base_flag_id
-/* Unit inside are not considered aggressive if base is close to city */
-#define SPECENUM_VALUE0 BF_NOT_AGGRESSIVE
-/* TRANS: this and following strings are 'base flags', which may rarely
- * be presented to the player in ruleset help text */
-#define SPECENUM_VALUE0NAME N_("NoAggressive")
-
-/* Flags below this comment are retired in 3.0. */
-
-/* Units inside will not die all at once */
-#define SPECENUM_VALUE1 BF_RETIRED_NO_STACK_DEATH
-#define SPECENUM_VALUE1NAME N_("NoStackDeath")
-/* Base provides bonus for defending diplomat */
-#define SPECENUM_VALUE2 BF_RETIRED_DIPLOMAT_DEFENSE
-#define SPECENUM_VALUE2NAME N_("DiplomatDefense")
-/* Paratroopers can use base for paradrop. Now an extra user flag. */
-#define SPECENUM_VALUE3 BF_RETIRED_PARADROP_FROM
-#define SPECENUM_VALUE3NAME N_("ParadropFrom")
-
-#define SPECENUM_COUNT BF_COUNT
-#define SPECENUM_BITVECTOR bv_base_flags
-#include "specenum_gen.h"
-
 struct extra_type;
 
 struct base_type {
@@ -69,8 +45,6 @@ struct base_type {
   int vision_main_sq;
   int vision_invis_sq;
   int vision_subs_sq;
-
-  bv_base_flags flags;
 
   struct extra_type *self;
 };
@@ -84,19 +58,6 @@ Base_type_id base_number(const struct base_type *pbase);
 struct base_type *base_by_number(const Base_type_id id);
 
 struct extra_type *base_extra_get(const struct base_type *pbase);
-
-/* Functions to operate on a base flag. */
-bool base_has_flag(const struct base_type *pbase, enum base_flag_id flag);
-bool is_base_flag_card_near(const struct tile *ptile,
-                            enum base_flag_id flag);
-bool is_base_flag_near_tile(const struct tile *ptile,
-                            enum base_flag_id flag);
-bool base_flag_is_retired(enum base_flag_id flag);
-bool base_has_flag_for_utype(const struct base_type *pbase,
-                             enum base_flag_id flag,
-                             const struct unit_type *punittype);
-bool is_native_tile_to_base(const struct base_type *pbase,
-                            const struct tile *ptile);
 
 /* Ancillary functions */
 bool can_build_base(const struct unit *punit, const struct base_type *pbase,
@@ -114,19 +75,6 @@ bool territory_claiming_base(const struct base_type *pbase);
 /* Initialization and iteration */
 void base_type_init(struct extra_type *pextra, int idx);
 void base_types_free(void);
-
-#define base_deps_iterate(_reqs, _dep)                                 \
-{                                                                      \
-  requirement_vector_iterate(_reqs, preq) {                            \
-    if (preq->source.kind == VUT_EXTRA                                 \
-        && preq->present                                               \
-        && is_extra_caused_by(preq->source.value.extra, EC_BASE)) {    \
-      struct base_type *_dep = extra_base_get(preq->source.value.extra);
-
-#define base_deps_iterate_end                                           \
-    }                                                                   \
-  } requirement_vector_iterate_end;                                     \
-}
 
 #ifdef __cplusplus
 }

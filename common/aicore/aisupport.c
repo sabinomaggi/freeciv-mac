@@ -69,18 +69,18 @@ struct player *player_leading_spacerace(void)
 }
 
 /*******************************************************************//**
-  Calculate average distances to other players. We calculate the 
+  Calculate average distances to other players. We calculate the
   average distance from all of our cities to the closest enemy city.
 ***********************************************************************/
 int player_distance_to_player(struct player *pplayer, struct player *target)
 {
-  int cities = 0;
+  int cities = city_list_size(pplayer->cities);
   int dists = 0;
 
   if (pplayer == target
       || !target->is_alive
       || !pplayer->is_alive
-      || city_list_size(pplayer->cities) == 0
+      || cities == 0
       || city_list_size(target->cities) == 0) {
     return 1;
   }
@@ -97,7 +97,6 @@ int player_distance_to_player(struct player *pplayer, struct player *target)
       }
     } city_list_iterate_end;
     dists += min_dist;
-    cities++;
   } city_list_iterate_end;
 
   return MAX(dists / cities, 1);
@@ -111,6 +110,7 @@ int city_gold_worth(struct city *pcity)
   struct player *pplayer = city_owner(pcity);
   int worth = 0, i;
   struct unit_type *u = NULL;
+  const struct civ_map *nmap = &(wld.map);
 
   if (!game.scenario.prevent_new_cities) {
     u = best_role_unit_for_player(city_owner(pcity),
@@ -118,36 +118,40 @@ int city_gold_worth(struct city *pcity)
   }
 
   if (u != NULL) {
-    worth += utype_buy_gold_cost(u, 0); /* cost of settler */
+    worth += utype_buy_gold_cost(pcity, u, 0); /* Cost of settler */
   }
   for (i = 1; i < city_size_get(pcity); i++) {
-    worth += city_granary_size(i); /* cost of growing city */
+    worth += city_granary_size(i); /* Cost of growing city */
   }
   output_type_iterate(o) {
     worth += pcity->prod[o] * 10;
   } output_type_iterate_end;
   unit_list_iterate(pcity->units_supported, punit) {
     if (same_pos(unit_tile(punit), pcity->tile)) {
-      struct unit_type *punittype = unit_type_get(punit)->obsoleted_by;
+      const struct unit_type *punittype = unit_type_get(punit)->obsoleted_by;
 
-      if (punittype && can_city_build_unit_direct(pcity, punittype)) {
-        worth += unit_disband_shields(punit); /* obsolete, candidate for disbanding */
+      if (punittype && can_city_build_unit_direct(nmap, pcity, punittype)) {
+        /* Obsolete, candidate for disbanding */
+        worth += unit_shield_value(punit, unit_type_get(punit),
+                                   action_by_number(ACTION_DISBAND_UNIT_RECOVER));
       } else {
-        worth += unit_build_shield_cost(punit); /* good stuff */
+        worth += unit_build_shield_cost(pcity, punit); /* Good stuff */
       }
     }
   } unit_list_iterate_end;
   city_built_iterate(pcity, pimprove) {
     if (improvement_obsolete(pplayer, pimprove, pcity)) {
-      worth += impr_sell_gold(pimprove); /* obsolete, candidate for selling */
+      worth += impr_sell_gold(pimprove); /* Obsolete, candidate for selling */
     } else if (!is_wonder(pimprove)) {
-      worth += impr_build_shield_cost(pimprove) * 2; /* Buy cost, with nonzero shield amount */
+      /* Buy cost, with nonzero shield amount */
+      worth += impr_build_shield_cost(pcity, pimprove) * 2;
     } else {
-      worth += impr_build_shield_cost(pimprove) * 4;
+      worth += impr_build_shield_cost(pcity, pimprove) * 4;
     }
   } city_built_iterate_end;
   if (city_unhappy(pcity)) {
     worth *= 0.75;
   }
+
   return worth;
 }

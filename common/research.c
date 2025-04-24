@@ -24,6 +24,7 @@
 /* common */
 #include "fc_types.h"
 #include "game.h"
+#include "nation.h"
 #include "player.h"
 #include "name_translation.h"
 #include "team.h"
@@ -47,7 +48,8 @@ struct research_player_iter {
 };
 #define RESEARCH_PLAYER_ITER(p) ((struct research_player_iter *) p)
 
-static struct research research_array[MAX_NUM_PLAYER_SLOTS];
+#define RESEARCH_ARRAY_SIZE MAX(MAX_NUM_PLAYER_SLOTS, MAX_NUM_TEAM_SLOTS)
+static struct research research_array[RESEARCH_ARRAY_SIZE];
 
 static struct name_translation advance_unset_name = NAME_INIT;
 static struct name_translation advance_future_name = NAME_INIT;
@@ -74,6 +76,9 @@ void researches_init(void)
     research_array[i].researching_saved = A_UNKNOWN;
     research_array[i].future_tech = 0;
     research_array[i].inventions[A_NONE].state = TECH_KNOWN;
+    advance_index_iterate(A_FIRST, j) {
+      research_array[i].inventions[j].bulbs_researched_saved = 0;
+    } advance_index_iterate_end;
   }
 
   game.info.global_advances[A_NONE] = TRUE;
@@ -146,6 +151,7 @@ const char *research_rule_name(const struct research *presearch)
 
 /************************************************************************//**
   Returns the name of the research owner: a player name or a team name.
+  For most uses you probably want research_pretty_name() instead.
 ****************************************************************************/
 const char *research_name_translation(const struct research *presearch)
 {
@@ -172,7 +178,8 @@ int research_pretty_name(const struct research *presearch, char *buf,
       char buf2[buf_len];
 
       team_pretty_name(pteam, buf2, sizeof(buf2));
-      /* TRANS: e.g. "members of team 1", or even "members of team Red". */
+      /* TRANS: e.g. "members of team 1", or even "members of team Red".
+       * Used in many places where a nation plural might be used. */
       return fc_snprintf(buf, buf_len, _("members of %s"), buf2);
     } else {
       pplayer = player_list_front(team_members(pteam));
@@ -235,22 +242,21 @@ const char *research_advance_rule_name(const struct research *presearch,
 {
   if (A_FUTURE == tech && NULL != presearch) {
     const int no = presearch->future_tech;
-    char buffer[256];
     const char *name;
 
     name = strvec_get(future_rule_name, no);
-    if (name != NULL) {
-      /* Already stored in string vector. */
-      return name;
+    if (name == NULL) {
+      char buffer[256];
+
+      /* NB: 'presearch->future_tech == 0' means "Future Tech. 1". */
+      fc_snprintf(buffer, sizeof(buffer), "%s %d",
+                  rule_name_get(&advance_future_name),
+                  no + 1);
+      name = research_future_set_name(future_rule_name, no, buffer);
     }
 
-    /* NB: 'presearch->future_tech == 0' means "Future Tech. 1". */
-    fc_snprintf(buffer, sizeof(buffer), "%s %d",
-                rule_name_get(&advance_future_name),
-                no + 1);
-    name = research_future_set_name(future_rule_name, no, buffer);
     fc_assert(name != NULL);
-    fc_assert(name != buffer);
+
     return name;
   }
 
@@ -269,20 +275,19 @@ research_advance_name_translation(const struct research *presearch,
 {
   if (A_FUTURE == tech && NULL != presearch) {
     const int no = presearch->future_tech;
-    char buffer[256];
     const char *name;
 
     name = strvec_get(future_name_translation, no);
-    if (name != NULL) {
-      /* Already stored in string vector. */
-      return name;
+    if (name == NULL) {
+      char buffer[256];
+
+      /* NB: 'presearch->future_tech == 0' means "Future Tech. 1". */
+      fc_snprintf(buffer, sizeof(buffer), _("Future Tech. %d"), no + 1);
+      name = research_future_set_name(future_name_translation, no, buffer);
     }
 
-    /* NB: 'presearch->future_tech == 0' means "Future Tech. 1". */
-    fc_snprintf(buffer, sizeof(buffer), _("Future Tech. %d"), no + 1);
-    name = research_future_set_name(future_name_translation, no, buffer);
     fc_assert(name != NULL);
-    fc_assert(name != buffer);
+
     return name;
   }
 
@@ -295,26 +300,13 @@ research_advance_name_translation(const struct research *presearch,
 
   If may become active if all unchangeable requirements are active.
 ****************************************************************************/
-static bool reqs_may_activate(const struct player *target_player,
-                              const struct player *other_player,
-                              const struct city *target_city,
-                              const struct impr_type *target_building,
-                              const struct tile *target_tile,
-                              const struct unit *target_unit,
-                              const struct unit_type *target_unittype,
-                              const struct output_type *target_output,
-                              const struct specialist *target_specialist,
-                              const struct action *target_action,
+static bool reqs_may_activate(const struct req_context *context,
+                              const struct req_context *other_context,
                               const struct requirement_vector *reqs,
                               const enum   req_problem_type prob_type)
 {
   requirement_vector_iterate(reqs, preq) {
-    if (is_req_unchanging(preq)
-        && !is_req_active(target_player, other_player, target_city,
-                          target_building, target_tile,
-                          target_unit, target_unittype,
-                          target_output, target_specialist, target_action,
-                          preq, prob_type)) {
+    if (is_req_preventing(context, other_context, preq, prob_type)) {
       return FALSE;
     }
   } requirement_vector_iterate_end;
@@ -334,16 +326,8 @@ static bool reqs_may_activate(const struct player *target_player,
 static bool
 research_allowed(const struct research *presearch,
                  Tech_type_id tech,
-                 bool (*reqs_eval)(const struct player *tplr,
-                                   const struct player *oplr,
-                                   const struct city *tcity,
-                                   const struct impr_type *tbld,
-                                   const struct tile *ttile,
-                                   const struct unit *tunit,
-                                   const struct unit_type *tutype,
-                                   const struct output_type *top,
-                                   const struct specialist *tspe,
-                                   const struct action *tact,
+                 bool (*reqs_eval)(const struct req_context *context,
+                                   const struct req_context *ocontext,
                                    const struct requirement_vector *reqs,
                                    const enum   req_problem_type ptype))
 {
@@ -357,8 +341,8 @@ research_allowed(const struct research *presearch,
   }
 
   research_players_iterate(presearch, pplayer) {
-    if (reqs_eval(pplayer, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                  NULL, NULL, &(adv->research_reqs), RPT_CERTAIN)) {
+    if (reqs_eval(&(const struct req_context) { .player = pplayer },
+                  NULL, &(adv->research_reqs), RPT_CERTAIN)) {
       /* It is enough that one player that shares research is allowed to
        * research it.
        * Reasoning: Imagine a tech with that requires a nation in the
@@ -458,53 +442,29 @@ static bool research_get_reachable(const struct research *presearch,
 {
   if (valid_advance_by_number(tech) == NULL) {
     return FALSE;
-  } else if (advance_required(tech, AR_ROOT) != A_NONE) {
-    /* 'tech' has at least one root requirement. We need to check them
-     * all. */
-    bv_techs done;
-    Tech_type_id techs[game.control.num_tech_types];
-    enum tech_req req;
-    int techs_num;
-    int i;
-
-    techs[0] = tech;
-    BV_CLR_ALL(done);
-    BV_SET(done, A_NONE);
-    BV_SET(done, tech);
-    techs_num = 1;
-
-    for (i = 0; i < techs_num; i++) {
-      if (advance_required(techs[i], AR_ROOT) == techs[i]) {
+  } else {
+    advance_root_req_iterate(advance_by_number(tech), proot) {
+      if (advance_requires(proot, AR_ROOT) == proot) {
         /* This tech requires itself; it can only be reached by special
          * means (init_techs, lua script, ...).
          * If you already know it, you can "reach" it; if not, not. (This
          * case is needed for descendants of this tech.) */
-        if (presearch->inventions[techs[i]].state != TECH_KNOWN) {
+        if (presearch->inventions[advance_number(proot)].state != TECH_KNOWN) {
           return FALSE;
         }
       } else {
-        /* Check if requirements are reachable. */
-        Tech_type_id req_tech;
+        enum tech_req req;
 
         for (req = 0; req < AR_SIZE; req++) {
-          req_tech = advance_required(techs[i], req);
-          if (valid_advance_by_number(req_tech) == NULL) {
+          if (valid_advance(advance_requires(proot, req)) == NULL) {
             return FALSE;
-          } else if (!BV_ISSET(done, req_tech)) {
-            if (advance_required(req_tech, AR_ROOT) != A_NONE) {
-              fc_assert(techs_num < ARRAY_SIZE(techs));
-              techs[techs_num] = req_tech;
-              techs_num++;
-            }
-
-            BV_SET(done, req_tech);
           }
         }
       }
-    }
+    } advance_root_req_iterate_end;
   }
 
-  /* Check reseach reqs reachability. */
+  /* Check research reqs reachability. */
   if (!research_get_reachable_rreqs(presearch, tech)) {
     return FALSE;
   }
@@ -514,58 +474,26 @@ static bool research_get_reachable(const struct research *presearch,
 
 /************************************************************************//**
   Returns TRUE iff the players sharing 'presearch' already have got the
-  knowledge of all root requirement technologies.
+  knowledge of all root requirement technologies for 'tech' (without which
+  it's impossible to gain 'tech').
 
   Helper for research_update().
 ****************************************************************************/
 static bool research_get_root_reqs_known(const struct research *presearch,
                                          Tech_type_id tech)
 {
-  if (advance_required(tech, AR_ROOT) != A_NONE) {
-    /* 'padvance' has got at least one root requirement. We need to check
-     * if all of them are known. */
-    bv_techs done;
-    Tech_type_id techs[game.control.num_tech_types];
-    Tech_type_id root;
-    int techs_num;
-    int i;
-
-    techs[0] = tech;
-    BV_CLR_ALL(done);
-    BV_SET(done, A_NONE);
-    BV_SET(done, tech);
-    techs_num = 1;
-
-    for (i = 0; i < techs_num; i++) {
-      root = advance_required(techs[i], AR_ROOT);
-      if (presearch->inventions[root].state != TECH_KNOWN) {
-        return FALSE;
-      } else {
-        /* Check if requirement roots are also known. */
-        enum tech_req req;
-        Tech_type_id req_tech;
-
-        for (req = 0; req <= AR_TWO; req++) {
-          req_tech = advance_required(techs[i], req);
-          if (!BV_ISSET(done, req_tech)) {
-            if (advance_required(req_tech, AR_ROOT) != A_NONE) {
-              fc_assert(techs_num < ARRAY_SIZE(techs));
-              techs[techs_num] = req_tech;
-              techs_num++;
-            }
-            BV_SET(done, req_tech);
-          }
-        }
-      }
+  advance_root_req_iterate(advance_by_number(tech), proot) {
+    if (presearch->inventions[advance_number(proot)].state != TECH_KNOWN) {
+      return FALSE;
     }
-  }
+  } advance_root_req_iterate_end;
 
   return TRUE;
 }
 
 /************************************************************************//**
   Mark as TECH_PREREQS_KNOWN each tech which is available, not known and
-  which has all requirements fullfiled.
+  which has all requirements fulfilled.
 
   Recalculate presearch->num_known_tech_with_flag
   Should always be called after research_invention_set().
@@ -574,8 +502,9 @@ void research_update(struct research *presearch)
 {
   enum tech_flag_id flag;
   int techs_researched;
+  Tech_type_id ac = advance_count();
 
-  advance_index_iterate(A_FIRST, i) {
+  advance_index_iterate_max(A_FIRST, i, ac) {
     enum tech_state state = presearch->inventions[i].state;
     bool root_reqs_known = TRUE;
     bool reachable = research_get_reachable(presearch, i);
@@ -583,7 +512,7 @@ void research_update(struct research *presearch)
     /* Finding if the root reqs of an unreachable tech isn't redundant.
      * A tech can be unreachable via research but have known root reqs
      * because of unfilfilled research_reqs. Unfulfilled research_reqs
-     * doesn't prevent the player from aquiring the tech by other means. */
+     * doesn't prevent the player from acquiring the tech by other means. */
     root_reqs_known = research_get_root_reqs_known(presearch, i);
 
     if (reachable) {
@@ -598,7 +527,15 @@ void research_update(struct research *presearch)
                  ? TECH_PREREQS_KNOWN : TECH_UNKNOWN);
       }
     } else {
-      fc_assert(state == TECH_UNKNOWN);
+      /* We used to assert here that state already is TECH_UNKNOWN. However, there is
+       * a special case where it can be e.g. TECH_PREREQS_KNOWN and still
+       * unreachable (like in above research_get_reachable() call) because
+       * player is dead. Dead player's don't research anything. More accurately
+       * research_players_iterate() for a dead player's research iterates over
+       * zero players in research_allowed(), so it falls through to default of FALSE.
+       *
+       * Now we set the state to TECH_UNKNOWN instead of asserting that it already is. */
+      state = TECH_UNKNOWN;
     }
     presearch->inventions[i].state = state;
     presearch->inventions[i].reachable = reachable;
@@ -631,19 +568,19 @@ void research_update(struct research *presearch)
       presearch->techs_researched++;
     } advance_req_iterate_end;
     presearch->techs_researched = techs_researched;
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
 
 #ifdef FREECIV_DEBUG
-  advance_index_iterate(A_FIRST, i) {
+  advance_index_iterate_max(A_FIRST, i, ac) {
     char buf[advance_count() + 1];
 
-    advance_index_iterate(A_NONE, j) {
+    advance_index_iterate_max(A_NONE, j, ac) {
       if (BV_ISSET(presearch->inventions[i].required_techs, j)) {
         buf[j] = '1';
       } else {
         buf[j] = '0';
       }
-    } advance_index_iterate_end;
+    } advance_index_iterate_max_end;
     buf[advance_count()] = '\0';
 
     log_debug("%s: [%3d] %-25s => %s%s%s",
@@ -655,19 +592,19 @@ void research_update(struct research *presearch)
               presearch->inventions[i].root_reqs_known
               ? "" : " [root reqs aren't known]");
     log_debug("%s: [%3d] %s", research_rule_name(presearch), i, buf);
-  } advance_index_iterate_end;
+  } advance_index_iterate_max_end;
 #endif /* FREECIV_DEBUG */
 
   for (flag = 0; flag <= tech_flag_id_max(); flag++) {
     /* Iterate over all possible tech flags (0..max). */
     presearch->num_known_tech_with_flag[flag] = 0;
 
-    advance_index_iterate(A_NONE, i) {
+    advance_index_iterate_max(A_NONE, i, ac) {
       if (TECH_KNOWN == research_invention_state(presearch, i)
           && advance_has_flag(i, flag)) {
         presearch->num_known_tech_with_flag[flag]++;
       }
-    } advance_index_iterate_end;
+    } advance_index_iterate_max_end;
   }
 }
 
@@ -682,7 +619,8 @@ void research_update(struct research *presearch)
 enum tech_state research_invention_state(const struct research *presearch,
                                          Tech_type_id tech)
 {
-  fc_assert_ret_val(NULL != valid_advance_by_number(tech), -1);
+  fc_assert_ret_val(NULL != valid_advance_by_number(tech),
+                    tech_state_invalid());
 
   if (NULL != presearch) {
     return presearch->inventions[tech].state;
@@ -841,14 +779,21 @@ int research_goal_bulbs_required(const struct research *presearch,
   } else if (NULL != presearch) {
     return presearch->inventions[goal].bulbs_required;
   } else if (game.info.tech_cost_style == TECH_COST_CIV1CIV2) {
-     return game.info.base_tech_cost * pgoal->num_reqs
-            * (pgoal->num_reqs + 1) / 2;
+    int base_cost = game.info.base_tech_cost * pgoal->num_reqs
+      * (pgoal->num_reqs + 1) / 2;
+
+    if (base_cost < game.info.min_tech_cost) {
+      return game.info.min_tech_cost;
+    } else {
+      return base_cost;
+    }
   } else {
     int bulbs_required = 0;
 
     advance_req_iterate(pgoal, preq) {
       bulbs_required += preq->cost;
     } advance_req_iterate_end;
+
     return bulbs_required;
   }
 }
@@ -881,7 +826,7 @@ bool research_goal_tech_req(const struct research *presearch,
 }
 
 /************************************************************************//**
-  Function to determine cost for technology.  The equation is determined
+  Function to determine cost for technology. The equation is determined
   from game.info.tech_cost_style and game.info.tech_leakage.
 
   tech_cost_style:
@@ -914,7 +859,7 @@ bool research_goal_tech_req(const struct research *presearch,
                          of normal players (human and AI) which already know
                          the tech.
 
-  At the end we multiply by the sciencebox value, as a percentage.  The
+  At the end we multiply by the sciencebox value, as a percentage. The
   cost can never be less than 1.
 
   'presearch' may be NULL in which case a simplified result is returned
@@ -926,6 +871,11 @@ int research_total_bulbs_required(const struct research *presearch,
   enum tech_cost_style tech_cost_style = game.info.tech_cost_style;
   int members;
   double base_cost, total_cost;
+  bool leakage = FALSE;
+
+  if (valid_advance_by_number(tech) == NULL) {
+    return 0;
+  }
 
   if (!loss_value
       && NULL != presearch
@@ -950,6 +900,8 @@ int research_total_bulbs_required(const struct research *presearch,
       break;
     }
 
+    fc_assert(presearch != NULL);
+    fc__fallthrough; /* No break; Fallback to using preset cost. */
   case TECH_COST_CLASSIC:
   case TECH_COST_CLASSIC_PRESET:
   case TECH_COST_EXPERIMENTAL:
@@ -973,6 +925,9 @@ int research_total_bulbs_required(const struct research *presearch,
     members++;
     total_cost += (base_cost
                    * get_player_bonus(pplayer, EFT_TECH_COST_FACTOR));
+    if (!leakage && get_player_bonus(pplayer, EFT_TECH_LEAKAGE)) {
+      leakage = TRUE;
+    }
   } research_players_iterate_end;
   if (0 == members) {
     /* There is no more alive players for this research, no need to apply
@@ -981,87 +936,98 @@ int research_total_bulbs_required(const struct research *presearch,
   }
   base_cost = total_cost / members;
 
-  fc_assert_msg(tech_leakage_style_is_valid(game.info.tech_leakage),
-                "Invalid tech_leakage %d", game.info.tech_leakage);
-  switch (game.info.tech_leakage) {
-  case TECH_LEAKAGE_NONE:
-    /* no change */
-    break;
+  if (leakage) {
+    double leak = 0.0;
 
-  case TECH_LEAKAGE_EMBASSIES:
-    {
-      int players = 0, players_with_tech_and_embassy = 0;
+    fc_assert_msg(tech_leakage_style_is_valid(game.info.tech_leakage),
+                  "Invalid tech_leakage %d", game.info.tech_leakage);
 
-      players_iterate_alive(aplayer) {
-        const struct research *aresearch = research_get(aplayer);
+    switch (game.info.tech_leakage) {
+    case TECH_LEAKAGE_NONE:
+      /* No change */
+      break;
 
-        players++;
-        if (aresearch == presearch
-            || (A_FUTURE == tech
-                ? aresearch->future_tech <= presearch->future_tech
-                : TECH_KNOWN != research_invention_state(aresearch, tech))) {
-          continue;
-        }
+    case TECH_LEAKAGE_EMBASSIES:
+      {
+        int players = 0, players_with_tech_and_embassy = 0;
 
-        research_players_iterate(presearch, pplayer) {
-          if (player_has_embassy(pplayer, aplayer)) {
-            players_with_tech_and_embassy++;
-            break;
+        players_iterate_alive(aplayer) {
+          const struct research *aresearch = research_get(aplayer);
+
+          players++;
+          if (aresearch == presearch
+              || (A_FUTURE == tech
+                  ? aresearch->future_tech <= presearch->future_tech
+                  : TECH_KNOWN != research_invention_state(aresearch, tech))) {
+            continue;
           }
-        } research_players_iterate_end;
-      } players_iterate_alive_end;
 
-      fc_assert_ret_val(0 < players, base_cost);
-      fc_assert(players >= players_with_tech_and_embassy);
-      base_cost *= (double) (players - players_with_tech_and_embassy);
-      base_cost /= (double) players;
+          research_players_iterate(presearch, pplayer) {
+            if (player_has_embassy(pplayer, aplayer)) {
+              players_with_tech_and_embassy++;
+              break;
+            }
+          } research_players_iterate_end;
+        } players_iterate_alive_end;
+
+        fc_assert_ret_val(0 < players, base_cost);
+        fc_assert(players >= players_with_tech_and_embassy);
+        leak = base_cost * players_with_tech_and_embassy
+          * game.info.tech_leak_pct / players / 100;
+      }
+      break;
+
+    case TECH_LEAKAGE_PLAYERS:
+      {
+        int players = 0, players_with_tech = 0;
+
+        players_iterate_alive(aplayer) {
+          players++;
+          if (A_FUTURE == tech
+              ? research_get(aplayer)->future_tech > presearch->future_tech
+              : TECH_KNOWN == research_invention_state(research_get(aplayer),
+                                                       tech)) {
+            players_with_tech++;
+          }
+        } players_iterate_alive_end;
+
+        fc_assert_ret_val(0 < players, base_cost);
+        fc_assert(players >= players_with_tech);
+        leak = base_cost * players_with_tech * game.info.tech_leak_pct
+          / players / 100;
+      }
+      break;
+
+    case TECH_LEAKAGE_NO_BARBS:
+      {
+        int players = 0, players_with_tech = 0;
+
+        players_iterate_alive(aplayer) {
+          if (is_barbarian(aplayer)) {
+            continue;
+          }
+          players++;
+          if (A_FUTURE == tech
+              ? research_get(aplayer)->future_tech > presearch->future_tech
+              : TECH_KNOWN == research_invention_state(research_get(aplayer),
+                                                       tech)) {
+            players_with_tech++;
+          }
+        } players_iterate_alive_end;
+
+        fc_assert_ret_val(0 < players, base_cost);
+        fc_assert(players >= players_with_tech);
+        leak = base_cost * players_with_tech * game.info.tech_leak_pct
+          / players / 100;
+      }
+      break;
     }
-    break;
 
-  case TECH_LEAKAGE_PLAYERS:
-    {
-      int players = 0, players_with_tech = 0;
-
-      players_iterate_alive(aplayer) {
-        players++;
-        if (A_FUTURE == tech
-            ? research_get(aplayer)->future_tech > presearch->future_tech
-            : TECH_KNOWN == research_invention_state(research_get(aplayer),
-                                                     tech)) {
-          players_with_tech++;
-        }
-      } players_iterate_alive_end;
-
-      fc_assert_ret_val(0 < players, base_cost);
-      fc_assert(players >= players_with_tech);
-      base_cost *= (double) (players - players_with_tech);
-      base_cost /= (double) players;
+    if (leak > base_cost) {
+      base_cost = 0.0;
+    } else {
+      base_cost -= leak;
     }
-    break;
-
-  case TECH_LEAKAGE_NO_BARBS:
-    {
-      int players = 0, players_with_tech = 0;
-
-      players_iterate_alive(aplayer) {
-        if (is_barbarian(aplayer)) {
-          continue;
-        }
-        players++;
-        if (A_FUTURE == tech
-            ? research_get(aplayer)->future_tech > presearch->future_tech
-            : TECH_KNOWN == research_invention_state(research_get(aplayer),
-                                                     tech)) {
-          players_with_tech++;
-        }
-      } players_iterate_alive_end;
-
-      fc_assert_ret_val(0 < players, base_cost);
-      fc_assert(players >= players_with_tech);
-      base_cost *= (double) (players - players_with_tech);
-      base_cost /= (double) players;
-    }
-    break;
   }
 
   /* Assign a science penalty to the AI at easier skill levels. This code
@@ -1128,7 +1094,7 @@ int player_tech_upkeep(const struct player *pplayer)
   case TECH_COST_EXPERIMENTAL:
   case TECH_COST_EXPERIMENTAL_PRESET:
   case TECH_COST_LINEAR:
-    advance_iterate(A_FIRST, padvance) {
+    advance_iterate(padvance) {
       if (TECH_KNOWN == research_invention_state(presearch,
                                                  advance_number(padvance))) {
         tech_upkeep += padvance->cost;
@@ -1361,4 +1327,53 @@ struct iterator *research_player_iter_init(struct research_player_iter *it,
   }
 
   return base;
+}
+
+/************************************************************************//**
+  Return number of researches, i.e., either number of players or teams
+  depending on settings.
+****************************************************************************/
+int research_count(void)
+{
+  /* TODO: Should have the value stored at the time researches are created */
+  int count = 0;
+
+  researches_iterate(dummy) {
+    (void) dummy; /* To silence warning about unused 'dummy' */
+    count++;
+  } researches_iterate_end;
+
+  return count;
+}
+
+/************************************************************************//**
+  Return recalculated number of techs researched. Useful for
+  sanity checking techs_researched counter.
+****************************************************************************/
+int recalculate_techs_researched(const struct research *presearch)
+{
+  int techs = 1; /* A_NONE known, and not part of below iteration */
+
+  advance_iterate(t) {
+    if (valid_advance(t) != NULL
+        && research_invention_state(presearch, advance_number(t)) == TECH_KNOWN) {
+      techs++;
+    }
+  } advance_iterate_end;
+
+  return techs + presearch->future_tech;
+}
+
+/************************************************************************//**
+  Is this research group going to research some Future Tech next?
+****************************************************************************/
+bool research_future_next(const struct research *presearch)
+{
+  advance_index_iterate(A_FIRST, i) {
+    if (research_invention_state(presearch, i) != TECH_KNOWN) {
+      return FALSE;
+    }
+  } advance_index_iterate_end;
+
+  return TRUE;
 }

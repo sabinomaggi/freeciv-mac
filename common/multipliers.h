@@ -31,13 +31,14 @@ struct multiplier
 {
   Multiplier_type_id id;
   struct name_translation name;
-  bool disabled; /* Does not really exist - hole in multipliers array */
+  bool ruledit_disabled; /* Does not really exist - hole in multipliers array */
   int start; /* display units */
   int stop;  /* display units */
   int step;  /* display units */
   int def;   /* default value, in display units */
   int offset;
   int factor;
+  int minimum_turns;
   struct requirement_vector reqs;
   struct strvec *helptext;
 };
@@ -67,12 +68,12 @@ bool multiplier_can_be_changed(struct multiplier *pmul, struct player *pplayer);
       }  \
 }
 
-#define multipliers_active_iterate(_mul_) \
-  multipliers_iterate(_mul_) {            \
-    if (!_mul_->disabled) {
+#define multipliers_re_active_iterate(_mul_) \
+  multipliers_iterate(_mul_) {               \
+    if (!_mul_->ruledit_disabled) {
 
-#define multipliers_active_iterate_end    \
-    }                                     \
+#define multipliers_re_active_iterate_end    \
+    }                                        \
   } multipliers_iterate_end;
 
 #ifdef __cplusplus

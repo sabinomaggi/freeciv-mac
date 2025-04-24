@@ -46,7 +46,7 @@
 #endif
 #ifdef FREECIV_MSWINDOWS
 #include <windows.h>
-#include <lmcons.h>	/* UNLEN */
+#include <lmcons.h>     /* UNLEN */
 #include <shlobj.h>
 #ifdef HAVE_DIRECT_H
 #include <direct.h>
@@ -82,7 +82,7 @@
   FREECIV_STORAGE_DIR DIR_SEPARATOR "scenarios"
 #endif /* DEFAULT_SCENARIO_PATH */
 
-/* environment */
+/* Environment */
 #ifndef FREECIV_DATA_PATH
 #define FREECIV_DATA_PATH "FREECIV_DATA_PATH"
 #endif
@@ -93,25 +93,28 @@
 #define FREECIV_SCENARIO_PATH "FREECIV_SCENARIO_PATH"
 #endif
 
-/* Both of these are stored in the local encoding.  The grouping_sep must
+/* Both of these are stored in the local encoding. The grouping_sep must
  * be converted to the internal encoding when it's used. */
-static char *grouping = NULL;
-static char *grouping_sep = NULL;
+static char *grouping = nullptr;
+static char *grouping_sep = nullptr;
 
 /* As well as base64 functions, this string is used for checking for
  * 'safe' filenames, so should not contain / \ . */
 static const char base64url[] =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-static struct strvec *data_dir_names = NULL;
-static struct strvec *save_dir_names = NULL;
-static struct strvec *scenario_dir_names = NULL;
+static struct strvec *data_dir_names = nullptr;
+static struct strvec *save_dir_names = nullptr;
+static struct strvec *scenario_dir_names = nullptr;
 
-static char *mc_group = NULL;
-static char *home_dir_user = NULL;
-static char *storage_dir_freeciv = NULL;
+static char *mc_group = nullptr;
+static char *home_dir_user = nullptr;
+static char *storage_dir_freeciv = nullptr;
 
 static struct astring realfile = ASTRING_INIT;
+
+static void remove_trailing_char(char *s, char trailing)
+  fc__attribute((nonnull (1)));
 
 static int compare_file_mtime_ptrs(const struct fileinfo *const *ppa,
                                    const struct fileinfo *const *ppb);
@@ -135,9 +138,25 @@ enum fc_tristate fc_tristate_and(enum fc_tristate one, enum fc_tristate two)
 }
 
 /************************************************************************//**
+  An OR function for fc_tristate.
+****************************************************************************/
+enum fc_tristate fc_tristate_or(enum fc_tristate one, enum fc_tristate two)
+{
+  if (TRI_YES == one || TRI_YES == two) {
+    return TRI_YES;
+  }
+
+  if (TRI_MAYBE == one || TRI_MAYBE == two) {
+    return TRI_MAYBE;
+  }
+
+  return TRI_NO;
+}
+
+/************************************************************************//**
   Returns a statically allocated string containing a nicely-formatted
-  version of the given number according to the user's locale.  (Only
-  works for numbers >= zero.)  The number is given in scientific notation
+  version of the given number according to the user's locale. (Only
+  works for numbers >= zero.) The number is given in scientific notation
   as mantissa * 10^exponent.
 ****************************************************************************/
 const char *big_int_to_text(unsigned int mantissa, unsigned int exponent)
@@ -156,25 +175,25 @@ const char *big_int_to_text(unsigned int mantissa, unsigned int exponent)
   seplen = strlen(sep);
 
 #if 0 /* Not needed while the values are unsigned. */
-  fc_assert_ret_val(0 <= mantissa, NULL);
-  fc_assert_ret_val(0 <= exponent, NULL);
+  fc_assert_ret_val(0 <= mantissa, nullptr);
+  fc_assert_ret_val(0 <= exponent, nullptr);
 #endif
 
   if (mantissa == 0) {
     return "0";
   }
 
-  /* We fill the string in backwards, starting from the right.  So the first
+  /* We fill the string in backwards, starting from the right. So the first
    * thing we do is terminate it. */
   ptr = &buf[sizeof(buf)];
   *(--ptr) = '\0';
 
-  while (mantissa != 0 && exponent >= 0) {
+  while (mantissa != 0) {
     int dig;
 
     if (ptr <= buf + seplen) {
       /* Avoid a buffer overflow. */
-      fc_assert_ret_val(ptr > buf + seplen, NULL);
+      fc_assert_ret_val(ptr > buf + seplen, nullptr);
       return ptr;
     }
 
@@ -193,15 +212,17 @@ const char *big_int_to_text(unsigned int mantissa, unsigned int exponent)
       /* Reached count of digits in group: insert separator and reset count. */
       cnt = 0;
       if (*grp == CHAR_MAX) {
-	/* This test is unlikely to be necessary since we would need at
-	   least 421-bit ints to break the 127 digit barrier, but why not. */
-	break;
+        /* This test is unlikely to be necessary since we would need at
+           least 421-bit ints to break the 127 digit barrier, but why not. */
+        break;
       }
       ptr -= seplen;
-      fc_assert_ret_val(ptr >= buf, NULL);
+
+      fc_assert_ret_val(ptr >= buf, nullptr);
+
       memcpy(ptr, sep, seplen);
       if (*(grp + 1) != 0) {
-	/* Zero means to repeat the present group-size indefinitely. */
+        /* Zero means to repeat the present group-size indefinitely. */
         grp++;
       }
     }
@@ -209,7 +230,6 @@ const char *big_int_to_text(unsigned int mantissa, unsigned int exponent)
 
   return ptr;
 }
-
 
 /************************************************************************//**
   Return a prettily formatted string containing the given number.
@@ -220,35 +240,35 @@ const char *int_to_text(unsigned int number)
 }
 
 /************************************************************************//**
-  Check whether or not the given char is a valid ascii character.  The
-  character can be in any charset so long as it is a superset of ascii.
+  Check whether or not the given char is a valid ascii character.
+  The character can be in any charset so long as it is a superset of ascii.
 ****************************************************************************/
 static bool is_ascii(char ch)
 {
-  /* this works with both signed and unsigned char's. */
+  /* This works with both signed and unsigned char's. */
   return ch >= ' ' && ch <= '~';
 }
 
 /************************************************************************//**
-  Check if the name is safe security-wise.  This is intended to be used to
+  Check if the name is safe security-wise. This is intended to be used to
   make sure an untrusted filename is safe to be used.
 ****************************************************************************/
 bool is_safe_filename(const char *name)
 {
   int i = 0;
 
-  /* must not be NULL or empty */
-  if (!name || *name == '\0') {
+  /* Must not be nullptr or empty */
+  if (name == nullptr || *name == '\0') {
     return FALSE;
   }
 
   for (; '\0' != name[i]; i++) {
-    if ('.' != name[i] && NULL == strchr(base64url, name[i])) {
+    if ('.' != name[i] && strchr(base64url, name[i]) == nullptr) {
       return FALSE;
     }
   }
 
-  /* we don't allow the filename to ascend directories */
+  /* We don't allow the filename to ascend directories */
   if (strstr(name, PARENT_DIR_OPERATOR)) {
     return FALSE;
   }
@@ -268,17 +288,17 @@ bool is_ascii_name(const char *name)
   const char illegal_chars[] = {'|', '%', '"', ',', '*', '<', '>', '\0'};
   int i, j;
 
-  /* must not be NULL or empty */
-  if (!name || *name == '\0') {
+  /* Must not be nullptr or empty */
+  if (name == nullptr || *name == '\0') {
     return FALSE;
   }
 
-  /* must begin and end with some non-space character */
+  /* Must begin and end with some non-space character */
   if ((*name == ' ') || (*(strchr(name, '\0') - 1) == ' ')) {
     return FALSE;
   }
 
-  /* must be composed entirely of printable ascii characters,
+  /* Must be composed entirely of printable ascii characters,
    * and no illegal characters which can break ranking scripts. */
   for (i = 0; name[i]; i++) {
     if (!is_ascii(name[i])) {
@@ -286,12 +306,12 @@ bool is_ascii_name(const char *name)
     }
     for (j = 0; illegal_chars[j]; j++) {
       if (name[i] == illegal_chars[j]) {
-	return FALSE;
+        return FALSE;
       }
     }
   }
 
-  /* otherwise, it's okay... */
+  /* Otherwise, it's okay... */
   return TRUE;
 }
 
@@ -302,29 +322,30 @@ bool is_base64url(const char *s)
 {
   size_t i = 0;
 
-  /* must not be NULL or empty */
-  if (NULL == s || '\0' == *s) {
+  /* Must not be nullptr or empty */
+  if (s == nullptr || '\0' == *s) {
     return FALSE;
   }
 
   for (; '\0' != s[i]; i++) {
-    if (NULL == strchr(base64url, s[i])) {
+    if (strchr(base64url, s[i]) == nullptr) {
       return FALSE;
     }
   }
+
   return TRUE;
 }
 
 /************************************************************************//**
-  generate a random string meeting criteria such as is_ascii_name(),
+  Generate a random string meeting criteria such as is_ascii_name(),
   is_base64url(), and is_safe_filename().
 ****************************************************************************/
 void randomize_base64url_string(char *s, size_t n)
 {
   size_t i = 0;
 
-  /* must not be NULL or too short */
-  if (NULL == s || 1 > n) {
+  /* Must not be nullptr or too short */
+  if (s == nullptr || 1 > n) {
     return;
   }
 
@@ -337,7 +358,7 @@ void randomize_base64url_string(char *s, size_t n)
 /************************************************************************//**
   Compares two strings, in the collating order of the current locale,
   given pointers to the two strings (i.e., given "char *"s).
-  Case-sensitive.  Designed to be called from qsort().
+  Case-sensitive. Designed to be called from qsort().
 ****************************************************************************/
 int compare_strings(const void *first, const void *second)
 {
@@ -347,7 +368,7 @@ int compare_strings(const void *first, const void *second)
 /************************************************************************//**
   Compares two strings, in the collating order of the current locale,
   given pointers to the two string pointers (i.e., given "char **"s).
-  Case-sensitive.  Designed to be called from qsort().
+  Case-sensitive. Designed to be called from qsort().
 ****************************************************************************/
 int compare_strings_ptrs(const void *first, const void *second)
 {
@@ -356,7 +377,7 @@ int compare_strings_ptrs(const void *first, const void *second)
 
 /************************************************************************//**
   Compares two strings, in the collating order of the current locale,
-  given pointers to the two string pointers.  Case-sensitive.
+  given pointers to the two string pointers. Case-sensitive.
   Designed to be called from strvec_sort().
 ****************************************************************************/
 int compare_strings_strvec(const char *const *first,
@@ -370,8 +391,6 @@ int compare_strings_strvec(const char *const *first,
 ****************************************************************************/
 char *skip_leading_spaces(char *s)
 {
-  fc_assert_ret_val(NULL != s, NULL);
-
   while (*s != '\0' && fc_isspace(*s)) {
     s++;
   }
@@ -387,7 +406,6 @@ void remove_leading_spaces(char *s)
 {
   char *t;
 
-  fc_assert_ret(NULL != s);
   t = skip_leading_spaces(s);
   if (t != s) {
     while (*t != '\0') {
@@ -398,7 +416,7 @@ void remove_leading_spaces(char *s)
 }
 
 /************************************************************************//**
-  Terminates string pointed to by 's' to remove traling spaces;
+  Terminates string pointed to by 's' to remove trailing spaces;
   Note 's' must point to writeable memory!
 ****************************************************************************/
 void remove_trailing_spaces(char *s)
@@ -406,14 +424,13 @@ void remove_trailing_spaces(char *s)
   char *t;
   size_t len;
 
-  fc_assert_ret(NULL != s);
   len = strlen(s);
   if (len > 0) {
     t = s + len -1;
     while (fc_isspace(*t)) {
       *t = '\0';
       if (t == s) {
-	break;
+        break;
       }
       t--;
     }
@@ -437,8 +454,6 @@ static void remove_trailing_char(char *s, char trailing)
 {
   char *t;
 
-  fc_assert_ret(NULL != s);
-
   t = s + strlen(s) -1;
   while (t>=s && (*t) == trailing) {
     *t = '\0';
@@ -448,7 +463,7 @@ static void remove_trailing_char(char *s, char trailing)
 
 /************************************************************************//**
   Returns pointer to '\0' at end of string 'str', and decrements
-  *nleft by the length of 'str'.  This is intended to be useful to
+  *nleft by the length of 'str'. This is intended to be useful to
   allow strcat-ing without traversing the whole string each time,
   while still keeping track of the buffer length.
   Eg:
@@ -463,19 +478,22 @@ static void remove_trailing_char(char *s, char trailing)
 char *end_of_strn(char *str, int *nleft)
 {
   int len = strlen(str);
+
   *nleft -= len;
-  fc_assert_ret_val(0 < (*nleft), NULL); /* space for the terminating nul */
+  fc_assert_ret_val(0 < (*nleft), nullptr); /* Space for the terminating nul */
+
   return str + len;
 }
 
 /************************************************************************//**
-  Check the length of the given string.  If the string is too long,
+  Check the length of the given string. If the string is too long,
   log errmsg, which should be a string in printf-format taking up to
   two arguments: the string and the length.
 ****************************************************************************/
 bool check_strlen(const char *str, size_t len, const char *errmsg)
 {
   fc_assert_ret_val_msg(strlen(str) < len, TRUE, errmsg, str, len);
+
   return FALSE;
 }
 
@@ -486,18 +504,17 @@ size_t loud_strlcpy(char *buffer, const char *str, size_t len,
                     const char *errmsg)
 {
   (void) check_strlen(str, len, errmsg);
+
   return fc_strlcpy(buffer, str, len);
 }
 
 /************************************************************************//**
-  Convert 'str' to it's int reprentation if possible. 'pint' can be NULL,
+  Convert 'str' to its int representation if possible. 'pint' can be nullptr,
   then it will only test 'str' only contains an integer number.
 ****************************************************************************/
 bool str_to_int(const char *str, int *pint)
 {
   const char *start;
-
-  fc_assert_ret_val(NULL != str, FALSE);
 
   while (fc_isspace(*str)) {
     /* Skip leading spaces. */
@@ -519,19 +536,50 @@ bool str_to_int(const char *str, int *pint)
     str++;
   }
 
-  return ('\0' == *str && (NULL == pint || 1 == sscanf(start, "%d", pint)));
+  return ('\0' == *str && (pint == nullptr || 1 == sscanf(start, "%d", pint)));
 }
 
 /************************************************************************//**
-  Convert 'str' to it's float reprentation if possible. 'pfloat' can be NULL,
-  then it will only test 'str' only contains a floating point number.
+  Convert 'str' to its unsigned int representation if possible.
+  'pint' can be nullptr, then it will only test 'str' only contains
+  an unsigned integer number.
+****************************************************************************/
+bool str_to_uint(const char *str, unsigned int *pint)
+{
+  const char *start;
+
+  while (fc_isspace(*str)) {
+    /* Skip leading spaces. */
+    str++;
+  }
+
+  start = str;
+  if ('+' == *str) {
+    /* Handle sign. */
+    str++;
+  }
+  while (fc_isdigit(*str)) {
+    /* Digits. */
+    str++;
+  }
+
+  while (fc_isspace(*str)) {
+    /* Ignore trailing spaces. */
+    str++;
+  }
+
+  return ('\0' == *str && (pint == nullptr || 1 == sscanf(start, "%u", pint)));
+}
+
+/************************************************************************//**
+  Convert 'str' to its float representation if possible. 'pfloat'
+  can be nullptr, then it will only test 'str' only contains
+  a floating point number.
 ****************************************************************************/
 bool str_to_float(const char *str, float *pfloat)
 {
   bool dot;
   const char *start;
-
-  fc_assert_ret_val(NULL != str, FALSE);
 
   while (fc_isspace(*str)) {
     /* Skip leading spaces. */
@@ -567,13 +615,13 @@ bool str_to_float(const char *str, float *pfloat)
   }
 
   return ('\0' == *str && dot
-          && (NULL == pfloat || 1 == sscanf(start, "%f", pfloat)));
+          && (nullptr == pfloat || 1 == sscanf(start, "%f", pfloat)));
 }
 
 /************************************************************************//**
   Returns string which gives users home dir, as specified by $HOME.
   Gets value once, and then caches result.
-  If $HOME is not set, give a log message and returns NULL.
+  If $HOME is not set, give a log message and returns nullptr.
   Note the caller should not mess with the returned string.
 ****************************************************************************/
 char *user_home_dir(void)
@@ -582,66 +630,21 @@ char *user_home_dir(void)
   return "PROGDIR:";
 #else  /* AMIGA */
 
-  if (home_dir_user == NULL) {
 #ifdef FREECIV_MSWINDOWS
+#define HOMEVAR "APPDATA"
+#else
+#define HOMEVAR "HOME"
+#endif
 
-    /* some documentation at:
-     * http://justcheckingonall.wordpress.com/2008/05/16/find-shell-folders-win32/
-     * http://archives.seul.org/or/cvs/Oct-2004/msg00082.html */
+  if (home_dir_user == nullptr) {
+    char *env = getenv(HOMEVAR);
 
-    LPITEMIDLIST pidl;
-    LPMALLOC pMalloc;
-
-    if (SUCCEEDED(SHGetSpecialFolderLocation(NULL, CSIDL_APPDATA, &pidl))) {
-      char *home_dir_in_local_encoding = fc_malloc(PATH_MAX);
-
-      if (SUCCEEDED(SHGetPathFromIDList(pidl, home_dir_in_local_encoding))) {
-        /* convert to internal encoding */
-        home_dir_user = local_to_internal_string_malloc(home_dir_in_local_encoding);
-        free(home_dir_in_local_encoding);
-
-#ifdef DIR_SEPARATOR_IS_DEFAULT
-        /* replace backslashes with forward slashes */
-        {
-          char *c;
-
-          for (c = home_dir_user; *c != 0; c++) {
-            if (*c == '\\') {
-              *c = DIR_SEPARATOR_CHAR;
-            }
-          }
-        }
-#endif /* DIR_SEPARATOR_IS_DEFAULT */
-      } else {
-        free(home_dir_in_local_encoding);
-        home_dir_user = NULL;
-        log_error("Could not find home directory "
-                  "(SHGetPathFromIDList() failed).");
-      }
-
-      SHGetMalloc(&pMalloc);
-      if (pMalloc) {
-        pMalloc->lpVtbl->Free(pMalloc, pidl);
-        pMalloc->lpVtbl->Release(pMalloc);
-      }
-
+    if (env) {
+      home_dir_user = fc_strdup(env);
+      log_verbose(HOMEVAR " is %s", home_dir_user);
     } else {
-      log_error("Could not find home directory "
-                "(SHGetSpecialFolderLocation() failed).");
-    }
-
-    if (home_dir_user == NULL)
-#endif /* FREECIV_MSWINDOWS */
-    {
-      char *env = getenv("HOME");
-
-      if (env) {
-        home_dir_user = fc_strdup(env);
-        log_verbose("HOME is %s", home_dir_user);
-      } else {
-        log_error("Could not find home directory (HOME is not set).");
-        home_dir_user = NULL;
-      }
+      log_error("Could not find home directory (" HOMEVAR " is not set).");
+      home_dir_user = nullptr;
     }
   }
 
@@ -654,9 +657,9 @@ char *user_home_dir(void)
 ****************************************************************************/
 void free_user_home_dir(void)
 {
-  if (home_dir_user != NULL) {
+  if (home_dir_user != nullptr) {
     free(home_dir_user);
-    home_dir_user = NULL;
+    home_dir_user = nullptr;
   }
 }
 
@@ -667,7 +670,7 @@ void free_user_home_dir(void)
 ****************************************************************************/
 char *freeciv_storage_dir(void)
 {
-  if (storage_dir_freeciv == NULL) {
+  if (storage_dir_freeciv == nullptr) {
     storage_dir_freeciv = fc_malloc(strlen(FREECIV_STORAGE_DIR) + 1);
 
     strcpy(storage_dir_freeciv, FREECIV_STORAGE_DIR);
@@ -685,9 +688,9 @@ char *freeciv_storage_dir(void)
 ****************************************************************************/
 void free_freeciv_storage_dir(void)
 {
-  if (storage_dir_freeciv != NULL) {
+  if (storage_dir_freeciv != nullptr) {
     free(storage_dir_freeciv);
-    storage_dir_freeciv = NULL;
+    storage_dir_freeciv = nullptr;
   }
 }
 
@@ -701,8 +704,8 @@ void free_freeciv_storage_dir(void)
 char *user_username(char *buf, size_t bufsz)
 {
   /* This function uses a number of different methods to try to find a
-   * username.  This username then has to be truncated to bufsz
-   * characters (including terminator) and checked for sanity.  Note that
+   * username. This username then has to be truncated to bufsz
+   * characters (including terminator) and checked for sanity. Note that
    * truncating a sane name can leave you with an insane name under some
    * charsets. */
 
@@ -758,6 +761,7 @@ char *user_username(char *buf, size_t bufsz)
 #endif
   log_verbose("fake username is %s", buf);
   fc_assert(is_ascii_name(buf));
+
   return buf;
 }
 
@@ -789,7 +793,7 @@ static char *expand_dir(char *tok_in, bool ok_to_free)
     if (i > 1 && tok[1] != DIR_SEPARATOR_CHAR) {
       log_error("For \"%s\" in path cannot expand '~'"
                 " except as '~" DIR_SEPARATOR "'; ignoring", tok);
-      i = 0;  /* skip this one */
+      i = 0;  /* Skip this one */
     } else {
       char *home = user_home_dir();
 
@@ -803,17 +807,17 @@ static char *expand_dir(char *tok_in, bool ok_to_free)
         ret = &allocated;
 
         fc_snprintf(allocated, len, "%s%s", home, tok + 1);
-        i = -1;       /* flag to free tok below */
+        i = -1;  /* Flag to free tok below */
       }
     }
   }
 
   if (i != 0) {
     /* We could check whether the directory exists and
-     * is readable etc?  Don't currently. */
+     * is readable etc? Don't currently. */
     if (i == -1 && ok_to_free) {
       free(tok);
-      tok = NULL;
+      tok = nullptr;
     }
   }
 
@@ -822,7 +826,7 @@ static char *expand_dir(char *tok_in, bool ok_to_free)
 
 /************************************************************************//**
   Returns a list of directory paths, in the order in which they should
-  be searched.  Base function for get_data_dirs(), get_save_dirs(),
+  be searched. Base function for get_data_dirs(), get_save_dirs(),
   get_scenario_dirs()
 ****************************************************************************/
 static struct strvec *base_get_dirs(const char *dir_list)
@@ -830,19 +834,19 @@ static struct strvec *base_get_dirs(const char *dir_list)
   struct strvec *dirs = strvec_new();
   char *path, *tok;
 
-  path = fc_strdup(dir_list);   /* something we can strtok */
+  path = fc_strdup(dir_list);   /* Something we can strtok() */
   tok = strtok(path, PATH_SEPARATOR);
   do {
     char *dir = expand_dir(tok, FALSE);
 
-    if (dir != NULL) {
+    if (dir != nullptr) {
       strvec_append(dirs, dir);
       if (dir != tok) {
         free(dir);
       }
     }
 
-    tok = strtok(NULL, PATH_SEPARATOR);
+    tok = strtok(nullptr, PATH_SEPARATOR);
   } while (tok);
 
   free(path);
@@ -854,23 +858,23 @@ static struct strvec *base_get_dirs(const char *dir_list)
 ****************************************************************************/
 void free_data_dir_names(void)
 {
-  if (data_dir_names != NULL) {
+  if (data_dir_names != nullptr) {
     strvec_destroy(data_dir_names);
-    data_dir_names = NULL;
+    data_dir_names = nullptr;
   }
-  if (save_dir_names != NULL) {
+  if (save_dir_names != nullptr) {
     strvec_destroy(save_dir_names);
-    save_dir_names = NULL;
+    save_dir_names = nullptr;
   }
-  if (scenario_dir_names != NULL) {
+  if (scenario_dir_names != nullptr) {
     strvec_destroy(scenario_dir_names);
-    scenario_dir_names = NULL;
+    scenario_dir_names = nullptr;
   }
 }
 
 /************************************************************************//**
   Returns a list of data directory paths, in the order in which they should
-  be searched.  These paths are specified internally or may be set as the
+  be searched. These paths are specified internally or may be set as the
   environment variable $FREECIV_DATA PATH (a separated list of directories,
   where the separator itself is specified internally, platform-dependent).
   '~' at the start of a component (provided followed by '/' or '\0') is
@@ -882,19 +886,31 @@ void free_data_dir_names(void)
 const struct strvec *get_data_dirs(void)
 {
   /* The first time this function is called it will search and
-   * allocate the directory listing.  Subsequently we will already
+   * allocate the directory listing. Subsequently we will already
    * know the list and can just return it. */
-  if (NULL == data_dir_names) {
+  if (data_dir_names == nullptr) {
     const char *path;
+
+#ifdef FREECIV_APPIMAGE
+    char default_data_path[5000];
+
+    fc_snprintf(default_data_path, sizeof(default_data_path),
+                FREECIV_STORAGE_DIR DIR_SEPARATOR DATASUBDIR
+                PATH_SEPARATOR
+                "%s/usr/share/freeciv",
+                getenv("APPDIR"));
+#else  /* FREECIV_APPIMAGE */
+#define default_data_path DEFAULT_DATA_PATH
+#endif /* FREECIV_APPIMAGE */
 
     if ((path = getenv(FREECIV_DATA_PATH)) && '\0' == path[0]) {
       /* TRANS: <FREECIV_DATA_PATH> configuration error */
       log_error(_("\"%s\" is set but empty; using default \"%s\" "
                  "data directories instead."),
-                FREECIV_DATA_PATH, DEFAULT_DATA_PATH);
-      path = NULL;
+                FREECIV_DATA_PATH, default_data_path);
+      path = nullptr;
     }
-    data_dir_names = base_get_dirs(NULL != path ? path : DEFAULT_DATA_PATH);
+    data_dir_names = base_get_dirs(path != nullptr ? path : default_data_path);
     strvec_remove_duplicate(data_dir_names, strcmp); /* Don't set a path both. */
     strvec_iterate(data_dir_names, dirname) {
       log_verbose("Data path component: %s", dirname);
@@ -906,7 +922,7 @@ const struct strvec *get_data_dirs(void)
 
 /************************************************************************//**
   Returns a list of save directory paths, in the order in which they should
-  be searched.  These paths are specified internally or may be set as the
+  be searched. These paths are specified internally or may be set as the
   environment variable $FREECIV_SAVE_PATH (a separated list of directories,
   where the separator itself is specified internally, platform-dependent).
   '~' at the start of a component (provided followed by '/' or '\0') is
@@ -918,9 +934,9 @@ const struct strvec *get_data_dirs(void)
 const struct strvec *get_save_dirs(void)
 {
   /* The first time this function is called it will search and
-   * allocate the directory listing.  Subsequently we will already
+   * allocate the directory listing. Subsequently we will already
    * know the list and can just return it. */
-  if (NULL == save_dir_names) {
+  if (save_dir_names == nullptr) {
     const char *path;
 
     if ((path = getenv(FREECIV_SAVE_PATH)) && '\0' == path[0]) {
@@ -928,9 +944,9 @@ const struct strvec *get_save_dirs(void)
       log_error(_("\"%s\" is set but empty; using default \"%s\" "
                   "save directories instead."),
                 FREECIV_SAVE_PATH, DEFAULT_SAVE_PATH);
-      path = NULL;
+      path = nullptr;
     }
-    save_dir_names = base_get_dirs(NULL != path ? path : DEFAULT_SAVE_PATH);
+    save_dir_names = base_get_dirs(path != nullptr ? path : DEFAULT_SAVE_PATH);
     strvec_remove_duplicate(save_dir_names, strcmp); /* Don't set a path both. */
     strvec_iterate(save_dir_names, dirname) {
       log_verbose("Save path component: %s", dirname);
@@ -942,7 +958,7 @@ const struct strvec *get_save_dirs(void)
 
 /************************************************************************//**
   Returns a list of scenario directory paths, in the order in which they
-  should be searched.  These paths are specified internally or may be set
+  should be searched. These paths are specified internally or may be set
   as the environment variable $FREECIV_SCENARIO_PATH (a separated list of
   directories, where the separator itself is specified internally,
   platform-dependent).
@@ -955,20 +971,34 @@ const struct strvec *get_save_dirs(void)
 const struct strvec *get_scenario_dirs(void)
 {
   /* The first time this function is called it will search and
-   * allocate the directory listing.  Subsequently we will already
+   * allocate the directory listing. Subsequently we will already
    * know the list and can just return it. */
-  if (NULL == scenario_dir_names) {
+  if (scenario_dir_names == nullptr) {
     const char *path;
+
+#ifdef FREECIV_APPIMAGE
+    char default_scenario_path[5000];
+
+    fc_snprintf(default_scenario_path, sizeof(default_scenario_path),
+                FREECIV_STORAGE_DIR DIR_SEPARATOR DATASUBDIR DIR_SEPARATOR "scenarios"
+                PATH_SEPARATOR
+                FREECIV_STORAGE_DIR DIR_SEPARATOR "scenarios"
+                PATH_SEPARATOR
+                "%s/usr/share/freeciv/scenarios",
+                getenv("APPDIR"));
+#else  /* FREECIV_APPIMAGE */
+#define default_scenario_path DEFAULT_SCENARIO_PATH
+#endif /* FREECIV_APPIMAGE */
 
     if ((path = getenv(FREECIV_SCENARIO_PATH)) && '\0' == path[0]) {
       /* TRANS: <FREECIV_SCENARIO_PATH> configuration error */
       log_error( _("\"%s\" is set but empty; using default \"%s\" "
                    "scenario directories instead."),
-                 FREECIV_SCENARIO_PATH, DEFAULT_SCENARIO_PATH);
-      path = NULL;
+                 FREECIV_SCENARIO_PATH, default_scenario_path);
+      path = nullptr;
     }
-    scenario_dir_names = base_get_dirs(NULL != path ? path : DEFAULT_SCENARIO_PATH);
-    strvec_remove_duplicate(scenario_dir_names, strcmp);      /* Don't set a path both. */
+    scenario_dir_names = base_get_dirs(path != nullptr ? path : default_scenario_path);
+    strvec_remove_duplicate(scenario_dir_names, strcmp); /* Don't set a path both. */
     strvec_iterate(scenario_dir_names, dirname) {
       log_verbose("Scenario path component: %s", dirname);
     } strvec_iterate_end;
@@ -992,9 +1022,9 @@ struct strvec *fileinfolist(const struct strvec *dirs, const char *suffix)
   struct strvec *files = strvec_new();
   size_t suffix_len = strlen(suffix);
 
-  fc_assert_ret_val(!strchr(suffix, DIR_SEPARATOR_CHAR), NULL);
+  fc_assert_ret_val(!strchr(suffix, DIR_SEPARATOR_CHAR), nullptr);
 
-  if (NULL == dirs) {
+  if (dirs == nullptr) {
     return files;
   }
 
@@ -1049,14 +1079,14 @@ struct strvec *fileinfolist(const struct strvec *dirs, const char *suffix)
   Returns a filename to access the specified file from a
   directory by searching all specified directories for the file.
 
-  If the specified 'filename' is NULL, the returned string contains
-  the effective path.  (But this should probably only be used for
+  If the specified 'filename' is nullptr, the returned string contains
+  the effective path. (But this should probably only be used for
   debug output.)
 
-  Returns NULL if the specified filename cannot be found in any of the
-  data directories.  (A file is considered "found" if it can be
-  read-opened.)  The returned pointer points to static memory, so this
-  function can only supply one filename at a time.  Don't free that
+  Returns nullptr if the specified filename cannot be found in any of the
+  data directories. (A file is considered "found" if it can be
+  read-opened.) The returned pointer points to static memory, so this
+  function can only supply one filename at a time. Don't free that
   pointer.
 
   TODO: Make this re-entrant
@@ -1064,14 +1094,14 @@ struct strvec *fileinfolist(const struct strvec *dirs, const char *suffix)
 const char *fileinfoname(const struct strvec *dirs, const char *filename)
 {
 #ifndef DIR_SEPARATOR_IS_DEFAULT
-  char fnbuf[filename != NULL ? strlen(filename) + 1 : 1];
+  char fnbuf[filename != nullptr ? strlen(filename) + 1 : 1];
   int i;
 #else  /* DIR_SEPARATOR_IS_DEFAULT */
   const char *fnbuf = filename;
 #endif /* DIR_SEPARATOR_IS_DEFAULT */
 
-  if (NULL == dirs) {
-    return NULL;
+  if (dirs == nullptr) {
+    return nullptr;
   }
 
   if (!filename) {
@@ -1102,7 +1132,7 @@ const char *fileinfoname(const struct strvec *dirs, const char *filename)
 #endif /* DIR_SEPARATOR_IS_DEFAULT */
 
   strvec_iterate(dirs, dirname) {
-    struct stat buf;    /* see if we can open the file or directory */
+    struct stat buf;    /* See if we can open the file or directory */
 
     astr_set(&realfile, "%s" DIR_SEPARATOR "%s", dirname, fnbuf);
     if (fc_stat(astr_str(&realfile), &buf) == 0) {
@@ -1112,7 +1142,7 @@ const char *fileinfoname(const struct strvec *dirs, const char *filename)
 
   log_verbose("Could not find readable file \"%s\" in data path.", filename);
 
-  return NULL;
+  return nullptr;
 }
 
 /************************************************************************//**
@@ -1168,16 +1198,16 @@ static bool compare_fileinfo_name(const struct fileinfo *pa,
   subdirectory of the data path.
   "nodups" removes duplicate names.
   The returned list will be sorted by name first and modification time
-  second.  Returned "name"s will be truncated starting at the "infix"
-  substring.  The returned list must be freed with fileinfo_list_destroy().
+  second. Returned "name"s will be truncated starting at the "infix"
+  substring. The returned list must be freed with fileinfo_list_destroy().
 ****************************************************************************/
 struct fileinfo_list *fileinfolist_infix(const struct strvec *dirs,
                                          const char *infix, bool nodups)
 {
   struct fileinfo_list *res;
 
-  if (NULL == dirs) {
-    return NULL;
+  if (dirs == nullptr) {
+    return nullptr;
   }
 
   res = fileinfo_list_new_full(fileinfo_destroy);
@@ -1248,15 +1278,15 @@ struct fileinfo_list *fileinfolist_infix(const struct strvec *dirs,
 /************************************************************************//**
   Language environmental variable (with emulation).
 ****************************************************************************/
-char *setup_langname(void)
+const char *setup_langname(void)
 {
-  char *langname = NULL;
+  const char *langname = nullptr;
 
 #ifdef ENABLE_NLS
   langname = getenv("LANG");
 
 #ifdef FREECIV_MSWINDOWS
-  /* set LANG by hand if it is not set */
+  /* Set LANG by hand if it is not set */
   if (!langname) {
     switch (PRIMARYLANGID(GetUserDefaultLangID())) {
       case LANG_ARABIC:
@@ -1359,7 +1389,7 @@ char *setup_langname(void)
         break;
     }
 
-    if (langname != NULL) {
+    if (langname != nullptr) {
       static char envstr[40];
 
       fc_snprintf(envstr, sizeof(envstr), "LANG=%s", langname);
@@ -1378,14 +1408,14 @@ char *setup_langname(void)
 ****************************************************************************/
 static void autocap_update(void)
 {
-  char *autocap_opt_in[] = { "fi", NULL };
+  char *autocap_opt_in[] = { "fi", nullptr };
   int i;
   bool ac_enabled = FALSE;
 
   char *lang = getenv("LANG");
 
-  if (lang != NULL && lang[0] != '\0' && lang[1] != '\0') {
-    for (i = 0; autocap_opt_in[i] != NULL && !ac_enabled; i++) {
+  if (lang != nullptr && lang[0] != '\0' && lang[1] != '\0') {
+    for (i = 0; autocap_opt_in[i] != nullptr && !ac_enabled; i++) {
       if (lang[0] == autocap_opt_in[i][0]
           && lang[1] == autocap_opt_in[i][1]) {
         ac_enabled = TRUE;
@@ -1407,7 +1437,7 @@ void switch_lang(const char *lang)
 #ifdef HAVE_SETENV
   setenv("LANG", lang, TRUE);
 #else  /* HAVE_SETENV */
-  if (lang != NULL) {
+  if (lang != nullptr) {
     static char envstr[40];
 
     fc_snprintf(envstr, sizeof(envstr), "LANG=%s", lang);
@@ -1453,24 +1483,27 @@ void init_nls(void)
      This is intended to cater to the common case where:
        1) The user is from North America. ;-)
        2) The user has not set the proper environment variables.
-	  (Most applications are (unfortunately) US-centric
-	  by default, so why bother?)
+          (Most applications are (unfortunately) US-centric
+          by default, so why bother?)
      This would result in the "C" locale being used, with grouping ""
      and thousands_sep "", where we really want "\3" and ",". */
 
-  if (strcmp(setlocale(LC_NUMERIC, NULL), "C") != 0) {
+  if (strcmp(setlocale(LC_NUMERIC, nullptr), "C") != 0) {
     struct lconv *lc = localeconv();
 
     if (lc->grouping[0] == '\0') {
       /* This actually indicates no grouping at all. */
-      char *m = malloc(sizeof(char));
+      char *m = fc_malloc(sizeof(char));
+
+      free(grouping);
       *m = CHAR_MAX;
       grouping = m;
     } else {
       size_t len;
+
       for (len = 0;
-	   lc->grouping[len] != '\0' && lc->grouping[len] != CHAR_MAX; len++) {
-	/* nothing */
+           lc->grouping[len] != '\0' && lc->grouping[len] != CHAR_MAX; len++) {
+        /* Nothing */
       }
       len++;
       free(grouping);
@@ -1492,16 +1525,16 @@ void init_nls(void)
 void free_nls(void)
 {
   free(grouping);
-  grouping = NULL;
+  grouping = nullptr;
   free(grouping_sep);
-  grouping_sep = NULL;
+  grouping_sep = nullptr;
 }
 
 /************************************************************************//**
   If we have root privileges, die with an error.
   (Eg, for security reasons.)
   Param argv0 should be argv[0] or similar; fallback is
-  used instead if argv0 is NULL.
+  used instead if argv0 is nullptr.
   But don't die on systems where the user is always root...
   (a general test for this would be better).
   Doesn't use log_*() because gets called before logging is setup.
@@ -1513,8 +1546,8 @@ void dont_run_as_root(const char *argv0, const char *fallback)
 #else
   if (getuid() == 0 || geteuid() == 0) {
     fc_fprintf(stderr,
-	       _("%s: Fatal error: you're trying to run me as superuser!\n"),
-	       (argv0 ? argv0 : fallback ? fallback : "freeciv"));
+               _("%s: Fatal error: you're trying to run me as superuser!\n"),
+               (argv0 ? argv0 : fallback ? fallback : "freeciv"));
     fc_fprintf(stderr, _("Use a non-privileged account instead.\n"));
     exit(EXIT_FAILURE);
   }
@@ -1526,7 +1559,7 @@ void dont_run_as_root(const char *argv0, const char *fallback)
   In English, form of description is suitable to substitute in, eg:
      prefix is <description>
   (N.B.: The description is always in English, but they have all been marked
-   for translation.  If you want a localized version, use _() on the return.)
+   for translation. If you want a localized version, use _() on the return.)
 ****************************************************************************/
 const char *m_pre_description(enum m_pre_result result)
 {
@@ -1538,7 +1571,9 @@ const char *m_pre_description(enum m_pre_result result)
     N_("too long"),
     N_("non-match")
   };
-  fc_assert_ret_val(result >= 0 && result < ARRAY_SIZE(descriptions), NULL);
+
+  fc_assert_ret_val(result >= 0 && result < ARRAY_SIZE(descriptions), nullptr);
+
   return descriptions[result];
 }
 
@@ -1554,7 +1589,7 @@ enum m_pre_result match_prefix(m_pre_accessor_fn_t accessor_fn,
                                int *ind_result)
 {
   return match_prefix_full(accessor_fn, n_names, max_len_name, cmp_fn,
-                           len_fn, prefix, ind_result, NULL, 0, NULL);
+                           len_fn, prefix, ind_result, nullptr, 0, nullptr);
 }
 
 /************************************************************************//**
@@ -1564,9 +1599,9 @@ enum m_pre_result match_prefix(m_pre_accessor_fn_t accessor_fn,
   Returns type of match or fail, and for return <= M_PRE_AMBIGUOUS
   sets *ind_result with matching index (or for ambiguous, first match).
   If max_len_name == 0, treat as no maximum.
-  If the int array 'matches' is non-NULL, up to 'max_matches' ambiguous
+  If the int array 'matches' is not nullptr, up to 'max_matches' ambiguous
   matching names indices will be inserted into it. If 'pnum_matches' is
-  non-NULL, it will be set to the number of indices inserted into 'matches'.
+  not nullptr, it will be set to the number of indices inserted into 'matches'.
 ****************************************************************************/
 enum m_pre_result match_prefix_full(m_pre_accessor_fn_t accessor_fn,
                                     size_t n_names,
@@ -1581,7 +1616,7 @@ enum m_pre_result match_prefix_full(m_pre_accessor_fn_t accessor_fn,
 {
   int i, len, nmatches;
 
-  if (len_fn == NULL) {
+  if (len_fn == nullptr) {
     len = strlen(prefix);
   } else {
     len = len_fn(prefix);
@@ -1603,9 +1638,9 @@ enum m_pre_result match_prefix_full(m_pre_accessor_fn_t accessor_fn,
         return M_PRE_EXACT;
       }
       if (nmatches == 0) {
-        *ind_result = i;	/* first match */
+        *ind_result = i;        /* First match */
       }
-      if (matches != NULL && nmatches < max_matches) {
+      if (matches != nullptr && nmatches < max_matches) {
         matches[nmatches] = i;
       }
       nmatches++;
@@ -1615,7 +1650,7 @@ enum m_pre_result match_prefix_full(m_pre_accessor_fn_t accessor_fn,
   if (nmatches == 1) {
     return M_PRE_ONLY;
   } else if (nmatches > 1) {
-    if (pnum_matches != NULL) {
+    if (pnum_matches != nullptr) {
       *pnum_matches = MIN(max_matches, nmatches);
     }
     return M_PRE_AMBIGUOUS;
@@ -1637,7 +1672,7 @@ char *get_multicast_group(bool ipv6_preferred)
   static char *default_multicast_group_ipv6 = "FF31::8000:15B4";
 #endif /* IPv6 support */
 
-  if (mc_group == NULL) {
+  if (mc_group == nullptr) {
     char *env = getenv("FREECIV_MULTICAST_GROUP");
 
     if (env) {
@@ -1662,9 +1697,9 @@ char *get_multicast_group(bool ipv6_preferred)
 ****************************************************************************/
 void free_multicast_group(void)
 {
-  if (mc_group != NULL) {
+  if (mc_group != nullptr) {
     free(mc_group);
-    mc_group = NULL;
+    mc_group = nullptr;
   }
 }
 
@@ -1672,10 +1707,10 @@ void free_multicast_group(void)
   Interpret ~/ in filename as home dir
   New path is returned in buf of size buf_size
 
-  This may fail if the path is too long.  It is better to use
-  interpret_tilde_alloc.
+  This may fail if the path is too long. It is better to use
+  interpret_tilde_alloc().
 ****************************************************************************/
-void interpret_tilde(char* buf, size_t buf_size, const char* filename)
+void interpret_tilde(char *buf, size_t buf_size, const char *filename)
 {
   if (filename[0] == '~' && filename[1] == DIR_SEPARATOR_CHAR) {
     fc_snprintf(buf, buf_size, "%s" DIR_SEPARATOR "%s", user_home_dir(), filename + 2);
@@ -1689,10 +1724,10 @@ void interpret_tilde(char* buf, size_t buf_size, const char* filename)
 /************************************************************************//**
   Interpret ~/ in filename as home dir
 
-  The new path is returned in buf, as a newly allocated buffer.  The new
+  The new path is returned in buf, as a newly allocated buffer. The new
   path will always be allocated and written, even if there is no ~ present.
 ****************************************************************************/
-char *interpret_tilde_alloc(const char* filename)
+char *interpret_tilde_alloc(const char *filename)
 {
   if (filename[0] == '~' && filename[1] == DIR_SEPARATOR_CHAR) {
     const char *home = user_home_dir();
@@ -1718,7 +1753,8 @@ char *interpret_tilde_alloc(const char* filename)
 char *skip_to_basename(char *filepath)
 {
   int j;
-  fc_assert_ret_val(NULL != filepath, NULL);
+
+  fc_assert_ret_val(filepath != nullptr, nullptr);
 
   for (j = strlen(filepath); j >= 0; j--) {
     if (filepath[j] == DIR_SEPARATOR_CHAR) {
@@ -1731,19 +1767,44 @@ char *skip_to_basename(char *filepath)
 /************************************************************************//**
   If the directory "pathname" does not exist, recursively create all
   directories until it does.
+
+  TODO: Make errno available after a failure, preferably via fc_get_errno().
+        Currently there's things potentially messing errno between
+        failed mkdir() and the function return.
+
+  @param  pathname  directory path to create
+  @param  mode      directory creation mode, or negative for default mode
+  @return           success or not
 ****************************************************************************/
-bool make_dir(const char *pathname)
+bool make_dir(const char *pathname, int mode)
 {
   char *dir;
-  char *path = NULL;
+  char *path = nullptr;
+
+  if (pathname[0] == '\0') {
+    return FALSE;
+  }
+
+  if (mode < 0) {
+    mode = 0755;
+  }
 
   path = interpret_tilde_alloc(pathname);
   dir = path;
+
+  if (*dir == '/') {
+    /* Don't consider root as directory separator, but skip it. */
+    dir++;
+  } else if (dir[0] != '\0' && dir[1] == ':' && dir[2] == '\\') {
+    /* Don't consider Windows Drive a directory to create, but skip it. */
+    dir += 3;
+  }
+
   do {
     dir = strchr(dir, DIR_SEPARATOR_CHAR);
     /* We set the current / with 0, and restore it afterwards */
     if (dir) {
-      *dir = 0;
+      *dir = '\0';
     }
 
 #ifdef FREECIV_MSWINDOWS
@@ -1754,15 +1815,33 @@ bool make_dir(const char *pathname)
      *       takes two parameters, and prefer such proper mkdir() here. */
     {
       char *path_in_local_encoding = internal_to_local_string_malloc(path);
+      bool failure = FALSE;
 
-      _mkdir(path_in_local_encoding);
+      if (_mkdir(path_in_local_encoding) == -1
+          && fc_get_errno() != ERROR_ALREADY_EXISTS) {
+        failure = TRUE;
+      }
+
       free(path_in_local_encoding);
+
+      if (failure) {
+        free(path);
+        return FALSE;
+      }
     }
 #else  /* HAVE__MKDIR */
-    mkdir(path, 0755);
+    if (mkdir(path, mode) == -1
+        && fc_get_errno() != EEXIST) {
+      free(path);
+      return FALSE;
+    }
 #endif /* HAVE__MKDIR */
 #else  /* FREECIV_MSWINDOWS */
-    mkdir(path, 0755);
+    if (mkdir(path, mode) == -1
+        && fc_get_errno() != EEXIST) {
+      free(path);
+      return FALSE;
+    }
 #endif /* FREECIV_MSWINDOWS */
 
     if (dir) {
@@ -1772,6 +1851,30 @@ bool make_dir(const char *pathname)
   } while (dir);
 
   free(path);
+
+  return TRUE;
+}
+
+/************************************************************************//**
+  If the directory part of the "filename" does not exist, recursively create
+  all directories until it does.
+****************************************************************************/
+bool make_dir_for_file(char *filename)
+{
+  int i;
+
+  for (i = strlen(filename) - 1 ; filename[i] != DIR_SEPARATOR_CHAR ; i--) {
+    /* Nothing */
+  }
+
+  filename[i] = '\0';
+  log_debug("Create directory \"%s\"", filename);
+
+  if (!make_dir(filename, DIRMODE_DEFAULT)) {
+    return FALSE;
+  }
+  filename[i] = DIR_SEPARATOR_CHAR;
+
   return TRUE;
 }
 
@@ -1800,11 +1903,11 @@ bool path_is_absolute(const char *filename)
 /************************************************************************//**
   Scan in a word or set of words from start to but not including
   any of the given delimiters. The buf pointer will point past delimiter,
-  or be set to NULL if there is nothing there. Removes excess white
+  or be set to nullptr if there is nothing there. Removes excess white
   space.
 
   This function should be safe, and dest will contain "\0" and
-  *buf == NULL on failure. We always fail gently.
+  *buf == nullptr on failure. We always fail gently.
 
   Due to the way the scanning is performed, looking for a space
   will give you the first word even if it comes before multiple
@@ -1812,20 +1915,20 @@ bool path_is_absolute(const char *filename)
 
   Returns delimiter found.
 
-  Pass in NULL for dest and -1 for size to just skip ahead.  Note that if
+  Pass in nullptr for dest and -1 for size to just skip ahead. Note that if
   nothing is found, dest will contain the whole string, minus leading and
-  trailing whitespace.  You can scan for "" to conveniently grab the
+  trailing whitespace. You can scan for "" to conveniently grab the
   remainder of a string.
 ****************************************************************************/
 char scanin(const char **buf, char *delimiters, char *dest, int size)
 {
   char *ptr, found = '?';
 
-  if (*buf == NULL || strlen(*buf) == 0 || size == 0) {
+  if (*buf == nullptr || strlen(*buf) == 0 || size == 0) {
     if (dest) {
       dest[0] = '\0';
     }
-    *buf = NULL;
+    *buf = nullptr;
     return '\0';
   }
 
@@ -1838,7 +1941,7 @@ char scanin(const char **buf, char *delimiters, char *dest, int size)
     /* Just skip ahead. */
     ptr = strpbrk(*buf, delimiters);
   }
-  if (ptr != NULL) {
+  if (ptr != nullptr) {
     found = *ptr;
     if (dest) {
       *ptr = '\0';
@@ -1847,12 +1950,12 @@ char scanin(const char **buf, char *delimiters, char *dest, int size)
       remove_leading_trailing_spaces(dest);
     }
     *buf = strpbrk(*buf, delimiters);
-    if (*buf != NULL) {
-      (*buf)++; /* skip delimiter */
+    if (*buf != nullptr) {
+      (*buf)++; /* Skip delimiter */
     } else {
     }
   } else {
-    *buf = NULL;
+    *buf = nullptr;
   }
 
   return found;
@@ -1903,12 +2006,13 @@ void format_time_duration(time_t t, char *buf, int maxlen)
 /************************************************************************//**
   Randomize the elements of an array using the Fisher-Yates shuffle.
 
-  see: http://benpfaff.org/writings/clc/shuffle.html
+  See: http://benpfaff.org/writings/clc/shuffle.html
 ****************************************************************************/
 void array_shuffle(int *array, int n)
 {
-  if (n > 1 && array != NULL) {
+  if (n > 1 && array != nullptr) {
     int i, j, t;
+
     for (i = 0; i < n - 1; i++) {
       j = i + fc_rand(n - i);
       t = array[j];
@@ -1963,7 +2067,7 @@ static bool wildcard_asterisk_fit(const char *pattern, const char *test)
     if ('\0' != jump_to) {
       /* Jump to next matching charather. */
       test = strchr(test, jump_to);
-      if (NULL == test) {
+      if (test == nullptr) {
         /* No match. */
         return FALSE;
       }
@@ -1997,7 +2101,7 @@ static bool wildcard_range_fit(const char **pattern, const char **test)
   /* Find the end of the pattern. */
   while (TRUE) {
     *pattern = strchr(*pattern, ']');
-    if (NULL == *pattern) {
+    if (*pattern == nullptr) {
       /* Wildcard format error. */
       return FALSE;
     } else if (*(*pattern - 1) != '\\') {
@@ -2070,7 +2174,7 @@ bool wildcard_fit_string(const char *pattern, const char *test)
       break;
     case '\\':
       pattern++;
-      /* break; not missing. */
+      fc__fallthrough;
     default:
       if (*pattern != *test) {
         return FALSE;
@@ -2285,7 +2389,7 @@ static size_t extract_escapes(const char *format, char *escapes,
 {
   static const char format_escapes[] = {
     '*', 'd', 'i', 'o', 'u', 'x', 'X', 'e', 'E', 'f',
-    'F', 'g', 'G', 'a', 'A', 'c', 's', 'p', 'n',
+    'F', 'g', 'G', 'a', 'A', 'c', 's', 'p', 'n', '\0'
   };
   bool reordered = FALSE;
   size_t num = 0;
@@ -2293,7 +2397,7 @@ static size_t extract_escapes(const char *format, char *escapes,
 
   memset(escapes, 0, max_escapes);
   format = strchr(format, '%');
-  while (NULL != format) {
+  while (format != nullptr) {
     format++;
     if ('%' == *format) {
       /* Double, not a sequence. */
@@ -2304,6 +2408,7 @@ static size_t extract_escapes(const char *format, char *escapes,
       do {
         format++;
       } while (fc_isdigit(*format));
+
       if ('$' == *format) {
         /* Strings are reordered. */
         sscanf(start, "%d", &idx);
@@ -2312,7 +2417,7 @@ static size_t extract_escapes(const char *format, char *escapes,
     }
 
     while ('\0' != *format
-           && NULL == strchr(format_escapes, *format)) {
+           && strchr(format_escapes, *format) == nullptr) {
       format++;
     }
     escapes[idx] = *format;
@@ -2329,7 +2434,7 @@ static size_t extract_escapes(const char *format, char *escapes,
 
     if ('*' != *format) {
       format = strchr(format, '%');
-    } /* else we didn't have found the real sequence. */
+    } /* Else we didn't have found the real sequence. */
   }
   return num;
 }

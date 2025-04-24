@@ -20,8 +20,15 @@
 
 // Qt
 #include <QDialog>
-#include <QListWidget>
-#include <QToolButton>
+
+// common
+#include "requirements.h"
+
+class QListWidget;
+class QListWidgetItem;
+class QMenu;
+class QSpinBox;
+class QToolButton;
 
 class ruledit_gui;
 
@@ -37,17 +44,29 @@ class req_edit : public QDialog
 
     struct requirement_vector *req_vector;
 
+signals:
+  /********************************************************************//**
+    A requirement vector may have been changed.
+    @param vec the requirement vector that was changed.
+  ************************************************************************/
+  void req_vec_may_have_changed(const requirement_vector *vec);
+
   private:
     ruledit_gui *ui;
 
     QListWidget *req_list;
 
     struct requirement *selected;
+    struct requirement selected_values;
+    void clear_selected();
+    void update_selected();
+    void refresh_item(QListWidgetItem *item, struct requirement *preq);
+    void refresh_selected();
 
     QToolButton *edit_type_button;
     QToolButton *edit_value_enum_button;
     QMenu *edit_value_enum_menu;
-    QLineEdit *edit_value_nbr_field;
+    QSpinBox *edit_value_nbr_field;
     QToolButton *edit_range_button;
     QToolButton *edit_present_button;
 
@@ -62,7 +81,9 @@ class req_edit : public QDialog
     void req_range_menu(QAction *action);
     void req_present_menu(QAction *action);
     void univ_value_enum_menu(QAction *action);
-    void univ_value_edit();
+    void univ_value_edit(int value);
+
+    void incoming_req_vec_change(const requirement_vector *vec);
 
   protected:
     void closeEvent(QCloseEvent *event);

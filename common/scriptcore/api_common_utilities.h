@@ -25,12 +25,20 @@ struct lua_State;
 
 int api_utilities_random(lua_State *L, int min, int max);
 
-Direction api_utilities_str2dir(lua_State *L, const char *dir);
-Direction api_utilities_dir_ccw(lua_State *L, Direction dir);
-Direction api_utilities_dir_cw(lua_State *L, Direction dir);
-Direction api_utilities_opposite_dir(lua_State *L, Direction dir);
+const Direction *api_utilities_str2dir(lua_State *L, const char *dir);
+const Direction *api_utilities_dir_ccw(lua_State *L, Direction dir);
+const Direction *api_utilities_dir_cw(lua_State *L, Direction dir);
+const Direction *api_utilities_opposite_dir(lua_State *L, Direction dir);
+bool api_utilities_direction_is_cardinal(lua_State *L, Direction dir);
+int api_utilities_direction_id(lua_State *L, Direction dir);
+const char *api_utilities_dir2str(lua_State *L, Direction dir);
 
 const char *api_utilities_fc_version(lua_State *L);
+const char *api_utilities_name_version(lua_State *L);
+const char *api_utilities_comparable_version(lua_State *L);
+const char *api_utilities_version_string(lua_State *L);
+
+int api_utilities_versions_compare(lua_State *L, const char *ver1, const char *ver2);
 
 void api_utilities_log_base(lua_State *L, int level, const char *message);
 

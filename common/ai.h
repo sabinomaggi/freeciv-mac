@@ -24,28 +24,26 @@ extern "C" {
  * structure below. When changing mandatory capability part, check that
  * there's enough reserved_xx pointers in the end of the structure for
  * taking to use without need to bump mandatory capability again. */
-#define FC_AI_MOD_CAPSTR "+Freeciv-3.1-ai-module-2018.Feb.06"
+#define FC_AI_MOD_CAPSTR "+Freeciv-3.3-ai-module-2023.Jul.18"
 
 /* Timers for all AI activities. Define it to get statistics about the AI. */
 #ifdef FREECIV_DEBUG
 #  undef DEBUG_AITIMERS
 #endif /* FREECIV_DEBUG */
 
-struct Treaty;
+struct treaty;
 struct player;
 struct adv_choice;
 struct city;
 struct unit;
 struct tile;
-struct settlermap;
+struct workermap;
 struct pf_path;
 struct section_file;
 struct adv_data;
 
 enum incident_type {
-  INCIDENT_DIPLOMAT = 0, INCIDENT_WAR, INCIDENT_PILLAGE,
-  INCIDENT_NUCLEAR, INCIDENT_NUCLEAR_NOT_TARGET,
-  INCIDENT_NUCLEAR_SELF, INCIDENT_LAST
+  INCIDENT_ACTION = 0, INCIDENT_WAR, INCIDENT_LAST
 };
 
 struct ai_type
@@ -115,7 +113,7 @@ struct ai_type
     /* Called for AI type of the player who gets split to two. */
     void (*split_by_civil_war)(struct player *original, struct player *created);
 
-   /* Called for AI type of the player who got created from the split. */
+    /* Called for AI type of the player who got created from the split. */
     void (*created_by_civil_war)(struct player *original, struct player *created);
 
     /* Called for player AI type when player phase begins. This is in the
@@ -201,7 +199,7 @@ struct ai_type
     void (*unit_got)(struct unit *punit);
 
     /* Called for player AI type when unit changes type. */
-    void (*unit_transformed)(struct unit *punit, struct unit_type *old_type);
+    void (*unit_transformed)(struct unit *punit, const struct unit_type *old_type);
 
     /* Called for player AI type when player loses control of unit. */
     void (*unit_lost)(struct unit *punit);
@@ -228,17 +226,17 @@ struct ai_type
     void (*unit_load)(const struct section_file *file, struct unit *punit,
                       const char *unitstr);
 
-    /* Called for player AI type when autosettlers have been handled for the turn. */
+    /* Called for player AI type when autoworkers have been handled for the turn. */
     void (*settler_reset)(struct player *pplayer);
 
-    /* Called for player AI type when autosettlers should find new work. */
+    /* Called for player AI type when autoworkers should find new work. */
     void (*settler_run)(struct player *pplayer, struct unit *punit,
-                        struct settlermap *state);
+                        struct workermap *state);
 
-    /* Called for player AI type for each autosettler still working.
+    /* Called for player AI type for each autoworker still working.
        Cancelling current work there will result in settler_run() call. */
     void (*settler_cont)(struct player *pplayer, struct unit *punit,
-                         struct settlermap *state);
+                         struct workermap *state);
 
     /* Called for player AI type when unit wants to autoexplore towards a tile. */
     void (*want_to_explore)(struct unit *punit, struct tile *target,
@@ -260,12 +258,12 @@ struct ai_type
 
     /* Called for player AI type when diplomatic treaty requires evaluation. */
     void (*treaty_evaluate)(struct player *pplayer, struct player *aplayer,
-                            struct Treaty *ptreaty);
+                            struct treaty *ptreaty);
 
     /* Called for player AI type when diplomatic treaty has been accepted
      * by both parties. */
     void (*treaty_accepted)(struct player *pplayer, struct player *aplayer,
-                            struct Treaty *ptreaty);
+                            struct treaty *ptreaty);
 
     /* Called for player AI type when first contact with another player has been
      * established. Note that when contact is between two AI players, callback
@@ -274,9 +272,11 @@ struct ai_type
     void (*first_contact)(struct player *pplayer, struct player *aplayer);
 
     /* Called for player AI type of the victim when someone does some violation
-     * against him/her. */
-    void (*incident)(enum incident_type type, struct player *violator,
-                     struct player *victim);
+     * against them. */
+    void (*incident)(enum incident_type type, enum casus_belli_range scope,
+                     const struct action *paction,
+                     struct player *receiver,
+                     struct player *violator, struct player *victim);
 
     /* Called for player AI type of city owner when logging requires city debug
      * information. */
@@ -303,6 +303,21 @@ struct ai_type
 
     /* Called for every AI type when tile has changed */
     void (*tile_info)(struct tile *ptile);
+
+    /* Called for every AI type when certain kind of city change has taken place.
+     * Currently this gets called when:
+     *  - city changes owner.
+     */
+    void (*city_info)(struct city *pcity);
+
+    /* Called for every AI type when certain kind of unit change has taken place.
+     * Currently this gets called when:
+     *  - unit updates & conversions
+     */
+    void (*unit_info)(struct unit *punit);
+
+    /* Called for player AI when revolution starts. */
+    void (*revolution_start)(struct player *pplayer);
 
     /* These are here reserving space for future optional callbacks.
      * This way we don't need to change the mandatory capability of the AI module
@@ -384,4 +399,4 @@ void ai_timer_player_stop(const struct player *pplayer);
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__AI_H */
+#endif /* FC__AI_H */

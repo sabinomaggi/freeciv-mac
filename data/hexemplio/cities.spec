@@ -4,19 +4,29 @@
 ; specified in cities.ruleset file and the index only defines the read order
 ; of the images. The definitions are read starting with index 0 till the first
 ; missing value The index is checked against the city bonus of effect
-; EFT_CITY_IMAGE and the resulting image is used to draw the city on the tile.
+; City_Image and the resulting image is used to draw the city on the tile.
 ;
 ; Obviously the first tile must be 'style_name'_city_0 and the sizes must be
-; in ascending order. There must also be a 'style_name'_wall_0 tile used to
-; draw the wall and an occupied tile to indicate a military units in a city.
+; in ascending order. There must also be a 'style_name'_wall_0 tile used
+; for the default wall graphics and an occupied tile to indicate
+; a military units in a city.
+; For providing multiple walls buildings (as requested by the "Visible_Walls"
+; effect value) tags are 'style_name'_bldg_'effect_value'_'index'.
 ; The maximum number of images is only limited by the maximum size of a city
 ; (currently MAX_CITY_SIZE = 255).
+;
+; For providing custom citizen icons for the city style, use tags of the form
+; 'citizen.<tag>.<citizen_type>_<index>'
+; where <tag> is citizens_graphic tag from the styles.ruleset,
+; <citizen_type> is type like 'content', same ones as
+; misc/small.spec has for the default citizen icons, and
+; <index> is a running number for alternative sprites.
 ;
 
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -77,47 +87,47 @@ tiles = { "row", "column", "tag"
  2,  8, "city.classical_wall_3"
  2,  9, "city.classical_wall_4"
 ;[E][TVK]
- 3,  0, "city.babylonian_city_0"
- 3,  1, "city.babylonian_city_1"
- 3,  2, "city.babylonian_city_2"
- 3,  3, "city.babylonian_city_3"
- 3,  4, "city.babylonian_city_4"
-;[E][TVK][HH]
- 3,  5, "city.babylonian_wall_0"
- 3,  6, "city.babylonian_wall_1"
- 3,  7, "city.babylonian_wall_2"
- 3,  8, "city.babylonian_wall_3"
- 3,  9, "city.babylonian_wall_4"
-;[TVK]
- 4,  0, "city.asian_city_0"
- 4,  1, "city.asian_city_1"
- 4,  2, "city.asian_city_2"
- 4,  3, "city.asian_city_3"
- 4,  4, "city.asian_city_4"
+ 3,  0, "city.asian_city_0"
+ 3,  1, "city.asian_city_1"
+ 3,  2, "city.asian_city_2"
+ 3,  3, "city.asian_city_3"
+ 3,  4, "city.asian_city_4"
 ;[TVK][HH]
- 4,  5, "city.asian_wall_0"
- 4,  6, "city.asian_wall_1"
- 4,  7, "city.asian_wall_2"
- 4,  8, "city.asian_wall_3"
- 4,  9, "city.asian_wall_4"
+ 3,  5, "city.asian_wall_0"
+ 3,  6, "city.asian_wall_1"
+ 3,  7, "city.asian_wall_2"
+ 3,  8, "city.asian_wall_3"
+ 3,  9, "city.asian_wall_4"
 ;[TVK]
- 5,  0, "city.tropical_city_0"
- 5,  1, "city.tropical_city_1"
- 5,  2, "city.tropical_city_2"
- 5,  3, "city.tropical_city_3"
- 5,  4, "city.tropical_city_4"
+ 4,  0, "city.tropical_city_0"
+ 4,  1, "city.tropical_city_1"
+ 4,  2, "city.tropical_city_2"
+ 4,  3, "city.tropical_city_3"
+ 4,  4, "city.tropical_city_4"
 ;[TVK][HH]
- 5,  5, "city.tropical_wall_0"
- 5,  6, "city.tropical_wall_1"
- 5,  7, "city.tropical_wall_2"
- 5,  8, "city.tropical_wall_3"
- 5,  9, "city.tropical_wall_4"
+ 4,  5, "city.tropical_wall_0"
+ 4,  6, "city.tropical_wall_1"
+ 4,  7, "city.tropical_wall_2"
+ 4,  8, "city.tropical_wall_3"
+ 4,  9, "city.tropical_wall_4"
 ;[S]
+ 5,  0, "city.babylonian_city_0"
+ 5,  1, "city.babylonian_city_1"
+ 5,  2, "city.babylonian_city_2"
+ 5,  3, "city.babylonian_city_3"
+ 5,  4, "city.babylonian_city_4"
+;[E][TVK][HH]
+ 5,  5, "city.babylonian_wall_0"
+ 5,  6, "city.babylonian_wall_1"
+ 5,  7, "city.babylonian_wall_2"
+ 5,  8, "city.babylonian_wall_3"
+ 5,  9, "city.babylonian_wall_4"
+;[TVK]
  6,  0, "city.industrial_city_0"
  6,  1, "city.industrial_city_1"
  6,  2, "city.industrial_city_2"
- 6,  1, "city.industrial_city_3"
- 6,  2, "city.industrial_city_4"
+ 6,  3, "city.industrial_city_3"
+ 6,  4, "city.industrial_city_4"
 ;[S][HH]
  6,  5, "city.industrial_wall_0"
  6,  6, "city.industrial_wall_1"

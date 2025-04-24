@@ -41,24 +41,29 @@
 #include "sprite.h"
 #include "repodlgs.h"
 #include "text.h"
+#include "zoom.h"
 
 // gui-qt
 #include "colors.h"
 #include "fc_client.h"
-#include "qtg_cxxside.h"
+#include "gui_main.h"
 #include "mapview.h"
+#include "qtg_cxxside.h"
 #include "sidebar.h"
 
 const char *get_timeout_label_text();
 static int mapview_frozen_level = 0;
 extern void destroy_city_dialog();
 extern struct canvas *canvas;
-extern QApplication *qapp;
 
 #define MAX_DIRTY_RECTS 20
 static int num_dirty_rects = 0;
 static QRect dirty_rects[MAX_DIRTY_RECTS];
-static int last_turn = 0;
+
+extern int last_center_enemy;
+extern int last_center_capital;
+extern int last_center_player_city;
+extern int last_center_enemy_city;
 
 /**********************************************************************//**
   Check if point x, y is in area (px -> pxe, py - pye)
@@ -66,8 +71,8 @@ static int last_turn = 0;
 bool is_point_in_area(int x, int y, int px, int py, int pxe, int pye)
 {
   if (x >= px && y >= py && x <= pxe && y <= pye) {
-      return true;
-    }
+    return true;
+  }
   return false;
 }
 
@@ -84,53 +89,56 @@ void draw_calculated_trade_routes(QPainter *painter)
   struct color *pcolor;
   QPen pen;
 
-  if (!gui_options.draw_city_trade_routes || !can_client_control()
+  if (!can_client_control()
       || gui()->trade_gen.cities.empty()) {
     return;
   }
   pcolor = get_color(tileset, COLOR_MAPVIEW_TRADE_ROUTES_NO_BUILT);
-  /* Draw calculated trade routes */
-  foreach (qgilles, gui()->trade_gen.lines) {
-    base_map_distance_vector(&dx, &dy, TILE_XY(qgilles.t1),
-                             TILE_XY(qgilles.t2));
-    map_to_gui_vector(tileset, 1.0, &w, &h, dx, dy);
+  // Draw calculated trade routes
+  if (gui_options.draw_city_trade_routes) {
 
-    tile_to_canvas_pos(&x1, &y1, qgilles.t1);
-    tile_to_canvas_pos(&x2, &y2, qgilles.t2);
+    foreach (qgilles, gui()->trade_gen.lines) {
+      base_map_distance_vector(&dx, &dy, TILE_XY(qgilles.t1),
+                               TILE_XY(qgilles.t2));
+      map_to_gui_vector(tileset, 1.0, &w, &h, dx, dy);
 
-    /* Dont draw if route was already established */
-    if (tile_city(qgilles.t1) && tile_city(qgilles.t2)
-        && have_cities_trade_route(tile_city(qgilles.t1),
-                                   tile_city(qgilles.t2))) {
+      tile_to_canvas_pos(&x1, &y1, map_zoom, qgilles.t1);
+      tile_to_canvas_pos(&x2, &y2, map_zoom, qgilles.t2);
+
+      // Dont draw if route was already established
+      if (tile_city(qgilles.t1) && tile_city(qgilles.t2)
+          && have_cities_trade_route(tile_city(qgilles.t1),
+                                     tile_city(qgilles.t2))) {
         continue;
-    }
+      }
 
-    if (qgilles.autocaravan != nullptr) {
-      pcolor = get_color(tileset, COLOR_MAPVIEW_TRADE_ROUTES_SOME_BUILT);
-    }
+      if (qgilles.autocaravan != nullptr) {
+        pcolor = get_color(tileset, COLOR_MAPVIEW_TRADE_ROUTES_SOME_BUILT);
+      }
 
-    pen.setColor(pcolor->qcolor);
-    pen.setStyle(Qt::DashLine);
-    pen.setDashOffset(4);
-    pen.setWidth(1);
-    painter->setPen(pen);
-    if (x2 - x1 == w && y2 - y1 == h) {
-      painter->drawLine(x1 + tileset_tile_width(tileset) / 2,
-                        y1 + tileset_tile_height(tileset) / 2,
-                        x1 + tileset_tile_width(tileset) / 2 + w,
-                        y1 + tileset_tile_height(tileset) / 2 + h);
-      continue;
+      pen.setColor(pcolor->qcolor);
+      pen.setStyle(Qt::DashLine);
+      pen.setDashOffset(4);
+      pen.setWidth(1);
+      painter->setPen(pen);
+      if (x2 - x1 == w && y2 - y1 == h) {
+        painter->drawLine(x1 + tileset_tile_width(tileset) / 2,
+                          y1 + tileset_tile_height(tileset) / 2,
+                          x1 + tileset_tile_width(tileset) / 2 + w,
+                          y1 + tileset_tile_height(tileset) / 2 + h);
+        continue;
+      }
+      painter->drawLine(x2 + tileset_tile_width(tileset) / 2,
+                        y2 + tileset_tile_height(tileset) / 2,
+                        x2 + tileset_tile_width(tileset) / 2 - w,
+                        y2 + tileset_tile_height(tileset) / 2 - h);
     }
-    painter->drawLine(x2 + tileset_tile_width(tileset) / 2,
-                      y2 + tileset_tile_height(tileset) / 2,
-                      x2 + tileset_tile_width(tileset) / 2 - w,
-                      y2 + tileset_tile_height(tileset) / 2 - h);
   }
-  /* Draw virtual cities */
+  // Draw virtual cities
   foreach (pcity, gui()->trade_gen.virtual_cities) {
     float canvas_x, canvas_y;
     if (pcity->tile != nullptr
-        && tile_to_canvas_pos(&canvas_x, &canvas_y, pcity->tile)) {
+        && tile_to_canvas_pos(&canvas_x, &canvas_y, map_zoom, pcity->tile)) {
       painter->drawPixmap(static_cast<int>(canvas_x),
                           static_cast<int>(canvas_y),
                           *get_attention_crosshair_sprite(tileset)->pm);
@@ -148,11 +156,24 @@ mr_idle::mr_idle()
 }
 
 /**********************************************************************//**
-  Slot used to execute 1 callback from callabcks stored in idle list
+  Destructor for idle callbacks
+**************************************************************************/
+mr_idle::~mr_idle()
+{
+  call_me_back *cb;
+
+  while (!callback_list.isEmpty()) {
+    cb = callback_list.dequeue();
+    delete cb;
+  }
+}
+
+/**********************************************************************//**
+  Slot used to execute 1 callback from callbacks stored in idle list
 **************************************************************************/
 void mr_idle::idling()
 {
-  call_me_back* cb;
+  call_me_back *cb;
 
   while (!callback_list.isEmpty()) {
     cb = callback_list.dequeue();
@@ -164,7 +185,7 @@ void mr_idle::idling()
 /**********************************************************************//**
   Adds one callback to execute later
 **************************************************************************/
-void mr_idle::add_callback(call_me_back* cb)
+void mr_idle::add_callback(call_me_back *cb)
 {
   callback_list.enqueue(cb);
 }
@@ -230,8 +251,8 @@ void map_view::timer_event()
 **************************************************************************/
 void map_view::update_font(const QString &name, const QFont &font)
 {
-  if (name == fonts::city_names ||
-      name == fonts::city_productions) {
+  if (name == fonts::city_names
+      || name == fonts::city_productions) {
     update_map_canvas_visible();
   }
 }
@@ -275,9 +296,9 @@ void map_view::paint(QPainter *painter, QPaintEvent *event)
 }
 
 /**********************************************************************//**
-  Sets new point for new search 
+  Sets new point for new search
 **************************************************************************/
-void map_view::resume_searching(int pos_x ,int pos_y ,int &w, int &h,
+void map_view::resume_searching(int pos_x, int pos_y, int &w, int &h,
                                 int wdth, int hght, int recursive_nr)
 {
   int new_pos_x, new_pos_y;
@@ -304,7 +325,7 @@ void map_view::resume_searching(int pos_x ,int pos_y ,int &w, int &h,
   Returns position as (w,h)
   Along with resume_searching its recursive function.
 **************************************************************************/
-void map_view::find_place(int pos_x, int pos_y, int &w, int &h, int wdth, 
+void map_view::find_place(int pos_x, int pos_y, int &w, int &h, int wdth,
                           int hght, int recursive_nr)
 {
   int i;
@@ -313,9 +334,7 @@ void map_view::find_place(int pos_x, int pos_y, int &w, int &h, int wdth,
   bool cont_searching = false;
 
   if (recursive_nr >= 1000) {
-    /**
-     * give up searching position
-     */
+    // Give up searching position
     return;
   }
   /**
@@ -324,7 +343,7 @@ void map_view::find_place(int pos_x, int pos_y, int &w, int &h, int wdth,
    */
 
   for (i = 0; i < widgets.count(); i++) {
-    if (widgets[i]->isVisible() == false) {
+    if (!widgets[i]->isVisible()) {
       continue;
     }
     x = widgets[i]->pos().x();
@@ -364,9 +383,13 @@ void map_view::find_place(int pos_x, int pos_y, int &w, int &h, int wdth,
 **************************************************************************/
 move_widget::move_widget(QWidget *parent) : QLabel()
 {
+  QPixmap *pix;
+
   setParent(parent);
   setCursor(Qt::SizeAllCursor);
-  setPixmap(*fc_icons::instance()->get_pixmap("move"));
+  pix = fc_icons::instance()->get_pixmap("move");
+  setPixmap(*pix);
+  delete pix;
   setFixedSize(16, 16);
 }
 
@@ -383,19 +406,21 @@ void move_widget::put_to_corner()
 **************************************************************************/
 void move_widget::mouseMoveEvent(QMouseEvent *event)
 {
-  if(gui()->interface_locked == false) {
-    parentWidget()->move(event->globalPos() - point);
+  if (!gui()->interface_locked) {
+    parentWidget()->move(event->globalPosition().toPoint() - point);
   }
 }
 
 /**********************************************************************//**
-  Sets moving point for move widget;
+  Sets moving point for move widget
 **************************************************************************/
-void move_widget::mousePressEvent(QMouseEvent* event)
+void move_widget::mousePressEvent(QMouseEvent *event)
 {
-  if (gui()->interface_locked == false) {
-    point = event->globalPos() - parentWidget()->geometry().topLeft();
+  if (!gui()->interface_locked) {
+    point = event->globalPosition().toPoint()
+      - parentWidget()->geometry().topLeft();
   }
+
   update();
 }
 
@@ -404,9 +429,13 @@ void move_widget::mousePressEvent(QMouseEvent* event)
 **************************************************************************/
 resize_widget::resize_widget(QWidget *parent) : QLabel()
 {
+  QPixmap *pix;
+
   setParent(parent);
   setCursor(Qt::SizeFDiagCursor);
-  setPixmap(*fc_icons::instance()->get_pixmap("resize"));
+  pix = fc_icons::instance()->get_pixmap("resize");
+  setPixmap(*pix);
+  delete pix;
 }
 
 /**********************************************************************//**
@@ -421,14 +450,15 @@ void resize_widget::put_to_corner()
 /**********************************************************************//**
   Mouse handler for resize widget (resizes parent widget)
 **************************************************************************/
-void resize_widget::mouseMoveEvent(QMouseEvent * event)
+void resize_widget::mouseMoveEvent(QMouseEvent *event)
 {
   QPoint qp, np;
 
   if (gui()->interface_locked) {
     return;
   }
-  qp = event->globalPos();
+
+  qp = event->globalPosition().toPoint();
   np.setX(qp.x() - point.x());
   np.setY(qp.y() - point.y());
   np.setX(qMax(np.x(), 32));
@@ -439,14 +469,15 @@ void resize_widget::mouseMoveEvent(QMouseEvent * event)
 /**********************************************************************//**
   Sets moving point for resize widget;
 **************************************************************************/
-void resize_widget::mousePressEvent(QMouseEvent* event)
+void resize_widget::mousePressEvent(QMouseEvent *event)
 {
   QPoint qp;
 
   if (gui()->interface_locked) {
     return;
   }
-  qp = event->globalPos();
+
+  qp = event->globalPosition().toPoint();
   point.setX(qp.x() - parentWidget()->width());
   point.setY(qp.y() - parentWidget()->height());
   update();
@@ -457,9 +488,13 @@ void resize_widget::mousePressEvent(QMouseEvent* event)
 **************************************************************************/
 close_widget::close_widget(QWidget *parent) : QLabel()
 {
+  QPixmap *pix;
+
   setParent(parent);
   setCursor(Qt::ArrowCursor);
-  setPixmap(*fc_icons::instance()->get_pixmap("close"));
+  pix = fc_icons::instance()->get_pixmap("close");
+  setPixmap(*pix);
+  delete pix;
 }
 
 /**********************************************************************//**
@@ -570,7 +605,7 @@ static void gui_to_overview(int *ovr_x, int *ovr_y, int gui_x, int gui_y)
   }
 
   if (MAP_IS_ISOMETRIC) {
-    ntl_y = map_x + map_y - wld.map.xsize;
+    ntl_y = map_x + map_y - MAP_NATIVE_WIDTH;
     ntl_x = 2 * map_x - ntl_y;
   } else {
     ntl_x = map_x;
@@ -582,15 +617,15 @@ static void gui_to_overview(int *ovr_x, int *ovr_y, int gui_x, int gui_y)
   *ovr_y = floor((ntl_y - (double)gui_options.overview.map_y0)
            * OVERVIEW_TILE_SIZE);
 
-  if (current_topo_has_flag(TF_WRAPX)) {
-    *ovr_x = FC_WRAP(*ovr_x, NATURAL_WIDTH * OVERVIEW_TILE_SIZE);
+  if (current_wrap_has_flag(WRAP_X)) {
+    *ovr_x = FC_WRAP(*ovr_x, MAP_NATURAL_WIDTH * OVERVIEW_TILE_SIZE);
   } else {
     if (MAP_IS_ISOMETRIC) {
       *ovr_x -= OVERVIEW_TILE_SIZE;
     }
   }
-  if (current_topo_has_flag(TF_WRAPY)) {
-    *ovr_y = FC_WRAP(*ovr_y, NATURAL_HEIGHT * OVERVIEW_TILE_SIZE);
+  if (current_wrap_has_flag(WRAP_Y)) {
+    *ovr_y = FC_WRAP(*ovr_y, MAP_NATURAL_HEIGHT * OVERVIEW_TILE_SIZE);
   }
 }
 
@@ -709,14 +744,14 @@ void minimap_view::update_pixmap(const QImage &image)
 }
 
 /**********************************************************************//**
-  Minimap thread's contructor
+  Minimap thread's constructor
 **************************************************************************/
 minimap_thread::minimap_thread(QObject *parent) : QThread(parent)
 {
 }
 
 /**********************************************************************//**
-  Minimap thread's desctructor
+  Minimap thread's destructor
 **************************************************************************/
 minimap_thread::~minimap_thread()
 {
@@ -794,7 +829,7 @@ void minimap_thread::run()
 **************************************************************************/
 void minimap_view::update_image()
 {
-  if (isHidden() == true ) {
+  if (isHidden()) {
     return;
   }
   thread.render(scale_factor, width(), height());
@@ -849,9 +884,9 @@ void minimap_view::resizeEvent(QResizeEvent* event)
 /**********************************************************************//**
   Wheel event for minimap - zooms it in or out
 **************************************************************************/
-void minimap_view::wheelEvent(QWheelEvent * event)
+void minimap_view::wheelEvent(QWheelEvent *event)
 {
-  if (event->delta() > 0) {
+  if (event->angleDelta().y() > 0) {
     zoom_in();
   } else {
     zoom_out();
@@ -883,7 +918,7 @@ void minimap_view::zoom_out()
   Right button - recenters on some point
   For wheel look mouseWheelEvent
 **************************************************************************/
-void minimap_view::mousePressEvent(QMouseEvent * event)
+void minimap_view::mousePressEvent(QMouseEvent *event)
 {
   int fx, fy;
   int x, y;
@@ -892,8 +927,9 @@ void minimap_view::mousePressEvent(QMouseEvent * event)
     if (gui()->interface_locked) {
       return;
     }
-    cursor = event->globalPos() - geometry().topLeft();
+    cursor = event->globalPosition().toPoint() - geometry().topLeft();
   }
+
   if (event->button() == Qt::RightButton) {
     cursor = event->pos();
     fx = event->pos().x();
@@ -911,23 +947,26 @@ void minimap_view::mousePressEvent(QMouseEvent * event)
     center_tile_mapcanvas(map_pos_to_tile(&(wld.map), x, y));
     update_image();
   }
+
   event->setAccepted(true);
 }
 
 /**********************************************************************//**
   Called when mouse button was pressed. Used to moving minimap.
 **************************************************************************/
-void minimap_view::mouseMoveEvent(QMouseEvent* event)
+void minimap_view::mouseMoveEvent(QMouseEvent *event)
 {
   if (gui()->interface_locked) {
     return;
   }
+
   if (event->buttons() & Qt::LeftButton) {
     QPoint p, r;
+
     p = event->pos();
     r = mapTo(gui()->mapview_wdg, p);
     p = r - p;
-    move(event->globalPos() - cursor);
+    move(event->globalPosition().toPoint() - cursor);
     setCursor(Qt::SizeAllCursor);
     gui()->qt_settings.minimap_x = static_cast<float>(p.x()) / mapview.width;
     gui()->qt_settings.minimap_y = static_cast<float>(p.y())
@@ -992,7 +1031,7 @@ void fc_client::update_info_label(void)
                       client_warming_sprite(),
                       client_cooling_sprite(), client_government_sprite());
 
-  if (client.conn.playing != NULL) {
+  if (client.conn.playing != nullptr) {
     if (player_get_expected_income(client.conn.playing) > 0) {
       eco_info = QString(_("%1 (+%2)"))
                  .arg(QString::number(client.conn.playing->economic.gold),
@@ -1018,7 +1057,7 @@ void fc_client::update_info_label(void)
   and the tile under the current unit, for specified unit.  Note that
   in practice punit is always the focus unit.
 
-  Clears label if punit is NULL.
+  Clears label if punit is nullptr.
 
   Typically also updates the cursor for the map_canvas (this is
   related because the info label may includes "select destination"
@@ -1027,6 +1066,9 @@ void fc_client::update_info_label(void)
 **************************************************************************/
 void update_unit_info_label(struct unit_list *punitlist)
 {
+  if (gui()->unitinfo_wdg->isVisible()) {
+    gui()->unitinfo_wdg->update_actions(nullptr);
+  }
 }
 
 /**********************************************************************//**
@@ -1046,16 +1088,12 @@ void qtg_update_timeout_label(void)
 {
   gui()->sw_endturn->set_custom_labels(QString(get_timeout_label_text()));
   gui()->sw_endturn->update_final_pixmap();
-  if (last_turn != game.info.turn) {
-    qt_start_turn();
-  }
-  last_turn = game.info.turn;
 }
 
 /**********************************************************************//**
   If do_restore is false it should change the turn button style (to
-  draw the user's attention to it).  If called regularly from a timer
-  this will give a blinking turn done button.  If do_restore is true
+  draw the user's attention to it). If called regularly from a timer
+  this will give a blinking turn done button. If do_restore is true
   this should reset the turn done button to the default style.
 **************************************************************************/
 void update_turn_done_button(bool do_restore)
@@ -1064,7 +1102,6 @@ void update_turn_done_button(bool do_restore)
     return;
   }
   side_blink_endturn(do_restore);
-
 }
 
 
@@ -1085,15 +1122,15 @@ void set_indicator_icons(struct sprite *bulb, struct sprite *sol,
 struct canvas *get_overview_window(void)
 {
   gui()->minimapview_wdg->update_image();
-  return NULL;
+  return nullptr;
 }
 
 /**********************************************************************//**
   Flush the given part of the canvas buffer (if there is one) to the
   screen.
 **************************************************************************/
-void flush_mapcanvas(int canvas_x, int canvas_y,
-                     int pixel_width, int pixel_height)
+static void flush_mapcanvas(int canvas_x, int canvas_y,
+                            int pixel_width, int pixel_height)
 {
   gui()->mapview_wdg->repaint(canvas_x, canvas_y, pixel_width, pixel_height);
 }
@@ -1143,6 +1180,7 @@ void flush_dirty(void)
                     gui()->mapview_wdg->height());
   } else {
     int i;
+
     for (i = 0; i < num_dirty_rects; i++) {
       flush_mapcanvas(dirty_rects[i].x(), dirty_rects[i].y(),
                       dirty_rects[i].width(), dirty_rects[i].height());
@@ -1175,7 +1213,7 @@ void update_map_canvas_scrollbars(void)
 **************************************************************************/
 void update_map_canvas_scrollbars_size(void)
 {
-  /* PORTME */
+  // PORTME
 }
 
 /**********************************************************************//**
@@ -1196,7 +1234,7 @@ void pixmap_put_overlay_tile(int canvas_x, int  canvas_y,
     return;
   }
 
-  /* PORTME */
+  // PORTME
 }
 
 /**********************************************************************//**
@@ -1206,7 +1244,7 @@ void put_cross_overlay_tile(struct tile *ptile)
 {
   float canvas_x, canvas_y;
 
-  if (tile_to_canvas_pos(&canvas_x, &canvas_y, ptile)) {
+  if (tile_to_canvas_pos(&canvas_x, &canvas_y, map_zoom, ptile)) {
     pixmap_put_overlay_tile(canvas_x, canvas_y,
                             get_attention_crosshair_sprite(tileset));
   }
@@ -1218,7 +1256,7 @@ void put_cross_overlay_tile(struct tile *ptile)
 **************************************************************************/
 void draw_selection_rectangle(int canvas_x, int canvas_y, int w, int h)
 {
-  /* PORTME */
+  // PORTME
 }
 
 /**********************************************************************//**
@@ -1232,7 +1270,7 @@ void tileset_changed(void)
 
   update_unit_info_label(get_units_in_focus());
   destroy_city_dialog();
-  /* Update science report if open */
+  // Update science report if open
   if (gui()->is_repo_dlg_open("SCI")) {
     i = gui()->gimme_index_of("SCI");
     fc_assert(i != -1);
@@ -1280,7 +1318,7 @@ void overview_size_changed(void)
 **************************************************************************/
 void update_overview_scroll_window_pos(int x, int y)
 {
-  /* TODO: PORTME. */
+  // TODO: PORTME.
 }
 
 /**********************************************************************//**
@@ -1319,7 +1357,7 @@ void mapview_thaw(void)
 info_tile::info_tile(struct tile *ptile, QWidget *parent): QLabel(parent)
 {
   setParent(parent);
-  info_font = *fc_font::instance()->get_font(fonts::comment_label);
+  info_font = *fc_font::instance()->get_font(fonts::notify_label);
   itile = ptile;
   calc_size();
 }
@@ -1331,9 +1369,6 @@ void info_tile::calc_size()
 {
   QFontMetrics fm(info_font);
   QString str;
-  int hh = tileset_tile_height(tileset);
-  int fin_x;
-  int fin_y;
   float x, y;
   int w = 0;
 
@@ -1341,20 +1376,26 @@ void info_tile::calc_size()
   str_list = str.split("\n");
 
   foreach(str, str_list) {
-    w = qMax(w, fm.width(str));
+    w = qMax(w, fm.horizontalAdvance(str));
   }
   setFixedHeight(str_list.count() * (fm.height() + 5));
   setFixedWidth(w + 10);
-  if (tile_to_canvas_pos(&x, &y, itile)) {
+
+  if (tile_to_canvas_pos(&x, &y, map_zoom, itile)) {
+    int fin_x;
+    int fin_y;
+    int wh = height();
+    int ww = width();
+    int pw = parentWidget()->width();
+
     fin_x = x;
-    fin_y = y;
-    if (y - height() > 0) {
-      fin_y = y - height();
+    if (y - wh > 0) {
+      fin_y = y - wh;
     } else {
-      fin_y = y + hh;
+      fin_y = y + tileset_tile_height(tileset);
     }
-    if (x + width() > parentWidget()->width()) {
-      fin_x = parentWidget()->width() - width();
+    if (x + ww > pw) {
+      fin_x = pw - ww;
     }
     move(fin_x, fin_y);
   }
@@ -1394,9 +1435,31 @@ void info_tile::paintEvent(QPaintEvent *event)
 **************************************************************************/
 void info_tile::update_font(const QString &name, const QFont &font)
 {
-  if (name == fonts::comment_label) {
+  if (name == fonts::notify_label) {
     info_font = font;
     calc_size();
     update();
   }
+}
+
+/**********************************************************************//**
+  New turn callback
+**************************************************************************/
+void qtg_start_turn()
+{
+  show_new_turn_info();
+  last_center_enemy = 0;
+  last_center_capital = 0;
+  last_center_player_city = 0;
+  last_center_enemy_city = 0;
+}
+
+/**********************************************************************//**
+  Refresh map canvas size information
+**************************************************************************/
+void qtg_map_canvas_size_refresh(void)
+{
+  /* Needed only with full screen zoom mode.
+   * Not needed, nor implemented, in this client. */
+  fc_assert(false);
 }

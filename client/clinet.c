@@ -74,14 +74,15 @@
 /* client */
 #include "agents.h"
 #include "attribute.h"
+#include "audio.h"
 #include "chatline_g.h"
 #include "client_main.h"
 #include "climisc.h"
 #include "connectdlg_common.h"
 #include "connectdlg_g.h"
-#include "dialogs_g.h"		/* popdown_races_dialog() */
-#include "gui_main_g.h"		/* add_net_input(), remove_net_input() */
-#include "mapview_common.h"	/* unqueue_mapview_update */
+#include "dialogs_g.h"          /* popdown_races_dialog() */
+#include "gui_main_g.h"         /* add_net_input(), remove_net_input() */
+#include "mapview_common.h"     /* unqueue_mapview_update */
 #include "menu_g.h"
 #include "messagewin_g.h"
 #include "options.h"
@@ -93,14 +94,12 @@
 #include "clinet.h"
 
 /* In autoconnect mode, try to connect to once a second */
-#define AUTOCONNECT_INTERVAL		500
+#define AUTOCONNECT_INTERVAL            500
 
 /* In autoconnect mode, try to connect 100 times */
-#define MAX_AUTOCONNECT_ATTEMPTS	100
+#define MAX_AUTOCONNECT_ATTEMPTS        100
 
-extern char forced_tileset_name[512];
 static struct fc_sockaddr_list *list = NULL;
-static int name_count;
 
 /**********************************************************************//**
   Close socket and cleanup.  This one doesn't print a message, so should
@@ -110,7 +109,7 @@ static void close_socket_nomessage(struct connection *pc)
 {
   connection_common_close(pc);
   remove_net_input();
-  popdown_races_dialog(); 
+  popdown_races_dialog();
   close_connection_dialog();
 
   set_client_state(C_S_DISCONNECTED);
@@ -149,6 +148,8 @@ static void client_conn_close_callback(struct connection *pconn)
 static int get_server_address(const char *hostname, int port,
                               char *errbuf, int errbufsize)
 {
+  int name_count;
+
   if (port == 0) {
 #ifdef FREECIV_JSON_CONNECTION
     port = FREECIV_JSON_PORT;
@@ -183,8 +184,8 @@ static int get_server_address(const char *hostname, int port,
   Try to connect to a server (get_server_address() must be called first!):
    - try to create a TCP socket and connect it to `names'
    - if successful:
-	  - start monitoring the socket for packets from the server
-	  - send a "login request" packet to the server
+          - start monitoring the socket for packets from the server
+          - send a "login request" packet to the server
       and - return 0
    - if unable to create the connection, close the socket, put an error
      message in ERRBUF and return the Unix error code (ie., errno, which
@@ -246,7 +247,7 @@ static int try_to_connect(const char *username, char *errbuf, int errbufsize)
   return 0; on failure, put an error message in ERRBUF and return -1.
 **************************************************************************/
 int connect_to_server(const char *username, const char *hostname, int port,
-		      char *errbuf, int errbufsize)
+                      char *errbuf, int errbufsize)
 {
   if (errbufsize > 0 && errbuf != NULL) {
     errbuf[0] = '\0';
@@ -260,7 +261,6 @@ int connect_to_server(const char *username, const char *hostname, int port,
     return -1;
   }
 
-  forced_tileset_name[0] = '\0';
   if (gui_options.use_prev_server) {
     sz_strlcpy(gui_options.default_server_host, hostname);
     gui_options.default_server_port = port;
@@ -295,7 +295,7 @@ void make_connection(int sock, const char *username)
   sz_strlcpy(req.version_label, VERSION_LABEL);
   sz_strlcpy(req.capability, our_capability);
   sz_strlcpy(req.username, username);
-  
+
   send_packet_server_join_req(&client.conn, &req);
 }
 
@@ -303,7 +303,7 @@ void make_connection(int sock, const char *username)
   Get rid of server connection. This also kills internal server if it's
   used.
 **************************************************************************/
-void disconnect_from_server(void)
+void disconnect_from_server(bool leaving_sound)
 {
   const bool force = !client.conn.used;
 
@@ -311,7 +311,7 @@ void disconnect_from_server(void)
 
   stop_turn_change_wait();
 
-  /* If it's internal server - kill him 
+  /* If it's internal server - kill it
    * We assume that we are always connected to the internal server  */
   if (!force) {
     client_kill_server(FALSE);
@@ -321,6 +321,10 @@ void disconnect_from_server(void)
     client_kill_server(TRUE);
   }
   output_window_append(ftc_client, _("Disconnected from server."));
+
+  if (leaving_sound) {
+    audio_play_sound("e_leave_game", NULL, NULL);
+  }
 
   if (gui_options.save_options_on_exit) {
     options_save(NULL);
@@ -418,10 +422,10 @@ void input_from_server(int fd)
       void *packet = get_packet_from_connection(&client.conn, &type);
 
       if (NULL != packet) {
-	client_packet_input(packet, type);
-	free(packet);
+        client_packet_input(packet, type);
+        packet_destroy(packet, type);
       } else {
-	break;
+        break;
       }
     }
     if (client.conn.used) {
@@ -440,8 +444,8 @@ void input_from_server(int fd)
   the PACKET_PROCESSING_FINISHED packet for the given request is
   received.
 **************************************************************************/
-void input_from_server_till_request_got_processed(int fd, 
-						  int expected_request_id)
+void input_from_server_till_request_got_processed(int fd,
+                                                  int expected_request_id)
 {
   fc_assert_ret(expected_request_id);
   fc_assert_ret(fd == client.conn.sock);
@@ -456,24 +460,25 @@ void input_from_server_till_request_got_processed(int fd,
       enum packet_type type;
 
       while (TRUE) {
-	void *packet = get_packet_from_connection(&client.conn, &type);
-	if (NULL == packet) {
-	  break;
-	}
+        void *packet = get_packet_from_connection(&client.conn, &type);
 
-	client_packet_input(packet, type);
-	free(packet);
+        if (NULL == packet) {
+          break;
+        }
 
-	if (type == PACKET_PROCESSING_FINISHED) {
+        client_packet_input(packet, type);
+        packet_destroy(packet, type);
+
+        if (type == PACKET_PROCESSING_FINISHED) {
           log_debug("ifstrgp: expect=%d, seen=%d",
                     expected_request_id,
                     client.conn.client.last_processed_request_id_seen);
-	  if (client.conn.client.last_processed_request_id_seen >=
-	      expected_request_id) {
+          if (client.conn.client.last_processed_request_id_seen >=
+              expected_request_id) {
             log_debug("ifstrgp: got it; returning");
-	    return;
-	  }
-	}
+            return;
+          }
+        }
       }
     } else if (-2 == nb) {
       connection_close(&client.conn, _("server disconnected"));
@@ -495,7 +500,7 @@ double try_to_autoconnect(void)
   char errbuf[512];
   static int count = 0;
 #ifndef FREECIV_MSWINDOWS
-  static int warning_shown = 0;
+  static bool warning_shown = FALSE;
 #endif
 
   if (!autoconnecting) {
@@ -512,32 +517,34 @@ double try_to_autoconnect(void)
   }
 
   switch (try_to_connect(user_name, errbuf, sizeof(errbuf))) {
-  case 0:			/* Success! */
+  case 0:             /* Success! */
     /* Don't call me again */
     autoconnecting = FALSE;
     return FC_INFINITY;
 #ifndef FREECIV_MSWINDOWS
   /* See PR#4042 for more info on issues with try_to_connect() and errno. */
-  case ECONNREFUSED:		/* Server not available (yet) */
+  case ECONNREFUSED:  /* Server not available (yet) */
     if (!warning_shown) {
       log_error("Connection to server refused. Please start the server.");
       output_window_append(ftc_client, _("Connection to server refused. "
                                          "Please start the server."));
-      warning_shown = 1;
+      warning_shown = TRUE;
     }
     /* Try again in 0.5 seconds */
     return 0.001 * AUTOCONNECT_INTERVAL;
 #endif /* FREECIV_MSWINDOWS */
-  default:			/* All other errors are fatal */
+  default:            /* All other errors are fatal */
     log_fatal(_("Error contacting server \"%s\" at port %d "
                 "as \"%s\":\n %s\n"),
               server_host, server_port, user_name, errbuf);
     exit(EXIT_FAILURE);
   }
+
+  RETURN_VALUE_AFTER_EXIT(1.0);
 }
 
 /**********************************************************************//**
-  Start trying to autoconnect to freeciv-server.  Calls
+  Start trying to autoconnect to freeciv-server. Calls
   get_server_address(), then arranges for try_to_autoconnect(), which
   calls try_to_connect(), to be called roughly every
   AUTOCONNECT_INTERVAL milliseconds, until success, fatal error or

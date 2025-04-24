@@ -52,14 +52,23 @@ static const char *local_encoding, *data_encoding, *internal_encoding;
 #  define internal_encoding get_local_encoding()
 #endif /* HAVE_ICONV */
 
+static char *saved_from = nullptr;
+static char *saved_to = nullptr;
+
+static char *convert_string(const char *text,
+                            const char *from,
+                            const char *to,
+                            char *buf, size_t bufsz)
+  fc__attribute((nonnull (1,2,3)));
+
 /***********************************************************************//**
   Must be called during the initialization phase of server and client to
   initialize the character encodings to be used.
 
-  Pass an internal encoding of NULL to use the local encoding internally.
+  Pass an internal encoding of nulltpr to use the local encoding internally.
 ***************************************************************************/
 void init_character_encodings(const char *my_internal_encoding,
-			      bool my_use_transliteration)
+                              bool my_use_transliteration)
 {
   transliteration_string = "";
 #ifdef HAVE_ICONV
@@ -130,7 +139,7 @@ void init_character_encodings(const char *my_internal_encoding,
           _("You are running Freeciv without using iconv. Unless\n"
             "you are using the UTF-8 character set, some characters\n"
             "may not be displayed properly. You can download iconv\n"
-            "at http://gnu.org/.\n"));
+            "at https://gnu.org/.\n"));
 #endif /* HAVE_ICONV */
 
   is_init = TRUE;
@@ -141,7 +150,7 @@ void init_character_encodings(const char *my_internal_encoding,
 ***************************************************************************/
 const char *get_data_encoding(void)
 {
-  fc_assert_ret_val(is_init, NULL);
+  fc_assert_ret_val(is_init, nullptr);
   return data_encoding;
 }
 
@@ -151,7 +160,7 @@ const char *get_data_encoding(void)
 const char *get_local_encoding(void)
 {
 #ifdef HAVE_ICONV
-  fc_assert_ret_val(is_init, NULL);
+  fc_assert_ret_val(is_init, nullptr);
   return local_encoding;
 #else  /* HAVE_ICONV */
 #  ifdef HAVE_LIBCHARSET
@@ -172,42 +181,54 @@ const char *get_local_encoding(void)
 ***************************************************************************/
 const char *get_internal_encoding(void)
 {
-  fc_assert_ret_val(is_init, NULL);
+  fc_assert_ret_val(is_init, nullptr);
+
   return internal_encoding;
 }
 
 /***********************************************************************//**
-  Convert the text.  Both 'from' and 'to' must be 8-bit charsets.  The
-  result will be put into the buf buffer unless it is NULL, in which case it
-  will be allocated on demand.
+  Convert the text. Both 'from' and 'to' must be 8-bit charsets. The result
+  will be put into the buf buffer unless it is nullptr, in which case it will
+  be allocated on demand.
 
-  Don't use this function if you can avoid it.  Use one of the
-  xxx_to_yyy_string functions.
+  Don't use this function if you can avoid it. Use one of the
+  xxx_to_yyy_string() functions.
 ***************************************************************************/
-char *convert_string(const char *text,
-		     const char *from,
-		     const char *to,
-		     char *buf, size_t bufsz)
+static char *convert_string(const char *text,
+                            const char *from,
+                            const char *to,
+                            char *buf, size_t bufsz)
 {
 #ifdef HAVE_ICONV
   iconv_t cd = iconv_open(to, from);
   size_t from_len = strlen(text) + 1, to_len;
-  bool alloc = (buf == NULL);
-
-  fc_assert_ret_val(is_init && NULL != from && NULL != to, NULL);
-  fc_assert_ret_val(NULL != text, NULL);
+  bool alloc = (buf == nullptr);
 
   if (cd == (iconv_t) (-1)) {
     /* Do not do potentially recursive call to freeciv logging here,
      * but use fprintf(stderr) */
     /* Use the real OS-provided strerror and errno rather than Freeciv's
      * abstraction, as that wouldn't do the correct thing with third-party
-     * iconv on Windows */
+     * iconv on Windows. */
 
-    /* TRANS: "Could not convert text from <encoding a> to <encoding b>:" 
-     *        <externally translated error string>."*/
-    fprintf(stderr, _("Could not convert text from %s to %s: %s.\n"),
-            from, to, strerror(errno));
+    if (saved_from == nullptr
+        || strcmp(saved_from, from)
+        || strcmp(saved_to, to)) {
+
+      /* TRANS: "Could not convert text from <encoding a> to <encoding b>:"
+       *        <externally translated error string>." */
+      fprintf(stderr, _("Could not convert text from %s to %s: %s.\n"),
+              from, to, strerror(errno));
+
+      if (saved_from != nullptr) {
+        free(saved_from);
+        free(saved_to);
+      }
+
+      saved_from = fc_strdup(from);
+      saved_to   = fc_strdup(to);
+    }
+
     /* The best we can do? */
     if (alloc) {
       return fc_strdup(text);
@@ -236,7 +257,7 @@ char *convert_string(const char *text,
 
     /* Since we may do multiple translations, we may need to reset iconv
      * in between. */
-    iconv(cd, NULL, NULL, NULL, NULL);
+    iconv(cd, nullptr, nullptr, nullptr, nullptr);
 
     res = iconv(cd, (ICONV_CONST char **)&mytext, &flen, &myresult, &tlen);
     if (res == (size_t) (-1)) {
@@ -287,13 +308,13 @@ char *convert_string(const char *text,
 #define CONV_FUNC_MALLOC(src, dst)                                          \
 char *src ## _to_ ## dst ## _string_malloc(const char *text)                \
 {                                                                           \
-  const char *encoding1 = (dst ## _encoding);				    \
+  const char *encoding1 = (dst ## _encoding);                               \
   char encoding[strlen(encoding1) + strlen(transliteration_string) + 1];    \
-									    \
-  fc_snprintf(encoding, sizeof(encoding),				    \
-	      "%s%s", encoding1, transliteration_string);		    \
-  return convert_string(text, (src ## _encoding),			    \
-			(encoding), NULL, 0);				    \
+                                                                            \
+  fc_snprintf(encoding, sizeof(encoding),                                   \
+              "%s%s", encoding1, transliteration_string);                   \
+  return convert_string(text, (src ## _encoding),                           \
+                        (encoding), nullptr, 0);                            \
 }
 
 #define CONV_FUNC_BUFFER(src, dst)                                          \
@@ -363,12 +384,12 @@ void fc_fprintf(FILE *stream, const char *format, ...)
 }
 
 /***********************************************************************//**
-  Return the length, in *characters*, of the string.  This can be used in
-  place of strlen in some places because it returns the number of characters
+  Return the length, in *characters*, of the string. This can be used in
+  place of strlen() in some places because it returns the number of characters
   not the number of bytes (with multi-byte characters in UTF-8, the two
   may not be the same).
 
-  Use of this function outside of GUI layout code is probably a hack.  For
+  Use of this function outside of GUI layout code is probably a hack. For
   instance the demographics code uses it, but this should instead pass the
   data directly to the GUI library for formatting.
 ***************************************************************************/
@@ -388,5 +409,21 @@ size_t get_internal_string_length(const char *text)
       /* Not BOM */
       len++;
     }
+  }
+}
+
+/***********************************************************************//**
+  Free resources allocated by the iconv system
+***************************************************************************/
+void fc_iconv_close(void)
+{
+  if (saved_from != nullptr) {
+    free(saved_from);
+    saved_from = nullptr;
+  }
+
+  if (saved_to != nullptr) {
+    free(saved_to);
+    saved_to = nullptr;
   }
 }

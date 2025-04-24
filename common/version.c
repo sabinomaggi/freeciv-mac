@@ -37,8 +37,14 @@ const char *freeciv_name_version(void)
   static char msgbuf[256];
 
 #if IS_BETA_VERSION
+#if defined(GITREV) && !defined(FC_GITREV_OFF)
+  fc_snprintf(msgbuf, sizeof (msgbuf), _("Freeciv version %s %s (%s)"),
+              VERSION_STRING, _("(beta version)"),
+              fc_git_revision());
+#else
   fc_snprintf(msgbuf, sizeof (msgbuf), _("Freeciv version %s %s"),
               VERSION_STRING, _("(beta version)"));
+#endif
 #elif defined(GITREV) && !defined(FC_GITREV_OFF)
   fc_snprintf(msgbuf, sizeof (msgbuf), _("Freeciv version %s (%s)"),
               VERSION_STRING, fc_git_revision());
@@ -121,17 +127,45 @@ const char *beta_message(void)
                 /* TRANS: No full stop after the URL, could cause confusion. */
                 _("THIS IS A BETA VERSION\n"
                   "Freeciv %s will be released in %s, at %s"),
-                NEXT_STABLE_VERSION, _(NEXT_RELEASE_MONTH), WIKI_URL);
+                NEXT_STABLE_VERSION, _(NEXT_RELEASE_MONTH), HOMEPAGE_URL);
   } else {
     fc_snprintf(msgbuf, sizeof(msgbuf),
                 _("THIS IS A BETA VERSION\n"
                   "Freeciv %s will be released at %s"),
-                NEXT_STABLE_VERSION, WIKI_URL);
+                NEXT_STABLE_VERSION, HOMEPAGE_URL);
   }
   return msgbuf;
 #else  /* IS_BETA_VERSION */
   return NULL;
 #endif /* IS_BETA_VERSION */
+}
+
+/*******************************************************************//**
+  Return the alpha message.
+  If returns NULL, not an alpha version.
+***********************************************************************/
+const char *alpha_message(void)
+{
+#if IS_DEVEL_VERSION
+  return _("THIS IS A DEVELOPMENT VERSION");
+#else  /* IS_DEVEL_VERSION */
+  return NULL;
+#endif /* IS_DEVEL_VERSION */
+}
+
+/*******************************************************************//**
+  Return the alpha or beta message.
+  If returns NULL, not such a version.
+***********************************************************************/
+const char *unstable_message(void)
+{
+#if IS_DEVEL_VERSION
+  return alpha_message();
+#elif IS_BETA_VERSION
+  return beta_message();
+#else
+  return NULL;
+#endif
 }
 
 /*******************************************************************//**

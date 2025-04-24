@@ -1,9 +1,9 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes
+; for other "maintenance". If you want to make custom changes
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
@@ -13,12 +13,12 @@
 ; TODO: check values really match Civ1!
 
 [datafile]
-description="Civilization I governments data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Civilization I governments data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
 
 [governments]
-during_revolution="Anarchy"
+during_revolution = "Anarchy"
 
 ; /* <-- avoid gettext warnings
 ;
@@ -29,8 +29,8 @@ during_revolution="Anarchy"
 ; output when reading this file.
 ;
 ; For the "official" rulesets, the order of these sections should not
-; be changed because that would break backward compatability with
-; savegames.  (In particular, if Fundamentalism is added to default
+; be changed because that would break backward compatibility with
+; savegames. (In particular, if Fundamentalism is added to default
 ; ruleset, should be added at end.)
 ;
 ; Notes on fields:
@@ -42,14 +42,24 @@ during_revolution="Anarchy"
 ;                to rename an item after a ruleset has been released, you
 ;                should set "rule_name" to the original value of "name".
 ; reqs         = requirements for this government (see README.effects)
-; graphic      = tag specifing preferred graphic
+; graphic      = tag specifying preferred graphic
 ; graphic_alt  = alternate graphics tag if preferred is not found;
 ;                should be a standard tag if preferred is not;
 ;                otherwise may be "-"
+; sound        = Sound tag for the audio to play when player switch
+;                to government.
+; sound_alt    = Alternative sound tag, in case primary one is not found.
+; sound_alt2   = Second alternative sound tag, in case neither primary tag
+;                nor the first alt tag is found.
 ; ai_better    = AI will not consider this government for use if the
 ;                government listed here is available
-; ruler_titles = ruler titles by nation, "-" is default, and non-matched
-;                nations are ignored
+; ruler_male_title   = The default male ruler title for the government type.
+;                      It's a format string where name of the ruler is marked
+;                      by '%s'.
+;                      Individual nations may override this by their
+;                      own title.
+; ruler_female_title = The default female ruler title for the government type.
+;                      See above ruler_male_title.
 ; helptext     = optional help text string; should escape all raw newlines
 ;                so that xgettext parsing works
 ;
@@ -62,6 +72,9 @@ name        = _("Anarchy")
 ; No reqs
 graphic     = "gov.anarchy"
 graphic_alt = "-"
+sound       = "g_anarchy"
+sound_alt   = "-"
+sound_alt2  = "-"
 
 ruler_male_title = _("Warlord %s")
 ruler_female_title = _("Warlady %s")
@@ -83,6 +96,9 @@ name        = _("Despotism")
 ; No reqs
 graphic     = "gov.despotism"
 graphic_alt = "-"
+sound       = "g_despotism"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 ai_better   = "Monarchy"
 
 ruler_male_title = _("Chief %s")
@@ -105,6 +121,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.monarchy"
 graphic_alt = "-"
+sound       = "g_monarchy"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 ai_better   = "Communism"
 
 ruler_male_title = _("King %s")
@@ -127,6 +146,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.communism"
 graphic_alt = "-"
+sound       = "g_communism"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("Comrade %s")
 ruler_female_title = _("?female:Comrade %s")
@@ -151,6 +173,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.republic"
 graphic_alt = "-"
+sound       = "g_republic"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("Consul %s")
 ruler_female_title = _("?female:Consul %s")
@@ -173,6 +198,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.democracy"
 graphic_alt = "-"
+sound       = "g_democracy"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("President %s")
 ruler_female_title = _("?female:President %s")
@@ -209,6 +237,8 @@ Because (happy) citizens of Democracy believe strongly in the\
 ;                           effect_value = (ui_value + offset) * (factor/100)
 ;                           Optional; by default offset=0, factor=100, so
 ;                           that UI values are used as-is.
+; minimum_turns           = how often multiplier can be changed, or: how long one is stuck
+;                           with the given value after changing to it
 ; reqs                    = requirements for adjusting this policy (see README.effects)
 ; helptext                = optional help text string; should escape all raw
 ;                           newlines so that xgettext parsing works

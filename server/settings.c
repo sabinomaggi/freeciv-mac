@@ -29,16 +29,21 @@
 #include "map.h"
 
 /* server */
+#include "aiiface.h"
 #include "gamehand.h"
 #include "maphand.h"
 #include "meta.h"
+#include "nation.h"
 #include "notify.h"
 #include "plrhand.h"
 #include "report.h"
+#include "rscompat.h"
 #include "rssanity.h"
-#include "settings.h"
+#include "setcompat.h"
 #include "srv_main.h"
 #include "stdinhand.h"
+
+#include "settings.h"
 
 /* The following classes determine what can be changed when.
  * Actually, some of them have the same "changeability", but
@@ -54,6 +59,7 @@ enum sset_class {
   SSET_MAP_GEN,
   SSET_MAP_ADD,
   SSET_PLAYERS,
+  SSET_PLAYERS_CHANGEABLE,
   SSET_GAME_INIT,
   SSET_RULES,
   SSET_RULES_SCENARIO,
@@ -166,11 +172,17 @@ struct setting {
   /* action function */
   const action_callback_func_t action;
 
-  /* ruleset lock for game settings */
-  bool locked;
+  /* Lock for game settings */
+  enum setting_lock_level lock;
+
+  /* Remember if there's also ruleset lock. */
+  bool rslock;
+
+  bool ruleset_settable;
 
   /* It's not "default", even if value is the same as default */
   enum setting_default_level setdef;
+  enum setting_default_level game_setdef;
 };
 
 static struct {
@@ -178,8 +190,10 @@ static struct {
   struct setting_list *level[OLEVELS_NUM];
 } setting_sorted = { .init = FALSE };
 
+static void setting_ruleset_setdef(struct setting *pset);
 static bool setting_ruleset_one(struct section_file *file,
-                                const char *name, const char *path);
+                                const char *name, const char *path,
+                                bool compat);
 static void setting_game_set(struct setting *pset, bool init);
 static void setting_game_free(struct setting *pset);
 static void setting_game_restore(struct setting *pset);
@@ -200,11 +214,11 @@ static bool set_enum_value(struct setting *pset, int val);
   Enumerator name accessors.
 
   Important note about compatibility:
-  1) you cannot modify the support name of an existant value. However, in a
-     developpement, you can modify it if it wasn't included in any stable
+  1) you cannot modify the support name of an existent value. However, in a
+     development, you can modify it if it wasn't included in any stable
      branch before.
-  2) Take care of modifiying the pretty name of an existant value: make sure
-  to modify the help texts which are using it.
+  2) Take care of modifying the pretty name of an existent value: make sure
+     to modify the help texts which are using it.
 ****************************************************************************/
 
 #define NAME_CASE(_val, _support, _pretty)                                  \
@@ -215,8 +229,22 @@ static bool set_enum_value(struct setting *pset, int val);
     }
 
 /************************************************************************//**
+  Caravan bonus style setting names accessor.
+****************************************************************************/
+static const struct sset_val_name *caravanbonusstyle_name(int caravanbonus)
+{
+  switch (caravanbonus) {
+  /* TRANS: Description of caravan bonus style setting value. */
+  NAME_CASE(CBS_CLASSIC, "CLASSIC", N_("Classic Freeciv"));
+  NAME_CASE(CBS_LOGARITHMIC, "LOGARITHMIC", N_("Log^2 N style"));
+  }
+
+  return NULL;
+}
+
+/************************************************************************//**
   Map size definition setting names accessor. This setting has an
-  hard-coded depedence in "server/meta.c".
+  hard-coded dependence in "server/meta.c".
 ****************************************************************************/
 static const struct sset_val_name *mapsize_name(int mapsize)
 {
@@ -234,11 +262,37 @@ static const struct sset_val_name *mapsize_name(int mapsize)
 static const struct sset_val_name *topology_name(int topology_bit)
 {
   switch (1 << topology_bit) {
-  NAME_CASE(TF_WRAPX, "WRAPX", N_("Wrap East-West"));
-  NAME_CASE(TF_WRAPY, "WRAPY", N_("Wrap North-South"));
   NAME_CASE(TF_ISO, "ISO", N_("Isometric"));
   NAME_CASE(TF_HEX, "HEX", N_("Hexagonal"));
   }
+
+  return NULL;
+}
+
+/************************************************************************//**
+  Map wrap setting names accessor.
+****************************************************************************/
+static const struct sset_val_name *wrap_name(int wrap_bit)
+{
+  switch (1 << wrap_bit) {
+  NAME_CASE(WRAP_X, "WRAPX", N_("Wrap East-West"));
+  NAME_CASE(WRAP_Y, "WRAPY", N_("Wrap North-South"));
+  }
+
+  return NULL;
+}
+
+/************************************************************************//**
+  Trade revenue style setting names accessor.
+****************************************************************************/
+static const struct sset_val_name *traderevenuestyle_name(int revenue_style)
+{
+  switch (revenue_style) {
+  /* TRANS: Description of trade revenue style setting value. */
+  NAME_CASE(TRS_CLASSIC, "CLASSIC", N_("Classic Freeciv"));
+  NAME_CASE(TRS_SIMPLE, "SIMPLE", N_("Proportional to tile trade"));
+  }
+
   return NULL;
 }
 
@@ -322,9 +376,10 @@ static const struct sset_val_name *victory_conditions_name(int condition_bit)
   NAME_CASE(VC_SPACERACE, "SPACERACE", N_("Spacerace"));
   NAME_CASE(VC_ALLIED, "ALLIED", N_("Allied victory"));
   NAME_CASE(VC_CULTURE, "CULTURE", N_("Culture victory"));
+  NAME_CASE(VC_WORLDPEACE, "WORLDPEACE", N_("World Peace victory"));
   };
 
-  return NULL;
+  return nullptr;
 }
 
 /************************************************************************//**
@@ -529,12 +584,43 @@ compresstype_name(enum fz_method compresstype)
   NAME_CASE(FZ_ZLIB, "LIBZ", N_("Using zlib (gzip format)"));
 #endif
 #ifdef FREECIV_HAVE_LIBBZ2
-  NAME_CASE(FZ_BZIP2, "BZIP2", N_("Using bzip2 (deprecated)"));
+  case FZ_BZIP2:
+    break;
 #endif
 #ifdef FREECIV_HAVE_LIBLZMA
   NAME_CASE(FZ_XZ, "XZ", N_("Using xz"));
 #endif
+#ifdef FREECIV_HAVE_LIBZSTD
+  NAME_CASE(FZ_ZSTD, "ZSTD", N_("Using zstd"));
+#endif
   }
+
+  return NULL;
+}
+
+/************************************************************************//**
+  AI level names accessor.
+****************************************************************************/
+static const struct sset_val_name *
+ailevel_name(enum ai_level lvl)
+{
+  const char *lvlname;
+
+  if (lvl >= AI_LEVEL_AWAY) {
+    return NULL;
+  }
+
+  lvlname = ai_level_name(lvl);
+
+  if (lvlname != NULL) {
+    static struct sset_val_name name[AI_LEVEL_COUNT];
+
+    name[lvl].support = lvlname;
+    name[lvl].pretty = ai_level_translated_name(lvl);
+
+    return &name[lvl];
+  }
+
   return NULL;
 }
 
@@ -744,6 +830,22 @@ static void topology_action(const struct setting *pset)
   struct packet_set_topology packet;
 
   packet.topology_id = *pset->integer.pvalue;
+  packet.wrap_id = wld.map.wrap_id;
+
+  conn_list_iterate(game.est_connections, pconn) {
+    send_packet_set_topology(pconn, &packet);
+  } conn_list_iterate_end;
+}
+
+/************************************************************************//**
+  Map wrap setting changed.
+****************************************************************************/
+static void wrap_action(const struct setting *pset)
+{
+  struct packet_set_topology packet;
+
+  packet.topology_id = wld.map.topology_id;
+  packet.wrap_id = *pset->integer.pvalue;
 
   conn_list_iterate(game.est_connections, pconn) {
     send_packet_set_topology(pconn, &packet);
@@ -764,6 +866,16 @@ static void metamessage_action(const struct setting *pset)
   if (is_metaserver_open()) {
     /* Update the meta server. */
     send_server_info_to_metaserver(META_INFO);
+  }
+}
+
+/************************************************************************//**
+  Change the default AI type.
+****************************************************************************/
+static void aitype_action(const struct setting *pset)
+{
+  if (!set_default_ai_type_name(pset->string.value)) {
+    log_warn(_("Failed to update default AI type."));
   }
 }
 
@@ -865,7 +977,9 @@ static bool autosaves_callback(unsigned value, struct connection *caller,
     if ((value & (1 << AS_TIMER))
         && !(game.server.autosaves & (1 << AS_TIMER))) {
       game.server.save_timer = timer_renew(game.server.save_timer,
-                                           TIMER_USER, TIMER_ACTIVE);
+                                           TIMER_USER, TIMER_ACTIVE,
+                                           game.server.save_timer != NULL
+                                           ? NULL : "save interval");
       timer_start(game.server.save_timer);
     } else if (!(value & (1 << AS_TIMER))
                && (game.server.autosaves & (1 << AS_TIMER))) {
@@ -879,8 +993,8 @@ static bool autosaves_callback(unsigned value, struct connection *caller,
 }
 
 /************************************************************************//**
-  Verify that a given allowtake string is valid.  See
-  game.allow_take.
+  Verify that a given allowtake string is valid.
+  See game.allow_take.
 ****************************************************************************/
 static bool allowtake_callback(const char *value,
                                struct connection *caller,
@@ -890,12 +1004,12 @@ static bool allowtake_callback(const char *value,
   int len = strlen(value), i;
   bool havecharacter_state = FALSE;
 
-  /* We check each character individually to see if it's valid.  This
+  /* We check each character individually to see if it's valid. This
    * does not check for duplicate entries.
    *
-   * We also track the state of the machine.  havecharacter_state is
-   * true if the preceeding character was a primary label, e.g.
-   * NHhAadb.  It is false if the preceeding character was a modifier
+   * We also track the state of the machine. havecharacter_state is
+   * true if the preceding character was a primary label, e.g.
+   * NHhAadb. It is false if the preceding character was a modifier
    * or if this is the first character. */
 
   for (i = 0; i < len; i++) {
@@ -936,6 +1050,10 @@ static bool startunits_callback(const char *value,
   int len = strlen(value), i;
   Unit_Class_id  first_role;
   bool firstnative = FALSE;
+
+  if (len == 0) {
+    return TRUE;
+  }
 
   /* We check each character individually to see if it's valid. */
   for (i = 0; i < len; i++) {
@@ -1005,7 +1123,8 @@ static bool maxplayers_callback(int value, struct connection *caller,
   }
   /* If any start positions are defined by a scenario, we can only
    * accommodate as many players as we have start positions. */
-  if (0 < map_startpos_count() && value > map_startpos_count()) {
+  if (server_state() < S_S_RUNNING
+      && 0 < map_startpos_count() && value > map_startpos_count()) {
     settings_snprintf(reject_msg, reject_msg_len,
                       _("Requested value (%d) is greater than number of "
                         "available start positions (%d). Keeping old value."),
@@ -1125,9 +1244,9 @@ static bool unitwaittime_callback(int value, struct connection *caller,
 static bool mapsize_callback(int value, struct connection *caller,
                              char *reject_msg, size_t reject_msg_len)
 {
-  if (value == MAPSIZE_XYSIZE && MAP_IS_ISOMETRIC &&
-      wld.map.ysize % 2 != 0) {
-    /* An isometric map needs a even ysize. Is is calculated automatically
+  if (value == MAPSIZE_XYSIZE && MAP_IS_ISOMETRIC
+      && MAP_NATIVE_HEIGHT % 2 != 0) {
+    /* An isometric map needs a even ysize. It is calculated automatically
      * for all settings but mapsize=XYSIZE. */
     settings_snprintf(reject_msg, reject_msg_len,
                       _("For an isometric or hexagonal map the ysize must be "
@@ -1144,18 +1263,18 @@ static bool mapsize_callback(int value, struct connection *caller,
 static bool xsize_callback(int value, struct connection *caller,
                            char *reject_msg, size_t reject_msg_len)
 {
-  int size = value * wld.map.ysize;
+  int size = value * MAP_NATIVE_HEIGHT;
 
   if (size < MAP_MIN_SIZE * 1000) {
     settings_snprintf(reject_msg, reject_msg_len,
                       _("The map size (%d * %d = %d) must be larger than "
-                        "%d tiles."), value, wld.map.ysize, size,
+                        "%d tiles."), value, MAP_NATIVE_HEIGHT, size,
                         MAP_MIN_SIZE * 1000);
     return FALSE;
   } else if (size > MAP_MAX_SIZE * 1000) {
     settings_snprintf(reject_msg, reject_msg_len,
                       _("The map size (%d * %d = %d) must be lower than "
-                        "%d tiles."), value, wld.map.ysize, size,
+                        "%d tiles."), value, MAP_NATIVE_HEIGHT, size,
                         MAP_MAX_SIZE * 1000);
     return FALSE;
   }
@@ -1169,23 +1288,23 @@ static bool xsize_callback(int value, struct connection *caller,
 static bool ysize_callback(int value, struct connection *caller,
                            char *reject_msg, size_t reject_msg_len)
 {
-  int size = wld.map.xsize * value;
+  int size = MAP_NATIVE_WIDTH * value;
 
   if (size < MAP_MIN_SIZE * 1000) {
     settings_snprintf(reject_msg, reject_msg_len,
                       _("The map size (%d * %d = %d) must be larger than "
-                        "%d tiles."), wld.map.xsize, value, size,
+                        "%d tiles."), MAP_NATIVE_WIDTH, value, size,
                         MAP_MIN_SIZE * 1000);
     return FALSE;
   } else if (size > MAP_MAX_SIZE * 1000) {
     settings_snprintf(reject_msg, reject_msg_len,
                       _("The map size (%d * %d = %d) must be lower than "
-                        "%d tiles."), wld.map.xsize, value, size,
+                        "%d tiles."), MAP_NATIVE_WIDTH, value, size,
                         MAP_MAX_SIZE * 1000);
     return FALSE;
-  } else if (wld.map.server.mapsize == MAPSIZE_XYSIZE && MAP_IS_ISOMETRIC &&
-             value % 2 != 0) {
-    /* An isometric map needs a even ysize. Is is calculated automatically
+  } else if (wld.map.server.mapsize == MAPSIZE_XYSIZE && MAP_IS_ISOMETRIC
+             && value % 2 != 0) {
+    /* An isometric map needs a even ysize. It is calculated automatically
      * for all settings but mapsize=XYSIZE. */
     settings_snprintf(reject_msg, reject_msg_len,
                       _("For an isometric or hexagonal map the ysize must be "
@@ -1202,10 +1321,10 @@ static bool ysize_callback(int value, struct connection *caller,
 static bool topology_callback(unsigned value, struct connection *caller,
                               char *reject_msg, size_t reject_msg_len)
 {
-  if (wld.map.server.mapsize == MAPSIZE_XYSIZE &&
-      ((value & (TF_ISO)) != 0 || (value & (TF_HEX)) != 0) &&
-      wld.map.ysize % 2 != 0) {
-    /* An isometric map needs a even ysize. Is is calculated automatically
+  if (wld.map.server.mapsize == MAPSIZE_XYSIZE
+      && ((value & (TF_ISO)) != 0 || (value & (TF_HEX)) != 0)
+      && MAP_NATIVE_HEIGHT % 2 != 0) {
+    /* An isometric map needs a even ysize. It is calculated automatically
      * for all settings but mapsize=XYSIZE. */
     settings_snprintf(reject_msg, reject_msg_len,
                       _("For an isometric or hexagonal map the ysize must be "
@@ -1216,11 +1335,11 @@ static bool topology_callback(unsigned value, struct connection *caller,
 #ifdef FREECIV_WEB
   /* Remember to update the help text too if Freeciv-web gets the ability
    * to display other map topologies. */
-  if ((value & (TF_WRAPY)) != 0
-      /* Are you removing this because Freeciv-web gained the ability to
-       * display isometric maps? Why don't you remove the Freeciv-web
-       * specific MAP_DEFAULT_TOPO too? */
-      || (value & (TF_ISO)) != 0
+
+  /* Are you removing this because Freeciv-web gained the ability to
+   * display isometric maps? Why don't you remove the Freeciv-web
+   * specific MAP_DEFAULT_TOPO too? */
+  if ((value & (TF_ISO)) != 0
       || (value & (TF_HEX)) != 0) {
     /* The Freeciv-web client can't display these topologies yet. */
     settings_snprintf(reject_msg, reject_msg_len,
@@ -1233,19 +1352,37 @@ static bool topology_callback(unsigned value, struct connection *caller,
 }
 
 /************************************************************************//**
-  Warn about deprecated compresstype selection.
+  AI type setting validation callback.
 ****************************************************************************/
-static bool compresstype_callback(int value,
-                                  struct connection *caller,
-                                  char *reject_msg,
-                                  size_t reject_msg_len)
+static bool aitype_callback(const char *value, struct connection *caller,
+                            char *reject_msg, size_t reject_msg_len)
 {
-#ifdef FREECIV_HAVE_LIBBZ2
-  if (value == FZ_BZIP2) {
-    log_warn(_("Bzip2 is deprecated as compresstype. Consider "
-               "other options."));
+  if (ai_type_by_name(value) == NULL) {
+    settings_snprintf(reject_msg, reject_msg_len,
+                      _("No such AI type loaded."));
+
+    return FALSE;
   }
-#endif /* FREECIV_HAVE_LIBBZ2 */
+
+  return TRUE;
+}
+
+/************************************************************************//**
+  Map wrap setting validation callback.
+****************************************************************************/
+static bool wrap_callback(unsigned value, struct connection *caller,
+                          char *reject_msg, size_t reject_msg_len)
+{
+#ifdef FREECIV_WEB
+  /* Remember to update the help text too if Freeciv-web gets the ability
+   * to display other map wraps. */
+  if ((value & (WRAP_Y)) != 0) {
+    /* The Freeciv-web client can't display wraps mapped this way. */
+    settings_snprintf(reject_msg, reject_msg_len,
+                      _("Freeciv-web doesn't support this map wrap."));
+    return FALSE;
+  }
+#endif /* FREECIV_WEB */
 
   return TRUE;
 }
@@ -1279,7 +1416,7 @@ static bool plrcol_validate(int value, struct connection *caller,
       scateg, slevel,                                                       \
       INIT_BRACE_BEGIN                                                      \
       .boolean = {&value, _default, func_validate, bool_name,               \
-                  FALSE} INIT_BRACE_END , func_action, FALSE},
+     FALSE} INIT_BRACE_END , func_action, FALSE, .ruleset_settable = TRUE},
 
 #define GEN_INT(name, value, sclass, scateg, slevel, al_read, al_write, \
                 short_help, extra_help, func_help,                      \
@@ -1290,7 +1427,7 @@ static bool plrcol_validate(int value, struct connection *caller,
       INIT_BRACE_BEGIN                                                  \
       .integer = {(int *) &value, _default, _min, _max, func_validate,  \
                   0} INIT_BRACE_END,                                    \
-      func_action, FALSE},
+      func_action, FALSE, .ruleset_settable = TRUE},
 
 #define GEN_STRING(name, value, sclass, scateg, slevel, al_read, al_write, \
                    short_help, extra_help, func_validate, func_action,  \
@@ -1300,7 +1437,17 @@ static bool plrcol_validate(int value, struct connection *caller,
       INIT_BRACE_BEGIN                                                  \
       .string = {value, _default, sizeof(value), func_validate, ""}     \
       INIT_BRACE_END,                                                   \
-      func_action, FALSE},
+      func_action, FALSE, .ruleset_settable = TRUE},
+
+#define GEN_STRING_NRS(name, value, sclass, scateg, slevel, al_read, al_write, \
+                       short_help, extra_help, func_validate, func_action, \
+                       _default)                                        \
+  {name, sclass, al_read, al_write, short_help, extra_help, NULL,       \
+      SST_STRING, scateg, slevel,                                       \
+      INIT_BRACE_BEGIN                                                  \
+      .string = {value, _default, sizeof(value), func_validate, ""}     \
+      INIT_BRACE_END,                                                   \
+      func_action, FALSE, .ruleset_settable = FALSE},
 
 #define GEN_ENUM(name, value, sclass, scateg, slevel, al_read, al_write,    \
                  short_help, extra_help, func_help, func_validate,          \
@@ -1311,7 +1458,7 @@ static bool plrcol_validate(int value, struct connection *caller,
       .enumerator = {  &value, sizeof(value), _default,                     \
                        func_validate,                                       \
        (val_name_func_t) func_name, 0 } INIT_BRACE_END,                     \
-     func_action, FALSE},
+      func_action, FALSE, .ruleset_settable = TRUE},
 
 #define GEN_BITWISE(name, value, sclass, scateg, slevel, al_read, al_write, \
                    short_help, extra_help, func_validate, func_action,      \
@@ -1321,7 +1468,7 @@ static bool plrcol_validate(int value, struct connection *caller,
       INIT_BRACE_BEGIN                                                      \
       .bitwise = { (unsigned *) (void *) &value, _default, func_validate,   \
                    func_name, 0 } INIT_BRACE_END,                           \
-      func_action, FALSE},
+      func_action, FALSE, .ruleset_settable = TRUE},
 
 /* game settings */
 static struct setting settings[] = {
@@ -1410,27 +1557,25 @@ static struct setting settings[] = {
 
   GEN_BITWISE("topology", wld.map.topology_id, SSET_MAP_SIZE,
               SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
-              N_("Map topology index"),
+              N_("Map topology"),
 #ifdef FREECIV_WEB
               /* TRANS: Freeciv-web version of the help text. */
-              N_("Freeciv-web maps are always two-dimensional. They may wrap "
-                 "at the east-west directions to form a flat map or a "
-                 "cylinder.\n"),
+              N_("Freeciv-web maps are always two-dimensional.\n"),
 #else /* FREECIV_WEB */
               /* TRANS: do not edit the ugly ASCII art */
-              N_("Freeciv maps are always two-dimensional. They may wrap at "
-                 "the north-south and east-west directions to form a flat "
-                 "map, a cylinder, or a torus (donut). Individual tiles may "
-                 "be rectangular or hexagonal, with either a classic or "
-                 "isometric alignment - this should be set based on the "
-                 "tileset being used.\n"
-                 "Classic rectangular:       Isometric rectangular:\n"
+              N_("Freeciv maps are always two-dimensional. "
+                 "Individual tiles may "
+                 "be rectangular or hexagonal, with either an overhead "
+                 "(\"classic\") or isometric alignment.\n"
+                 "To play with a particular topology, clients will need a "
+                 "matching tileset.\n"
+                 "Overhead rectangular:      Isometric rectangular:\n"
                  "      _________               /\\/\\/\\/\\/\\\n"
                  "     |_|_|_|_|_|             /\\/\\/\\/\\/\\/\n"
                  "     |_|_|_|_|_|             \\/\\/\\/\\/\\/\\\n"
                  "     |_|_|_|_|_|             /\\/\\/\\/\\/\\/\n"
                  "                             \\/\\/\\/\\/\\/\n"
-                 "Hex tiles:                 Iso-hex:\n"
+                 "Hex:                       Iso-hex:\n"
                  "  /\\/\\/\\/\\/\\/\\               _   _   _   _   _\n"
                  "  | | | | | | |             / \\_/ \\_/ \\_/ \\_/ \\\n"
                  "  \\/\\/\\/\\/\\/\\/\\"
@@ -1440,6 +1585,22 @@ static struct setting settings[] = {
                  "             \\_/ \\_/ \\_/ \\_/ \\_/\n"),
 #endif /* FREECIV_WEB */
               topology_callback, topology_action, topology_name, MAP_DEFAULT_TOPO)
+
+  GEN_BITWISE("wrap", wld.map.wrap_id, SSET_MAP_SIZE,
+              SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
+              N_("Map wrap"),
+#ifdef FREECIV_WEB
+              /* TRANS: Freeciv-web version of the help text. */
+              N_("Freeciv-web maps may wrap "
+                 "at the east-west directions to form a flat map or a "
+                 "cylinder.\n"),
+#else /* FREECIV_WEB */
+              /* TRANS: do not edit the ugly ASCII art */
+              N_("Freeciv maps may wrap at "
+                 "the north-south and east-west directions to form a flat "
+                 "map, a cylinder, or a torus (donut)."),
+#endif /* FREECIV_WEB */
+              wrap_callback, wrap_action, wrap_name, MAP_DEFAULT_WRAP)
 
   GEN_ENUM("generator", wld.map.server.generator,
            SSET_MAP_GEN, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
@@ -1563,21 +1724,48 @@ static struct setting settings[] = {
           NULL, NULL,
           MAP_MIN_FLATPOLES, MAP_MAX_FLATPOLES, MAP_DEFAULT_FLATPOLES)
 
-  GEN_BOOL("singlepole", wld.map.server.single_pole,
-           SSET_MAP_GEN, SSET_GEOLOGY, SSET_SITUATIONAL,
-           ALLOW_NONE, ALLOW_BASIC,
-           N_("Whether there's just one pole generated"),
-           N_("If this setting is enabled, only one side of the map will have "
-              "a pole. This setting has no effect if the map wraps both "
-              "directions."), NULL, NULL, MAP_DEFAULT_SINGLE_POLE)
-
-  GEN_BOOL("alltemperate", wld.map.server.alltemperate, 
-           SSET_MAP_GEN, SSET_GEOLOGY, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
-           N_("All the map is temperate"),
-           N_("If this setting is enabled, the temperature will be "
-              "equivalent everywhere on the map. As a result, the "
-              "poles won't be generated."),
-           NULL, NULL, MAP_DEFAULT_ALLTEMPERATE)
+  GEN_INT("northlatitude", wld.map.north_latitude,
+          SSET_MAP_GEN, SSET_GEOLOGY, SSET_SITUATIONAL,
+          ALLOW_NONE, ALLOW_BASIC,
+          N_("Northernmost latitude"),
+          /* TRANS: The string between single quotes is a setting name
+           * and should not be translated. */
+          N_("Combined with 'southlatitude', controls what climatic "
+             "zones exist on the map. Higher values are further north, "
+             "lower values are further south.\n"
+             "\n"
+             "1000 and -1000 gives a full planetary map.\n"
+             "1000 and     0 gives only a northern hemisphere.\n"
+             " 500 and   500 gives a map with the same middle-latitude "
+             "climate everywhere.\n"
+             " 300 and  -300 gives an equatorial map.\n"
+             "\n"
+             "In rulesets that support it, latitude may also have certain "
+             "effects during gameplay."), NULL,
+          NULL, NULL,
+          MAP_MIN_LATITUDE_BOUND, MAP_MAX_LATITUDE_BOUND,
+          MAP_DEFAULT_NORTH_LATITUDE)
+  GEN_INT("southlatitude", wld.map.south_latitude,
+          SSET_MAP_GEN, SSET_GEOLOGY, SSET_SITUATIONAL,
+          ALLOW_NONE, ALLOW_BASIC,
+          N_("Southernmost latitude"),
+          /* TRANS: The string between single quotes is a setting name
+           * and should not be translated. */
+          N_("Combined with 'northlatitude', controls what climatic "
+             "zones exist on the map. Higher values are further north, "
+             "lower values are further south.\n"
+             "\n"
+             "1000 and -1000 gives a full planetary map.\n"
+             "1000 and     0 gives only a northern hemisphere.\n"
+             " 500 and   500 gives a map with the same middle-latitude "
+             "climate everywhere.\n"
+             " 300 and  -300 gives an equatorial map.\n"
+             "\n"
+             "In rulesets that support it, latitude may also have certain "
+             "effects during gameplay."), NULL,
+          NULL, NULL,
+          MAP_MIN_LATITUDE_BOUND, MAP_MAX_LATITUDE_BOUND,
+          MAP_DEFAULT_SOUTH_LATITUDE)
 
   GEN_INT("temperature", wld.map.server.temperature,
           SSET_MAP_GEN, SSET_GEOLOGY, SSET_SITUATIONAL,
@@ -1632,6 +1820,15 @@ static struct setting settings[] = {
               "affect pollution."), NULL, NULL,
            GAME_DEFAULT_GLOBAL_WARMING)
 
+  GEN_INT("globalwarming_percent", game.server.global_warming_percent,
+           SSET_RULES, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
+           N_("Global warming percent"),
+           N_("This is a multiplier for the rate of accumulation of global "
+              "warming."), NULL, NULL, NULL,
+           GAME_MIN_GLOBAL_WARMING_PERCENT,
+           GAME_MAX_GLOBAL_WARMING_PERCENT,
+           GAME_DEFAULT_GLOBAL_WARMING_PERCENT)
+
   GEN_BOOL("nuclearwinter", game.info.nuclear_winter,
            SSET_RULES, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
            N_("Nuclear winter"),
@@ -1639,12 +1836,27 @@ static struct setting settings[] = {
               "as a result of nuclear war."), NULL, NULL,
            GAME_DEFAULT_NUCLEAR_WINTER)
 
+  GEN_INT("nuclearwinter_percent", game.server.nuclear_winter_percent,
+           SSET_RULES, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
+           N_("Nuclear winter percent"),
+           N_("This is a multiplier for the rate of accumulation of nuclear "
+              "winter."), NULL, NULL, NULL,
+           GAME_MIN_NUCLEAR_WINTER_PERCENT,
+           GAME_MAX_NUCLEAR_WINTER_PERCENT,
+           GAME_DEFAULT_NUCLEAR_WINTER_PERCENT)
+
   GEN_INT("mapseed", wld.map.server.seed_setting,
-          SSET_MAP_GEN, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
+          SSET_MAP_GEN, SSET_INTERNAL, SSET_RARE,
+#ifdef FREECIV_WEB
+          ALLOW_NONE, ALLOW_BASIC,
+#else /* FREECIV_WEB */
+          ALLOW_HACK, ALLOW_HACK,
+#endif /* FREECIV_WEB */
           N_("Map generation random seed"),
           N_("The same seed will always produce the same map; "
-             "for zero (the default) a seed will be chosen based on "
-             "the time to give a random map."),
+             "for zero (the default) a seed will be generated randomly, "
+             "based on gameseed. If also gameseed is zero, "
+             "the map will be completely random."),
           NULL, NULL, NULL,
           MAP_MIN_SEED, MAP_MAX_SEED, MAP_DEFAULT_SEED)
 
@@ -1654,10 +1866,15 @@ static struct setting settings[] = {
    * fixed after the game has started.
    */
   GEN_INT("gameseed", game.server.seed_setting,
-          SSET_MAP_ADD, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
+          SSET_MAP_ADD, SSET_INTERNAL, SSET_RARE,
+#ifdef FREECIV_WEB
+          ALLOW_NONE, ALLOW_BASIC,
+#else /* FREECIV_WEB */
+          ALLOW_HACK, ALLOW_HACK,
+#endif /* FREECIV_WEB */
           N_("Game random seed"),
           N_("For zero (the default) a seed will be chosen based "
-             "on the current time."),
+             "on system entropy or, failing that, the current time."),
           NULL, NULL, NULL,
           GAME_MIN_SEED, GAME_MAX_SEED, GAME_DEFAULT_SEED)
 
@@ -1672,7 +1889,8 @@ static struct setting settings[] = {
   GEN_INT("huts", wld.map.server.huts,
           SSET_MAP_ADD, SSET_GEOLOGY, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
           N_("Amount of huts (bonus extras)"),
-          N_("Huts are tile extras that may be investigated by units. "
+          N_("Huts are tile extras that usually may be investigated by "
+             "units. "
              "The server variable's scale is huts per thousand tiles."),
           huts_help, NULL, huts_action,
           MAP_MIN_HUTS, MAP_MAX_HUTS, MAP_DEFAULT_HUTS)
@@ -1699,7 +1917,7 @@ static struct setting settings[] = {
           GAME_MIN_MIN_PLAYERS, GAME_MAX_MIN_PLAYERS, GAME_DEFAULT_MIN_PLAYERS)
 
   GEN_INT("maxplayers", game.server.max_players,
-          SSET_PLAYERS, SSET_INTERNAL, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
+          SSET_PLAYERS_CHANGEABLE, SSET_INTERNAL, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
           N_("Maximum number of players"),
           N_("The maximal number of human and AI players who can be in "
              "the game. When this number of players are connected in "
@@ -1748,7 +1966,7 @@ static struct setting settings[] = {
              nationset_callback, nationset_action, GAME_DEFAULT_NATIONSET)
 
   GEN_INT("ec_turns", game.server.event_cache.turns,
-          SSET_RULES_FLEXIBLE, SSET_INTERNAL, SSET_SITUATIONAL,
+          SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
           ALLOW_NONE, ALLOW_BASIC,
           N_("Event cache for this number of turns"),
           N_("Event messages are saved for this number of turns. A value of "
@@ -1757,7 +1975,7 @@ static struct setting settings[] = {
           GAME_DEFAULT_EVENT_CACHE_TURNS)
 
   GEN_INT("ec_max_size", game.server.event_cache.max_size,
-          SSET_RULES_FLEXIBLE, SSET_INTERNAL, SSET_SITUATIONAL,
+          SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
           ALLOW_NONE, ALLOW_BASIC,
           N_("Size of the event cache"),
           N_("This defines the maximal number of events in the event cache."),
@@ -1765,14 +1983,14 @@ static struct setting settings[] = {
           GAME_MAX_EVENT_CACHE_MAX_SIZE, GAME_DEFAULT_EVENT_CACHE_MAX_SIZE)
 
   GEN_BOOL("ec_chat", game.server.event_cache.chat,
-           SSET_RULES_FLEXIBLE, SSET_INTERNAL, SSET_SITUATIONAL,
+           SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
            ALLOW_NONE, ALLOW_BASIC,
            N_("Save chat messages in the event cache"),
            N_("If turned on, chat messages will be saved in the event "
               "cache."), NULL, NULL, GAME_DEFAULT_EVENT_CACHE_CHAT)
 
   GEN_BOOL("ec_info", game.server.event_cache.info,
-           SSET_RULES_FLEXIBLE, SSET_INTERNAL, SSET_SITUATIONAL,
+           SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
            ALLOW_NONE, ALLOW_BASIC,
            N_("Print turn and time for each cached event"),
            /* TRANS: Don't translate the text between single quotes. */
@@ -1828,6 +2046,14 @@ static struct setting settings[] = {
              "much gold."), NULL, NULL, NULL,
           GAME_MIN_GOLD, GAME_MAX_GOLD, GAME_DEFAULT_GOLD)
 
+  GEN_INT("infrapoints", game.info.infrapoints,
+          SSET_GAME_INIT, SSET_ECONOMICS, SSET_VITAL,
+          ALLOW_NONE, ALLOW_BASIC,
+          N_("Starting infrapoints per player"),
+          N_("At the beginning of the game, each player is given this "
+             "many infrapoints."), NULL, NULL, NULL,
+          GAME_MIN_INFRA, GAME_MAX_INFRA, GAME_DEFAULT_INFRA)
+
   GEN_INT("techlevel", game.info.tech,
           SSET_GAME_INIT, SSET_SCIENCE, SSET_VITAL,
           ALLOW_NONE, ALLOW_BASIC,
@@ -1851,6 +2077,15 @@ static struct setting settings[] = {
              "the ruleset or other game settings."),
           NULL, NULL, NULL, GAME_MIN_SCIENCEBOX, GAME_MAX_SCIENCEBOX,
           GAME_DEFAULT_SCIENCEBOX)
+
+  GEN_BOOL("multiresearch", game.server.multiresearch,
+          SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Allow researching multiple technologies"),
+          N_("Allows switching to any technology without wasting old "
+             "research. Bulbs are never transferred to new technology. "
+             "Techpenalty options are ineffective after enabling that "
+             "option."), NULL, NULL,
+          GAME_DEFAULT_MULTIRESEARCH)
 
   GEN_INT("techpenalty", game.server.techpenalty,
           SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
@@ -1879,6 +2114,17 @@ static struct setting settings[] = {
           NULL, NULL, NULL, GAME_MIN_TECHLOST_DONOR, GAME_MAX_TECHLOST_DONOR,
           GAME_DEFAULT_TECHLOST_DONOR)
 
+  GEN_INT("techleak", game.info.tech_leak_pct,
+          SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Tech leakage percent"),
+          N_("The rate of the tech leakage. This multiplied by the "
+             "percentage of players who know the tech tell which "
+             "percentage of tech's bulb cost gets leaked each turn. "
+             "This setting has no effect if the ruleset has disabled "
+             "tech leakage."),
+          NULL, NULL, NULL, GAME_MIN_TECHLEAK, GAME_MAX_TECHLEAK,
+          GAME_DEFAULT_TECHLEAK)
+
   GEN_BOOL("team_pooled_research", game.info.team_pooled_research,
            SSET_RULES, SSET_SCIENCE, SSET_VITAL, ALLOW_NONE, ALLOW_BASIC,
            N_("Team pooled research"),
@@ -1906,6 +2152,27 @@ static struct setting settings[] = {
           NULL, NULL, NULL,
           GAME_MIN_DIPLGOLDCOST, GAME_MAX_DIPLGOLDCOST, GAME_DEFAULT_DIPLGOLDCOST)
 
+  GEN_INT("incite_gold_loss_chance", game.server.incite_gold_loss_chance,
+          SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Probability of gold loss during inciting revolt"),
+          N_("When unit trying to incite revolt is eliminated, half of the gold "
+             "(or quarter, if unit was caught), prepared to bribe citizens, "
+             "can be lost or captured by enemy."),
+          NULL, NULL, NULL,
+          GAME_MIN_INCITE_GOLD_LOSS_CHANCE, GAME_MAX_INCITE_GOLD_LOSS_CHANCE,
+          GAME_DEFAULT_INCITE_GOLD_LOSS_CHANCE)
+
+  GEN_INT("incite_gold_capt_chance", game.server.incite_gold_capt_chance,
+          SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Probability of gold capture during inciting revolt"),
+          N_("When unit trying to incite revolt is eliminated and lose its "
+             "gold, there is chance that this gold would be captured by "
+             "city defender. Transfer tax would be applied, though. "
+             "This setting is irrelevant, if incite_gold_loss_chance is zero."),
+          NULL, NULL, NULL,
+          GAME_MIN_INCITE_GOLD_CAPT_CHANCE, GAME_MAX_INCITE_GOLD_CAPT_CHANCE,
+          GAME_DEFAULT_INCITE_GOLD_CAPT_CHANCE)
+
   GEN_INT("conquercost", game.server.conquercost,
           SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
           N_("Penalty when getting tech from conquering"),
@@ -1931,7 +2198,7 @@ static struct setting settings[] = {
           NULL, NULL, NULL,
           GAME_MIN_FREECOST, GAME_MAX_FREECOST, GAME_DEFAULT_FREECOST)
 
-  GEN_INT("techlossforgiveness", game.server.techloss_forgiveness,
+  GEN_INT("techlossforgiveness", game.info.techloss_forgiveness,
           SSET_RULES, SSET_SCIENCE, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
           N_("Research point debt threshold for losing tech"),
           N_("When you have negative research points, and your shortfall is "
@@ -2069,7 +2336,30 @@ static struct setting settings[] = {
               "is not allowed."), NULL, NULL,
            GAME_DEFAULT_TRADING_CITY)
 
-  GEN_INT("trademindist", game.info.trademindist,
+  GEN_ENUM("caravan_bonus_style", game.info.caravan_bonus_style,
+           SSET_RULES, SSET_ECONOMICS, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+           N_("Caravan bonus style"),
+           N_("The formula for the bonus when a caravan enters a city. "
+              "CLASSIC bonuses are proportional to distance and trade "
+              "of source and destination with multipliers for overseas and "
+              "international destinations. LOGARITHMIC bonuses are "
+              "proportional to log^2(distance + trade)."),
+           NULL, NULL, NULL, caravanbonusstyle_name,
+           GAME_DEFAULT_CARAVAN_BONUS_STYLE)
+
+  GEN_ENUM("trade_revenue_style", game.info.trade_revenue_style,
+          SSET_RULES, SSET_ECONOMICS, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
+          N_("Trade revenue style"),
+          N_("The formula for the trade a city receives from a trade route. "
+             "CLASSIC revenues are given by the sum of the two city sizes "
+             "plus the distance between them, with multipliers for overseas "
+             "and international routes. "
+             "SIMPLE revenues are proportional to the average trade of the "
+             "two cities."),
+	  NULL, NULL, NULL, traderevenuestyle_name,
+          GAME_DEFAULT_TRADE_REVENUE_STYLE)
+
+    GEN_INT("trademindist", game.info.trademindist,
           SSET_RULES, SSET_ECONOMICS, SSET_RARE, ALLOW_NONE, ALLOW_BASIC,
           N_("Minimum distance for trade routes"),
           N_("In order for two cities in the same civilization to establish "
@@ -2333,11 +2623,13 @@ static struct setting settings[] = {
                  "- \"Allows units to be airlifted to allied cities\" "
                  "(TO_ALLIES).\n"
                  "- \"Unlimited units from source city\" (SRC_UNLIMITED): "
-                 "note that airlifting from a city doesn't reduce the "
-                 "airlifted counter, but still needs at least 1.\n"
+                 "airlifting from a city doesn't reduce the "
+                 "airlifted counter. It depends on the ruleset whether "
+                 "this is possible even with zero airlift capacity.\n"
                  "- \"Unlimited units to destination city\" "
-                 "(DEST_UNLIMITED): note that airlifting to a city doesn't "
-                 "reduce the airlifted counter, and doesn't need any."),
+                 "(DEST_UNLIMITED): airlifting to a city doesn't "
+                 "reduce the airlifted counter. It depends on the ruleset "
+                 "whether this is possible even with zero airlift capacity."),
               NULL, NULL, airliftingstyle_name, GAME_DEFAULT_AIRLIFTINGSTYLE)
 
   GEN_INT("diplchance", game.server.diplchance,
@@ -2345,7 +2637,12 @@ static struct setting settings[] = {
           ALLOW_NONE, ALLOW_BASIC,
           N_("Base chance for diplomats and spies to succeed"),
           N_("The base chance of a spy returning from a successful mission and "
-             "the base chance of success for diplomats and spies."),
+             "the base chance of success for diplomats and spies for most "
+             "aggressive mission types. Not all the mission types use diplchance "
+             "as a base chance – a ruleset can even say that no action at all does. "
+             "Unit Bribing, and Unit Sabotaging never do. "
+             "Non-aggressive missions typically have no base chance "
+             "at all, but always success."),
           NULL, NULL, NULL,
           GAME_MIN_DIPLCHANCE, GAME_MAX_DIPLCHANCE, GAME_DEFAULT_DIPLCHANCE)
 
@@ -2366,7 +2663,9 @@ static struct setting settings[] = {
                  "- \"Allied\" (ALLIED): After defeating enemies, all remaining "
                  "players are allied.\n"
                  "- \"Culture\" (CULTURE): Player meets ruleset defined cultural "
-                 "domination criteria.\n"),
+                 "domination criteria.\n"
+                 "- \"World Peace\" (WORLDPEACE): There's no wars in the world for "
+                 "the specified amount of turns.\n"),
               NULL, NULL, victory_conditions_name, GAME_DEFAULT_VICTORY_CONDITIONS)
 
   GEN_BOOL("endspaceship", game.server.endspaceship, SSET_RULES_FLEXIBLE,
@@ -2375,6 +2674,15 @@ static struct setting settings[] = {
            N_("If this option is turned on, the game will end with the "
               "arrival of a spaceship at Alpha Centauri."),
            NULL, NULL, GAME_DEFAULT_END_SPACESHIP)
+
+  GEN_INT("spaceship_travel_pct", game.server.spaceship_travel_pct,
+           SSET_RULES_FLEXIBLE, SSET_SCIENCE, SSET_VITAL, ALLOW_NONE,
+           ALLOW_BASIC,
+           N_("Percentage to multiply spaceship travel time by"),
+           N_("This percentage is multiplied onto the time it will take for "
+              "a spaceship to arrive at Alpha Centauri."), NULL, NULL, NULL,
+          GAME_MIN_SPACESHIP_TRAVEL_PCT, GAME_MAX_SPACESHIP_TRAVEL_PCT,
+          GAME_DEFAULT_SPACESHIP_TRAVEL_PCT)
 
   GEN_INT("civilwarsize", game.server.civilwarsize,
           SSET_RULES_FLEXIBLE, SSET_SOCIOLOGY, SSET_RARE,
@@ -2402,7 +2710,9 @@ static struct setting settings[] = {
            N_("This option controls whether tiles with both unreachable "
               "and reachable units can be attacked. If disabled, any "
               "tile with reachable units can be attacked. If enabled, "
-              "tiles with an unreachable unit in them cannot be attacked."),
+              "tiles with an unreachable unit in them cannot be attacked. "
+              "Some units in some rulesets may override this, never "
+              "protecting reachable units on their tile."),
            NULL, NULL, GAME_DEFAULT_UNRPROTECTS)
 
   GEN_INT("contactturns", game.server.contactturns,
@@ -2504,11 +2814,14 @@ static struct setting settings[] = {
           /* TRANS: Do not translate 'migration' setting name. */
           N_("This setting controls how far citizens may look for a "
              "suitable migration destination when deciding which city "
-             "to migrate to. The value is added to the current city radius "
-             "and compared to the distance between the two cities. If "
-             "the distance is lower or equal, migration is possible. This "
-             "setting has no effect unless migration is activated by the "
-             "'migration' setting."),
+             "to migrate to. The value is added to the candidate target "
+             "city's radius and compared to the distance between the "
+             "two cities. If the distance is lower or equal, migration "
+             "is possible. (So with a setting of 0, citizens will only "
+             "consider migrating if their city's center is within the "
+             "destination city's working radius.) This setting has no "
+             "effect unless migration is enabled by the 'migration' "
+             "setting."),
           NULL, NULL, NULL, GAME_MIN_MGR_DISTANCE, GAME_MAX_MGR_DISTANCE,
           GAME_DEFAULT_MGR_DISTANCE)
 
@@ -2721,6 +3034,15 @@ static struct setting settings[] = {
              "client is disconnected."), NULL, NULL, NULL,
           GAME_MIN_PINGTIMEOUT, GAME_MAX_PINGTIMEOUT, GAME_DEFAULT_PINGTIMEOUT)
 
+  GEN_BOOL("iphide", game.server.ip_hide,
+           SSET_META, SSET_NETWORK, SSET_RARE,
+           ALLOW_NONE, ALLOW_HACK,
+           N_("Keep client IP hidden"),
+           N_("Don't tell client IP address to other clients. Server operator "
+              "can still see it. Also, changing this setting cannot do anything "
+              "to the information already sent before."),
+           NULL, NULL, GAME_DEFAULT_IPHIDE)
+
   GEN_BOOL("turnblock", game.server.turnblock,
            SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
            ALLOW_NONE, ALLOW_BASIC,
@@ -2740,6 +3062,16 @@ static struct setting settings[] = {
               "until the timeout has expired, even after all players "
               "have clicked on \"Turn Done\"."),
            NULL, NULL, FALSE)
+
+  GEN_INT("top_cities", game.info.top_cities_count,
+          SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
+          ALLOW_NONE, ALLOW_BASIC,
+          N_("Number of cities in Top Cities report"),
+          N_("How many cities should the Top Cities report contain? "
+             "If this is zero, Top Cities report is not available "
+             "at all."), NULL, NULL, NULL,
+          GAME_MIN_TOP_CITIES_COUNT, GAME_MAX_TOP_CITIES_COUNT,
+          GAME_DEFAULT_TOP_CITIES_COUNT)
 
   GEN_STRING("demography", game.server.demography,
              SSET_META, SSET_INTERNAL, SSET_SITUATIONAL,
@@ -2838,7 +3170,7 @@ static struct setting settings[] = {
            SSET_META, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
            N_("Savegame compression algorithm"),
            N_("Compression library to use for savegames."),
-           NULL, compresstype_callback, NULL, compresstype_name, GAME_DEFAULT_COMPRESS_TYPE)
+           NULL, NULL, NULL, compresstype_name, GAME_DEFAULT_COMPRESS_TYPE)
 
   GEN_STRING("savename", game.server.save_name,
              SSET_META, SSET_INTERNAL, SSET_VITAL, ALLOW_HACK, ALLOW_HACK,
@@ -2920,15 +3252,38 @@ static struct setting settings[] = {
              "affect users kicked in the past."), NULL, NULL, NULL,
           GAME_MIN_KICK_TIME, GAME_MAX_KICK_TIME, GAME_DEFAULT_KICK_TIME)
 
-  GEN_STRING("metamessage", game.server.meta_info.user_message,
-             SSET_META, SSET_INTERNAL, SSET_RARE, ALLOW_CTRL, ALLOW_CTRL,
-             N_("Metaserver info line"),
-             N_("User defined metaserver info line. For most of the time "
-                "a user defined metamessage will be used instead of an "
-                "automatically generated message. "
-                "Set to empty (\"\", not \"empty\") to always use an "
-                "automatically generated meta server message."),
-             NULL, metamessage_action, GAME_DEFAULT_USER_META_MESSAGE)
+  GEN_INT("luatimeout", game.lua_timeout,
+          SSET_RULES_FLEXIBLE, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
+          N_("Lua timeout"),
+          N_("Time in seconds that a single lua script can run before it gets "
+             "forcibly terminated."), NULL, NULL, NULL,
+          GAME_MIN_LUA_TIMEOUT, GAME_MAX_LUA_TIMEOUT, GAME_DEFAULT_LUA_TIMEOUT)
+
+  GEN_STRING_NRS("metamessage", game.server.meta_info.user_message,
+                 SSET_META, SSET_INTERNAL, SSET_RARE, ALLOW_CTRL, ALLOW_CTRL,
+                 N_("Metaserver info line"),
+                 N_("User defined metaserver info line. For most of the time "
+                    "a user defined metamessage will be used instead of an "
+                    "automatically generated message. "
+                    "Set to empty (\"\", not \"empty\") to always use an "
+                    "automatically generated meta server message."),
+                 NULL, metamessage_action, GAME_DEFAULT_USER_META_MESSAGE)
+
+  GEN_ENUM("ailevel", game.info.skill_level,
+           SSET_META, SSET_INTERNAL, SSET_VITAL, ALLOW_NONE, ALLOW_CTRL,
+           N_("Level of new AIs"),
+           N_("Difficulty level of any AI players to be created now on. "
+              "Changing value of this setting does not affect "
+              "existing players."), NULL, NULL, NULL,
+           ailevel_name, GAME_DEFAULT_SKILL_LEVEL)
+
+  GEN_STRING_NRS("aitype", game.server.default_ai_type_name,
+                 SSET_META, SSET_INTERNAL, SSET_RARE, ALLOW_HACK, ALLOW_HACK,
+                 N_("Default AI type"),
+                 N_("Name of the default AI type. New AI players will be "
+                    "created with that type by default. Changing this "
+                    "setting does not affect existing AI players."),
+                 aitype_callback, aitype_action, AI_MOD_DEFAULT)
 };
 
 #undef GEN_BOOL
@@ -3064,6 +3419,7 @@ static bool setting_is_free_to_change(const struct setting *pset,
     /* The special case didn't make it legal to change the setting. Don't
      * give up. It could still be legal. Fall through so the non special
      * cases are checked too. */
+    fc__fallthrough;
 
   case SSET_MAP_ADD:
   case SSET_PLAYERS:
@@ -3082,6 +3438,7 @@ static bool setting_is_free_to_change(const struct setting *pset,
                         "has started."), setting_name(pset));
     return FALSE;
 
+  case SSET_PLAYERS_CHANGEABLE:
   case SSET_RULES_FLEXIBLE:
   case SSET_META:
     /* These can always be changed: */
@@ -3112,10 +3469,19 @@ bool setting_is_changeable(const struct setting *pset,
     return FALSE;
   }
 
-  if (setting_locked(pset)) {
-    /* setting is locked by the ruleset */
+  switch (pset->lock) {
+  case SLOCK_NONE:
+    break;
+  case SLOCK_RULESET:
+    /* Setting is locked by the ruleset */
     settings_snprintf(reject_msg, reject_msg_len,
                       _("The setting '%s' is locked by the ruleset."),
+                      setting_name(pset));
+    return FALSE;
+  case SLOCK_ADMIN:
+    /* Setting is locked by admin */
+    settings_snprintf(reject_msg, reject_msg_len,
+                      _("The setting '%s' is locked by admin."),
                       setting_name(pset));
     return FALSE;
   }
@@ -3254,7 +3620,7 @@ static const char *setting_bool_to_str(const struct setting *pset,
 
 /************************************************************************//**
   Returns TRUE if 'val' is a valid value for this setting. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 
   FIXME: also check the access level of pconn.
@@ -3285,7 +3651,7 @@ static bool setting_bool_validate_base(const struct setting *pset,
 
 /************************************************************************//**
   Set the setting to 'val'. Returns TRUE on success. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 ****************************************************************************/
 bool setting_bool_set(struct setting *pset, const char *val,
@@ -3316,7 +3682,7 @@ bool setting_bool_get(struct setting *pset)
 
 /************************************************************************//**
   Returns TRUE if 'val' is a valid value for this setting. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 ****************************************************************************/
 bool setting_bool_validate(const struct setting *pset, const char *val,
@@ -3503,8 +3869,19 @@ char *setting_str_get(struct setting *pset)
 ****************************************************************************/
 const char *setting_enum_secfile_str(secfile_data_t data, int val)
 {
-  const struct sset_val_name *name =
-      ((const struct setting *) data)->enumerator.name(val);
+  struct sf_cb_data *info = (struct sf_cb_data *)data;
+  const struct sset_val_name *name;
+
+  name = info->set->enumerator.name(val);
+
+  if (info->compat && name != NULL) {
+    const char *ret = setcompat_current_val_from_previous(info->set,
+                                                          name->support);
+
+    if (ret != NULL) {
+      return ret;
+    }
+  }
 
   return (NULL != name ? name->support : NULL);
 }
@@ -3513,8 +3890,7 @@ const char *setting_enum_secfile_str(secfile_data_t data, int val)
   Convert the integer to the string representation of an enumerator.
   Return NULL if 'val' is not a valid enumerator.
 ****************************************************************************/
-const char *setting_enum_val(const struct setting *pset, int val,
-                             bool pretty)
+const char *setting_enum_val(const struct setting *pset, int val, bool pretty)
 {
   const struct sset_val_name *name;
 
@@ -3550,7 +3926,7 @@ static const char *setting_enum_to_str(const struct setting *pset,
 
 /************************************************************************//**
   Returns TRUE if 'val' is a valid value for this setting. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 
   FIXME: also check the access level of pconn.
@@ -3584,7 +3960,7 @@ static bool setting_enum_validate_base(const struct setting *pset,
 ****************************************************************************/
 static bool set_enum_value(struct setting *pset, int val)
 {
-  switch(pset->enumerator.store_size) {
+  switch (pset->enumerator.store_size) {
    case sizeof(int):
      {
        int *to_int = pset->enumerator.pvalue;
@@ -3620,7 +3996,7 @@ int read_enum_value(const struct setting *pset)
 {
   int val;
 
-  switch(pset->enumerator.store_size) {
+  switch (pset->enumerator.store_size) {
    case sizeof(int):
      val = *((int *)pset->enumerator.pvalue);
      break;
@@ -3640,7 +4016,7 @@ int read_enum_value(const struct setting *pset)
 
 /************************************************************************//**
   Set the setting to 'val'. Returns TRUE on success. If it fails, the
-  reason of the failure is available in the optionnal parameter
+  reason of the failure is available in the optional parameter
   'reject_msg'.
 ****************************************************************************/
 bool setting_enum_set(struct setting *pset, const char *val,
@@ -3669,7 +4045,7 @@ bool setting_enum_set(struct setting *pset, const char *val,
 
 /************************************************************************//**
   Returns TRUE if 'val' is a valid value for this setting. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 ****************************************************************************/
 bool setting_enum_validate(const struct setting *pset, const char *val,
@@ -3688,8 +4064,19 @@ bool setting_enum_validate(const struct setting *pset, const char *val,
 ****************************************************************************/
 const char *setting_bitwise_secfile_str(secfile_data_t data, int bit)
 {
-  const struct sset_val_name *name =
-      ((const struct setting *) data)->bitwise.name(bit);
+  struct sf_cb_data *info = (struct sf_cb_data *)data;
+  const struct sset_val_name *name = info->set->bitwise.name(bit);
+
+  if (info->compat && name == NULL) {
+    if (!fc_strcasecmp("topology", setting_name(info->set))) {
+      if ((1 << bit) == TF_OLD_WRAPX) {
+        return "WrapX";
+      }
+      if ((1 << bit) == TF_OLD_WRAPY) {
+        return "WrapY";
+      }
+    }
+  }
 
   return (NULL != name ? name->support : NULL);
 }
@@ -3777,7 +4164,7 @@ static const char *setting_bitwise_to_str(const struct setting *pset,
 
 /************************************************************************//**
   Returns TRUE if 'val' is a valid value for this setting. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 
   FIXME: also check the access level of pconn.
@@ -3830,7 +4217,7 @@ static bool setting_bitwise_validate_base(const struct setting *pset,
 
 /************************************************************************//**
   Set the setting to 'val'. Returns TRUE on success. If it fails, the
-  reason of the failure is available in the optionnal parameter
+  reason of the failure is available in the optional parameter
   'reject_msg'.
 ****************************************************************************/
 bool setting_bitwise_set(struct setting *pset, const char *val,
@@ -3851,7 +4238,7 @@ bool setting_bitwise_set(struct setting *pset, const char *val,
 
 /************************************************************************//**
   Returns TRUE if 'val' is a valid value for this setting. If it's not,
-  the reason of the failure is available in the optionnal parameter
+  the reason of the failure is available in the optional parameter
   'reject_msg'.
 ****************************************************************************/
 bool setting_bitwise_validate(const struct setting *pset, const char *val,
@@ -3990,30 +4377,38 @@ void setting_action(const struct setting *pset)
   Load game settings from ruleset file 'game.ruleset'.
 ****************************************************************************/
 bool settings_ruleset(struct section_file *file, const char *section,
-                      bool act)
+                      bool act, bool compat)
 {
   const char *name;
   int j;
 
   /* Unlock all settings. */
   settings_iterate(SSET_ALL, pset) {
-    setting_lock_set(pset, FALSE);
-    setting_set_to_default(pset);
+    setting_ruleset_lock_clear(pset);
+    if (pset->ruleset_settable && !setting_locked(pset)) {
+      setting_set_to_default(pset);
+    }
   } settings_iterate_end;
 
-  /* settings */
+  /* Settings */
   if (NULL == secfile_section_by_name(file, section)) {
-    /* no settings in ruleset file */
+    /* No settings in ruleset file */
     log_verbose("no [%s] section for game settings in %s", section,
                 secfile_name(file));
   } else {
     for (j = 0; (name = secfile_lookup_str_default(file, NULL, "%s.set%d.name",
                                                    section, j)); j++) {
       char path[256];
+
       fc_snprintf(path, sizeof(path), "%s.set%d", section, j);
 
-      if (!setting_ruleset_one(file, name, path)) {
-        log_error("unknown setting in '%s': %s", secfile_name(file), name);
+      if (compat) {
+        name = setcompat_current_name_from_previous(name);
+      }
+
+      if (!setting_ruleset_one(file, name, path, compat)) {
+        log_error("unknown unsettable setting in '%s': %s",
+                  secfile_name(file), name);
       }
     }
   }
@@ -4022,7 +4417,9 @@ bool settings_ruleset(struct section_file *file, const char *section,
    * default values. */
   if (act) {
     settings_iterate(SSET_ALL, pset) {
-      setting_action(pset);
+      if (pset->ruleset_settable) {
+        setting_action(pset);
+      }
     } settings_iterate_end;
   }
 
@@ -4034,15 +4431,25 @@ bool settings_ruleset(struct section_file *file, const char *section,
   return TRUE;
 }
 
+/***********************************************************************//**
+  Mark a setting as having been set by the ruleset.
+***************************************************************************/
+static inline void setting_ruleset_setdef(struct setting *pset)
+{
+  pset->setdef = SETDEF_RULESET;
+}
+
 /************************************************************************//**
   Set one setting from the game.ruleset file.
 ****************************************************************************/
 static bool setting_ruleset_one(struct section_file *file,
-                                const char *name, const char *path)
+                                const char *name, const char *path,
+                                bool compat)
 {
   struct setting *pset = NULL;
   char reject_msg[256], buf[256];
   bool lock;
+  struct sf_cb_data info = { pset, compat };
 
   settings_iterate(SSET_ALL, pset_check) {
     if (0 == fc_strcasecmp(setting_name(pset_check), name)) {
@@ -4051,13 +4458,17 @@ static bool setting_ruleset_one(struct section_file *file,
     }
   } settings_iterate_end;
 
-  if (pset == NULL) {
-    /* no setting found */
+  if (pset == NULL || !pset->ruleset_settable) {
+    /* No setting found or it's not settable by ruleset */
     return FALSE;
   }
 
-  switch (pset->stype) {
-  case SST_BOOL:
+  if (!setting_locked(pset)) {
+    info.set = pset;
+    info.compat = compat;
+
+    switch (pset->stype) {
+    case SST_BOOL:
     {
       int ival;
       bool val;
@@ -4088,7 +4499,7 @@ static bool setting_ruleset_one(struct section_file *file,
     }
     break;
 
-  case SST_INT:
+    case SST_INT:
     {
       int val;
 
@@ -4108,7 +4519,7 @@ static bool setting_ruleset_one(struct section_file *file,
     }
     break;
 
-  case SST_STRING:
+    case SST_STRING:
     {
       const char *val = secfile_lookup_str(file, "%s.value", path);
 
@@ -4128,12 +4539,12 @@ static bool setting_ruleset_one(struct section_file *file,
     }
     break;
 
-  case SST_ENUM:
+    case SST_ENUM:
     {
       int val;
 
       if (!secfile_lookup_enum_data(file, &val, FALSE,
-                                    setting_enum_secfile_str, pset,
+                                    setting_enum_secfile_str, &info,
                                     "%s.value", path)) {
         log_error("Can't read value for setting '%s': %s",
                   name, secfile_error());
@@ -4152,12 +4563,12 @@ static bool setting_ruleset_one(struct section_file *file,
     }
     break;
 
-  case SST_BITWISE:
+    case SST_BITWISE:
     {
       int val;
 
       if (!secfile_lookup_enum_data(file, &val, TRUE,
-                                    setting_bitwise_secfile_str, pset,
+                                    setting_bitwise_secfile_str, &info,
                                     "%s.value", path)) {
         log_error("Can't read value for setting '%s': %s",
                   name, secfile_error());
@@ -4176,19 +4587,20 @@ static bool setting_ruleset_one(struct section_file *file,
     }
     break;
 
-  case SST_COUNT:
-    fc_assert(pset->stype != SST_COUNT);
-    break;
-  }
+    case SST_COUNT:
+      fc_assert(pset->stype != SST_COUNT);
+      break;
+    }
 
-  pset->setdef = SETDEF_RULESET;
+    setting_ruleset_setdef(pset);
+  }
 
   /* set lock */
   lock = secfile_lookup_bool_default(file, FALSE, "%s.lock", path);
 
   if (lock) {
-    /* set lock */
-    setting_lock_set(pset, lock);
+    /* Set lock */
+    setting_ruleset_lock_set(pset);
     log_normal(_("Ruleset: '%s' has been locked by the ruleset."),
                setting_name(pset));
   }
@@ -4227,15 +4639,59 @@ bool setting_non_default(const struct setting *pset)
 ****************************************************************************/
 bool setting_locked(const struct setting *pset)
 {
-  return pset->locked;
+  return pset->lock != SLOCK_NONE;
 }
 
 /************************************************************************//**
-  Set the value for the lock of a setting.
+  Returns if the setting is locked by the ruleset.
 ****************************************************************************/
-void setting_lock_set(struct setting *pset, bool lock)
+bool setting_ruleset_locked(const struct setting *pset)
 {
-  pset->locked = lock;
+  return pset->rslock;
+}
+
+/************************************************************************//**
+  Set ruleset level lock for the setting
+****************************************************************************/
+void setting_ruleset_lock_set(struct setting *pset)
+{
+  if (pset->lock < SLOCK_RULESET) {
+    /* No downgrading the lock */
+    pset->lock = SLOCK_RULESET;
+  }
+  pset->rslock = TRUE;
+}
+
+/************************************************************************//**
+  Set admin level lock for the setting
+****************************************************************************/
+void setting_admin_lock_set(struct setting *pset)
+{
+  pset->lock = SLOCK_ADMIN;
+}
+
+/************************************************************************//**
+  Clear ruleset level lock from the setting
+****************************************************************************/
+void setting_ruleset_lock_clear(struct setting *pset)
+{
+  if (pset->lock == SLOCK_RULESET) {
+    /* No clearing upper level locks */
+    pset->lock = SLOCK_RULESET;
+  }
+  pset->rslock = FALSE;
+}
+
+/************************************************************************//**
+  Clear admin level lock from the setting
+****************************************************************************/
+void setting_admin_lock_clear(struct setting *pset)
+{
+  if (pset->rslock) {
+    pset->lock = SLOCK_RULESET;
+  } else {
+    pset->lock = SLOCK_NONE;
+  }
 }
 
 /************************************************************************//**
@@ -4274,6 +4730,8 @@ static void setting_game_set(struct setting *pset, bool init)
     fc_assert(setting_type(pset) != SST_COUNT);
     break;
   }
+
+  pset->game_setdef = pset->setdef;
 }
 
 /************************************************************************//**
@@ -4297,6 +4755,11 @@ static void setting_game_restore(struct setting *pset)
   if (!setting_is_changeable(pset, NULL, reject_msg, sizeof(reject_msg))) {
     log_debug("Can't restore '%s': %s", setting_name(pset),
               reject_msg);
+    return;
+  }
+
+  if (pset->game_setdef == SETDEF_INTERNAL) {
+    setting_set_to_default(pset);
     return;
   }
 
@@ -4333,7 +4796,7 @@ static void setting_game_restore(struct setting *pset)
     break;
 
   case SST_COUNT:
-    res = NULL;
+    res = FALSE;
     break;
   }
 
@@ -4365,56 +4828,75 @@ void settings_game_save(struct section_file *file, const char *section)
 
   settings_iterate(SSET_ALL, pset) {
     char errbuf[200];
+    struct sf_cb_data info = { pset, FALSE };
 
     if (/* It's explicitly set to some value to save */
         setting_get_setdef(pset) == SETDEF_CHANGED
          /* It must be same at loading time as it was saving time, even if
           * freeciv's default has changed. */
         || !setting_is_free_to_change(pset, errbuf, sizeof(errbuf))) {
+      bool gamestart = game.server.settings_gamestart_valid;
+
       secfile_insert_str(file, setting_name(pset),
                          "%s.set%d.name", section, set_count);
       switch (setting_type(pset)) {
       case SST_BOOL:
         secfile_insert_bool(file, *pset->boolean.pvalue,
                             "%s.set%d.value", section, set_count);
-        secfile_insert_bool(file, pset->boolean.game_value,
-                            "%s.set%d.gamestart", section, set_count);
+        if (gamestart) {
+          secfile_insert_bool(file, pset->boolean.game_value,
+                              "%s.set%d.gamestart", section, set_count);
+        }
         break;
       case SST_INT:
         secfile_insert_int(file, *pset->integer.pvalue,
                            "%s.set%d.value", section, set_count);
-        secfile_insert_int(file, pset->integer.game_value,
-                           "%s.set%d.gamestart", section, set_count);
+        if (gamestart) {
+          secfile_insert_int(file, pset->integer.game_value,
+                             "%s.set%d.gamestart", section, set_count);
+        }
         break;
       case SST_STRING:
         secfile_insert_str(file, pset->string.value,
                            "%s.set%d.value", section, set_count);
-        secfile_insert_str(file, pset->string.game_value,
-                           "%s.set%d.gamestart", section, set_count);
+        if (gamestart) {
+          secfile_insert_str(file, pset->string.game_value,
+                             "%s.set%d.gamestart", section, set_count);
+        }
         break;
       case SST_ENUM:
         secfile_insert_enum_data(file, read_enum_value(pset), FALSE,
-                                 setting_enum_secfile_str, pset,
+                                 setting_enum_secfile_str, &info,
                                  "%s.set%d.value", section, set_count);
-        secfile_insert_enum_data(file, pset->enumerator.game_value, FALSE,
-                                 setting_enum_secfile_str, pset,
-                                 "%s.set%d.gamestart", section, set_count);
+        if (gamestart) {
+          secfile_insert_enum_data(file, pset->enumerator.game_value, FALSE,
+                                   setting_enum_secfile_str, &info,
+                                   "%s.set%d.gamestart", section, set_count);
+        }
         break;
       case SST_BITWISE:
         secfile_insert_enum_data(file, *pset->bitwise.pvalue, TRUE,
-                                 setting_bitwise_secfile_str, pset,
+                                 setting_bitwise_secfile_str, &info,
                                  "%s.set%d.value", section, set_count);
-        secfile_insert_enum_data(file, pset->bitwise.game_value, TRUE,
-                                 setting_bitwise_secfile_str, pset,
-                                 "%s.set%d.gamestart", section, set_count);
+        if (gamestart) {
+          secfile_insert_enum_data(file, pset->bitwise.game_value, TRUE,
+                                   setting_bitwise_secfile_str, &info,
+                                   "%s.set%d.gamestart", section, set_count);
+        }
         break;
       case SST_COUNT:
         fc_assert(setting_type(pset) != SST_COUNT);
         secfile_insert_str(file, "Unknown setting type",
                            "%s.set%d.value", section, set_count);
-        secfile_insert_str(file, "Unknown setting type",
-                           "%s.set%d.gamestart", section, set_count);
+        if (gamestart) {
+          secfile_insert_str(file, "Unknown setting type",
+                             "%s.set%d.gamestart", section, set_count);
+        }
         break;
+      }
+      if (gamestart) {
+        secfile_insert_str(file, setting_default_level_name(pset->game_setdef),
+                           "%s.set%d.gamesetdef", section, set_count);
       }
       set_count++;
     }
@@ -4453,6 +4935,8 @@ void settings_game_load(struct section_file *file, const char *section)
     name = secfile_lookup_str(file, "%s.set%d.name", section, i);
 
     settings_iterate(SSET_ALL, pset) {
+      struct sf_cb_data info = { pset, FALSE };
+
       if (fc_strcasecmp(setting_name(pset), name) != 0) {
         continue;
       }
@@ -4558,7 +5042,7 @@ void settings_game_load(struct section_file *file, const char *section)
           int val;
 
           if (!secfile_lookup_enum_data(file, &val, FALSE,
-                                        setting_enum_secfile_str, pset,
+                                        setting_enum_secfile_str, &info,
                                         "%s.set%d.value", section, i)) {
             log_verbose("Option '%s' not defined in the savegame: %s", name,
                         secfile_error());
@@ -4592,7 +5076,7 @@ void settings_game_load(struct section_file *file, const char *section)
           int val;
 
           if (!secfile_lookup_enum_data(file, &val, TRUE,
-                                        setting_bitwise_secfile_str, pset,
+                                        setting_bitwise_secfile_str, &info,
                                         "%s.set%d.value", section, i)) {
             log_verbose("Option '%s' not defined in the savegame: %s", name,
                         secfile_error());
@@ -4627,6 +5111,8 @@ void settings_game_load(struct section_file *file, const char *section)
       }
 
       if (game.server.settings_gamestart_valid) {
+        const char *sdname;
+
         /* Load the value of the setting at the start of the game. */
         switch (pset->stype) {
         case SST_BOOL:
@@ -4651,16 +5137,16 @@ void settings_game_load(struct section_file *file, const char *section)
 
         case SST_ENUM:
           pset->enumerator.game_value =
-              secfile_lookup_enum_default_data(file,
+            secfile_lookup_enum_default_data(file,
                   read_enum_value(pset), FALSE, setting_enum_secfile_str,
-                  pset, "%s.set%d.gamestart", section, i);
+                  &info, "%s.set%d.gamestart", section, i);
           break;
 
         case SST_BITWISE:
           pset->bitwise.game_value =
               secfile_lookup_enum_default_data(file,
                   *pset->bitwise.pvalue, TRUE, setting_bitwise_secfile_str,
-                  pset, "%s.set%d.gamestart", section, i);
+                  &info, "%s.set%d.gamestart", section, i);
           break;
 
         case SST_COUNT:
@@ -4668,7 +5154,20 @@ void settings_game_load(struct section_file *file, const char *section)
           break;
         }
 
-        pset->setdef = SETDEF_CHANGED;
+        sdname
+          = secfile_lookup_str_default(file,
+                                   setting_default_level_name(SETDEF_CHANGED),
+                                       "%s.set%d.gamesetdef", section, i);
+        pset->game_setdef = setting_default_level_by_name(sdname,
+                                                          fc_strcasecmp);
+
+        if (!setting_default_level_is_valid(pset->game_setdef)) {
+          log_error("Setting %s has invalid gamesetdef value %s",
+                    setting_name(pset), sdname);
+          pset->game_setdef = SETDEF_CHANGED;
+        }
+      } else {
+        pset->game_setdef = SETDEF_CHANGED;
       }
     } settings_iterate_end;
   }
@@ -4715,7 +5214,8 @@ void settings_init(bool act)
   settings_list_init();
 
   settings_iterate(SSET_ALL, pset) {
-    setting_lock_set(pset, FALSE);
+    setting_ruleset_lock_clear(pset);
+    setting_admin_lock_clear(pset);
     setting_set_to_default(pset);
     setting_game_set(pset, TRUE);
     if (act) {
@@ -4783,7 +5283,8 @@ void send_server_setting(struct conn_list *dest, const struct setting *pset)
   packet.id = setting_number(pset);                                         \
   packet.is_visible = setting_is_visible(pset, pconn);                      \
   packet.is_changeable = setting_is_changeable(pset, pconn, NULL, 0);       \
-  packet.initial_setting = game.info.is_new_game;
+  packet.initial_setting = game.info.is_new_game;                           \
+  packet.setdef = setting_get_setdef(pset);
 
   switch (setting_type(pset)) {
   case SST_BOOL:
@@ -4953,6 +5454,8 @@ void send_server_setting_control(struct connection *pconn)
   /* Send off the control packet. */
   send_packet_server_setting_control(pconn, &control);
 
+  pconn->server.settings_sent = TRUE;
+
   /* Send the constant and common part of the settings. */
   settings_iterate(SSET_ALL, pset) {
     setting.id = setting_number(pset);
@@ -4974,7 +5477,7 @@ static void settings_list_init(void)
   struct setting *pset;
   int i;
 
-  fc_assert_ret(setting_sorted.init == FALSE);
+  fc_assert_ret(!setting_sorted.init);
 
   /* Do it for all values of enum sset_level. */
   for (i = 0; i < OLEVELS_NUM; i++) {
@@ -5032,7 +5535,7 @@ void settings_list_update(void)
   struct setting *pset;
   int i;
 
-  fc_assert_ret(setting_sorted.init == TRUE);
+  fc_assert_ret(setting_sorted.init);
 
   /* Clear the lists for changed and locked values. */
   setting_list_clear(setting_sorted.level[SSET_CHANGED]);
@@ -5071,7 +5574,7 @@ int settings_list_cmp(const struct setting *const *ppset1,
 ****************************************************************************/
 struct setting_list *settings_list_get(enum sset_level level)
 {
-  fc_assert_ret_val(setting_sorted.init == TRUE, NULL);
+  fc_assert_ret_val(setting_sorted.init, NULL);
   fc_assert_ret_val(setting_sorted.level[level] != NULL, NULL);
   fc_assert_ret_val(sset_level_is_valid(level), NULL);
 
@@ -5085,7 +5588,7 @@ static void settings_list_free(void)
 {
   int i;
 
-  fc_assert_ret(setting_sorted.init == TRUE);
+  fc_assert_ret(setting_sorted.init);
 
   /* Free the lists. */
   for (i = 0; i < OLEVELS_NUM; i++) {
@@ -5106,19 +5609,7 @@ void setting_changed(struct setting *pset)
 /************************************************************************//**
   Is the setting in changed state, or the default
 ****************************************************************************/
-enum setting_default_level setting_get_setdef(struct setting *pset)
+enum setting_default_level setting_get_setdef(const struct setting *pset)
 {
   return pset->setdef;
-}
-
-/************************************************************************//**
-  Compatibility function. In the very old times there was no concept of
-  'default' value outside setting initialization, all values were handled
-  like we now want to handle non-default ones.
-****************************************************************************/
-void settings_consider_all_changed(void)
-{
-  settings_iterate(SSET_ALL, pset) {
-    pset->setdef = SETDEF_CHANGED;
-  } settings_iterate_end;
 }

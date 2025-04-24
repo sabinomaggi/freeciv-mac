@@ -30,6 +30,7 @@
 #include "support.h"
 
 /* common */
+#include "chat.h"
 #include "dataio.h"
 #include "game.h"
 #include "mapimg.h"
@@ -52,6 +53,7 @@
 #include "gui_main.h"
 #include "gui_stuff.h"
 #include "mapview.h"
+#include "menu.h"
 #include "optiondlg.h"
 #include "plrdlg.h"             /* get_flag() */
 #include "repodlgs.h"
@@ -65,7 +67,7 @@ static GtkWidget *scenario_authors;
 static GtkWidget *scenario_filename;
 static GtkWidget *scenario_version;
 
-static GtkListStore *load_store, *scenario_store, *meta_store, *lan_store; 
+static GtkListStore *load_store, *scenario_store, *meta_store, *lan_store;
 
 static GtkListStore *server_playerlist_store;
 static GtkWidget *server_playerlist_view;
@@ -74,7 +76,7 @@ static GtkTreeSelection *load_selection, *scenario_selection;
 static GtkTreeSelection *meta_selection, *lan_selection;
 
 /* This is the current page. Invalid value at start, to be sure that it won't
- * be catch throught a switch() statement. */
+ * be caught through a switch() statement. */
 static enum client_pages current_page = -1;
 
 struct server_scan_timer_data
@@ -92,6 +94,8 @@ static guint statusbar_timer = 0;
 
 static GtkWidget *ruleset_combo;
 
+static GtkWidget *conn_popover = NULL;
+
 static bool holding_srv_list_mutex = FALSE;
 
 static void connection_state_reset(void);
@@ -101,13 +105,16 @@ static void connection_state_reset(void);
 **************************************************************************/
 static void start_new_game_callback(GtkWidget *w, gpointer data)
 {
-  if (is_server_running() || client_start_server()) {
-    /* saved settings are sent in client/options.c load_settable_options() */
+  if (!is_server_running()) {
+    client_start_server();
+
+    /* Saved settings are sent in client/options.c
+     * resend_desired_settable_options() */
   }
 }
 
 /**********************************************************************//**
-  Go to the scenario page, spawning a server,
+  Go to the scenario page, spawning a server.
 **************************************************************************/
 static void start_scenario_callback(GtkWidget *w, gpointer data)
 {
@@ -148,7 +155,7 @@ static void main_callback(GtkWidget *w, gpointer data)
   enum client_pages page = PAGE_MAIN;
 
   if (client.conn.used) {
-    disconnect_from_server();
+    disconnect_from_server(TRUE);
   }
   if (page != get_client_page()) {
     set_client_page(page);
@@ -158,10 +165,12 @@ static void main_callback(GtkWidget *w, gpointer data)
 /**********************************************************************//**
   This is called whenever the intro graphic needs a graphics refresh.
 **************************************************************************/
-static gboolean intro_expose(GtkWidget *w, cairo_t *cr, gpointer *data)
+static void intro_expose(GtkDrawingArea *w, cairo_t *cr,
+                         int width, int height, gpointer data)
 {
   static PangoLayout *layout;
-  static int width, height;
+  PangoFontDescription* desc;
+  static int pwidth, pheight;
   static bool left = FALSE;
   GtkAllocation allocation;
   struct sprite *intro = (struct sprite *)data;
@@ -173,9 +182,10 @@ static gboolean intro_expose(GtkWidget *w, cairo_t *cr, gpointer *data)
     char msgbuf[128];
     const char *rev_ver;
 
-    layout = pango_layout_new(gtk_widget_create_pango_context(w));
-    pango_layout_set_font_description(layout,
-         pango_font_description_from_string("Sans Bold 10"));
+    layout = pango_layout_new(gtk_widget_create_pango_context(GTK_WIDGET(w)));
+    desc = pango_font_description_from_string("Sans Bold 10");
+    pango_layout_set_font_description(layout, desc);
+    pango_font_description_free(desc);
 
     rev_ver = fc_git_revision();
 
@@ -193,21 +203,19 @@ static gboolean intro_expose(GtkWidget *w, cairo_t *cr, gpointer *data)
     }
     pango_layout_set_text(layout, msgbuf, -1);
 
-    pango_layout_get_pixel_size(layout, &width, &height);
+    pango_layout_get_pixel_size(layout, &pwidth, &pheight);
   }
-  gtk_widget_get_allocation(w, &allocation);
+  gtk_widget_get_allocation(GTK_WIDGET(w), &allocation);
 
   cairo_set_source_rgb(cr, 0, 0, 0);
-  cairo_move_to(cr, left ? 4 : allocation.width - width - 3,
-                allocation.height - height - 3);
+  cairo_move_to(cr, left ? 4 : allocation.width - pwidth - 3,
+                allocation.height - pheight - 3);
   pango_cairo_show_layout(cr, layout);
 
   cairo_set_source_rgb(cr, 1, 1, 1);
-  cairo_move_to(cr, left ? 3 : allocation.width - width - 4,
-                 allocation.height - height - 4);
+  cairo_move_to(cr, left ? 3 : allocation.width - pwidth - 4,
+                 allocation.height - pheight - 4);
   pango_cairo_show_layout(cr, layout);
-
-  return TRUE;
 }
 
 /**********************************************************************//**
@@ -225,27 +233,30 @@ static void intro_free(GtkWidget *w, gpointer *data)
 **************************************************************************/
 GtkWidget *create_main_page(void)
 {
-  GtkWidget *widget, *vbox, *frame, *darea, *button, *table;
+  GtkWidget *widget, *vgrid, *frame, *darea, *button, *table;
   GtkSizeGroup *size;
   struct sprite *intro_in, *intro;
   int width, height;
   int sh;
   int space_needed;
+  int grid_row = 0;
 
   size = gtk_size_group_new(GTK_SIZE_GROUP_BOTH);
 
-  vbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+  vgrid = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  widget = vbox;
+  widget = vgrid;
 
   frame = gtk_frame_new(NULL);
-  g_object_set(frame, "margin", 18, NULL);
+  gtk_widget_set_margin_bottom(frame, 18);
+  gtk_widget_set_margin_end(frame, 18);
+  gtk_widget_set_margin_start(frame, 18);
+  gtk_widget_set_margin_top(frame, 18);
   gtk_widget_set_halign(frame, GTK_ALIGN_CENTER);
-  gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_ETCHED_OUT);
-  gtk_container_add(GTK_CONTAINER(vbox), frame);
+  gtk_grid_attach(GTK_GRID(vgrid), frame, 0, grid_row++, 1, 1);
 
-  intro_in = load_gfxfile(tileset_main_intro_filename(tileset));
+  intro_in = load_gfxfile(tileset_main_intro_filename(tileset), FALSE);
   get_sprite_dimensions(intro_in, &width, &height);
   sh = screen_height();
 
@@ -255,8 +266,8 @@ GtkWidget *create_main_page(void)
   }
 
   space_needed = 250;
-#if IS_BETA_VERSION
-  /* Beta notice takes extra space */
+#if IS_BETA_VERSION || IS_DEVEL_VERSION
+  /* Alpha or Beta notice takes extra space */
   space_needed += 50;
 #endif
 
@@ -278,27 +289,30 @@ GtkWidget *create_main_page(void)
   }
   darea = gtk_drawing_area_new();
   gtk_widget_set_size_request(darea, width, height);
-  g_signal_connect(darea, "draw",
-                   G_CALLBACK(intro_expose), intro);
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(darea),
+                                 intro_expose, intro, NULL);
   g_signal_connect(widget, "destroy",
                    G_CALLBACK(intro_free), intro);
-  gtk_container_add(GTK_CONTAINER(frame), darea);
+  gtk_frame_set_child(GTK_FRAME(frame), darea);
 
-#if IS_BETA_VERSION
+#if IS_BETA_VERSION || IS_DEVEL_VERSION
   {
     GtkWidget *label;
 
-    label = gtk_label_new(beta_message());
+    label = gtk_label_new(unstable_message());
     gtk_widget_set_name(label, "beta_label");
     gtk_widget_set_halign(label, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
     gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_CENTER);
-    gtk_container_add(GTK_CONTAINER(vbox), label);
+    gtk_grid_attach(GTK_GRID(vgrid), label, 0, grid_row++, 1, 1);
   }
-#endif /* IS_BETA_VERSION */
+#endif /* IS_BETA_VERSION || IS_DEVEL_VERSION */
 
   table = gtk_grid_new();
-  g_object_set(table, "margin", 12, NULL);
+  gtk_widget_set_margin_bottom(table, 12);
+  gtk_widget_set_margin_end(table, 12);
+  gtk_widget_set_margin_start(table, 12);
+  gtk_widget_set_margin_top(table, 12);
   gtk_widget_set_hexpand(table, TRUE);
   gtk_widget_set_vexpand(table, TRUE);
   gtk_widget_set_halign(table, GTK_ALIGN_CENTER);
@@ -306,41 +320,55 @@ GtkWidget *create_main_page(void)
 
   gtk_grid_set_row_spacing(GTK_GRID(table), 8);
   gtk_grid_set_column_spacing(GTK_GRID(table), 18);
-  gtk_container_add(GTK_CONTAINER(vbox), table);
+  gtk_grid_attach(GTK_GRID(vgrid), table, 0, grid_row++, 1, 1);
 
   button = gtk_button_new_with_mnemonic(_("Start _New Game"));
   gtk_size_group_add_widget(size, button);
   gtk_grid_attach(GTK_GRID(table), button, 0, 0, 1, 1);
+  gtk_widget_set_tooltip_text(button,
+     _("Launches local server, and connects to it for a single-player game."));
   g_signal_connect(button, "clicked",
                    G_CALLBACK(start_new_game_callback), NULL);
 
   button = gtk_button_new_with_mnemonic(_("Start _Scenario Game"));
   gtk_size_group_add_widget(size, button);
   gtk_grid_attach(GTK_GRID(table), button, 0, 1, 1, 1);
+  gtk_widget_set_tooltip_text(button,
+     _("Loads one of the scenarios for a single-player game. "
+       "Tutorial is one of the scenarios."));
   g_signal_connect(button, "clicked",
                    G_CALLBACK(start_scenario_callback), NULL);
 
   button = gtk_button_new_with_mnemonic(_("_Load Saved Game"));
   gtk_size_group_add_widget(size, button);
   gtk_grid_attach(GTK_GRID(table), button, 0, 2, 1, 1);
+  gtk_widget_set_tooltip_text(button,
+     _("Continues previously saved single-player game."));
   g_signal_connect(button, "clicked",
                    G_CALLBACK(load_saved_game_callback), NULL);
 
   button = gtk_button_new_with_mnemonic(_("C_onnect to Network Game"));
   gtk_size_group_add_widget(size, button);
   gtk_grid_attach(GTK_GRID(table), button, 1, 0, 1, 1);
+  gtk_widget_set_tooltip_text(button,
+     _("Connects to outside server. "
+       "Sometimes you want to launch a separate server even for local games."));
   g_signal_connect(button, "clicked",
                    G_CALLBACK(connect_network_game_callback), NULL);
 
   button = gtk_button_new_with_mnemonic(_("Client Settings"));
   gtk_size_group_add_widget(size, button);
   gtk_grid_attach(GTK_GRID(table), button, 1, 1, 1, 1);
+  gtk_widget_set_tooltip_text(button,
+                              _("Adjusting client-side options."));
   g_signal_connect(button, "clicked", open_settings, NULL);
 
-  button = icon_label_button_new("application-exit", _("Exit"));
+  button = icon_label_button_new("application-exit", _("E_xit"));
   gtk_size_group_add_widget(size, button);
   g_object_unref(size);
   gtk_grid_attach(GTK_GRID(table), button, 1, 2, 1, 1);
+  gtk_widget_set_tooltip_text(button,
+                              _("Gives you a break from playing freeciv."));
   g_signal_connect(button, "clicked",
                    G_CALLBACK(quit_gtk_main), NULL);
 
@@ -427,16 +455,21 @@ static void save_dialog_file_chooser_callback(GtkWidget *widget,
 {
   if (response == GTK_RESPONSE_OK) {
     save_dialog_action_fn_t action = data;
-    gchar *filename = g_filename_to_utf8(gtk_file_chooser_get_filename
-                                         (GTK_FILE_CHOOSER(widget)),
-                                         -1, NULL, NULL, NULL);
+    GFile *file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(widget));
 
-    if (NULL != filename) {
-      action(filename);
-      g_free(filename);
+    if (file != NULL) {
+      gchar *filename = g_file_get_parse_name(file);
+
+      if (NULL != filename) {
+        action(filename);
+        g_free(filename);
+      }
+
+      g_object_unref(file);
     }
   }
-  gtk_widget_destroy(widget);
+
+  gtk_window_destroy(GTK_WINDOW(widget));
 }
 
 /**********************************************************************//**
@@ -450,12 +483,11 @@ static void save_dialog_file_chooser_popup(const char *title,
 
   /* Create the chooser */
   filechoose = gtk_file_chooser_dialog_new(title, GTK_WINDOW(toplevel), action,
-                                           _("Cancel"), GTK_RESPONSE_CANCEL,
+                                           _("_Cancel"), GTK_RESPONSE_CANCEL,
                                            (action == GTK_FILE_CHOOSER_ACTION_SAVE) ?
-                                           _("Save") : _("Open"),
+                                           _("_Save") : _("_Open"),
                                            GTK_RESPONSE_OK, NULL);
   setup_dialog(filechoose, toplevel);
-  gtk_window_set_position(GTK_WINDOW(filechoose), GTK_WIN_POS_MOUSE);
 
   g_signal_connect(filechoose, "response",
                    G_CALLBACK(save_dialog_file_chooser_callback), cb);
@@ -497,7 +529,7 @@ static void save_dialog_response_callback(GtkWidget *w, gint response,
     return;
   case SD_RES_SAVE:
     {
-      const char *text = gtk_entry_get_text(pdialog->entry);
+      const char *text = gtk_entry_buffer_get_text(gtk_entry_get_buffer(pdialog->entry));
       gchar *filename = g_filename_from_utf8(text, -1, NULL, NULL, NULL);
 
       if (NULL == filename) {
@@ -510,7 +542,8 @@ static void save_dialog_response_callback(GtkWidget *w, gint response,
   default:
     break;
   }
-  gtk_widget_destroy(GTK_WIDGET(pdialog->shell));
+
+  gtk_window_destroy(GTK_WINDOW(pdialog->shell));
 }
 
 /**********************************************************************//**
@@ -550,7 +583,7 @@ static void save_dialog_list_callback(GtkTreeSelection *selection,
 
   gtk_dialog_set_response_sensitive(pdialog->shell, SD_RES_DELETE, TRUE);
   gtk_tree_model_get(model, &iter, SD_COL_PRETTY_NAME, &filename, -1);
-  gtk_entry_set_text(pdialog->entry, filename);
+  gtk_entry_buffer_set_text(gtk_entry_get_buffer(pdialog->entry), filename, -1);
 }
 
 /**********************************************************************//**
@@ -562,7 +595,7 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
                                   save_dialog_files_fn_t files)
 {
   GtkWidget *shell, *sbox, *sw, *label, *view, *entry;
-  GtkContainer *vbox;
+  GtkBox *vbox;
   GtkListStore *store;
   GtkCellRenderer *rend;
   GtkTreeSelection *selection;
@@ -579,9 +612,9 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
   /* Shell. */
   shell = gtk_dialog_new_with_buttons(title, NULL, 0,
                                       _("_Browse..."), SD_RES_BROWSE,
-                                      _("Delete"), SD_RES_DELETE,
-                                      _("Cancel"), GTK_RESPONSE_CANCEL,
-                                      _("Save"), SD_RES_SAVE,
+                                      _("_Delete"), SD_RES_DELETE,
+                                      _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                      _("_Save"), SD_RES_SAVE,
                                       NULL);
   g_object_set_data_full(G_OBJECT(shell), "save_dialog", pdialog,
                          (GDestroyNotify) free);
@@ -591,7 +624,7 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
   g_signal_connect(shell, "response",
                    G_CALLBACK(save_dialog_response_callback), pdialog);
   pdialog->shell = GTK_DIALOG(shell);
-  vbox = GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(shell)));
+  vbox = GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(shell)));
 
   /* Tree view. */
   store = save_dialog_store_new();
@@ -604,11 +637,8 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
                    G_CALLBACK(save_dialog_row_callback), pdialog);
   pdialog->tree_view = GTK_TREE_VIEW(view);
 
-  sbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(sbox),
-                                 GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(sbox), 2);
-  gtk_container_add(vbox, sbox);
+  sbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_box_append(vbox, sbox);
 
   label = g_object_new(GTK_TYPE_LABEL,
                        "use-underline", TRUE,
@@ -617,17 +647,16 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
                        "xalign", 0.0,
                        "yalign", 0.5,
                        NULL);
-  gtk_container_add(GTK_CONTAINER(sbox), label);
+  gtk_box_append(GTK_BOX(sbox), label);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(sw), 300);
   gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(sw), 300);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                      GTK_SHADOW_ETCHED_IN);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), view);
-  gtk_container_add(GTK_CONTAINER(sbox), sw);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
+  gtk_box_append(GTK_BOX(sbox), sw);
 
   selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(view));
   gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
@@ -646,11 +675,11 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
                    G_CALLBACK(save_dialog_entry_callback), pdialog);
   pdialog->entry = GTK_ENTRY(entry);
 
-  sbox = gtk_grid_new();
-  g_object_set(sbox, "margin", 12, NULL);
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(sbox),
-                                 GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(sbox), 2);
+  sbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_set_margin_bottom(sbox, 12);
+  gtk_widget_set_margin_end(sbox, 12);
+  gtk_widget_set_margin_start(sbox, 12);
+  gtk_widget_set_margin_top(sbox, 12);
 
   label = g_object_new(GTK_TYPE_LABEL,
                        "use-underline", TRUE,
@@ -659,14 +688,15 @@ static GtkWidget *save_dialog_new(const char *title, const char *savelabel,
                        "xalign", 0.0,
                        "yalign", 0.5,
                        NULL);
-  gtk_container_add(GTK_CONTAINER(sbox), label);
+  gtk_box_append(GTK_BOX(sbox), label);
 
-  gtk_container_add(GTK_CONTAINER(sbox), entry);
-  gtk_container_add(vbox, sbox);
+  gtk_box_append(GTK_BOX(sbox), entry);
+  gtk_box_append(vbox, sbox);
 
   save_dialog_update(pdialog);
   gtk_window_set_focus(GTK_WINDOW(shell), entry);
-  gtk_widget_show(GTK_WIDGET(vbox));
+  gtk_widget_set_visible(GTK_WIDGET(vbox), TRUE);
+
   return shell;
 }
 
@@ -715,12 +745,12 @@ static void update_server_list(enum server_scan_type sstype,
     return;
   }
 
-  host = gtk_entry_get_text(GTK_ENTRY(network_host));
-  portstr = gtk_entry_get_text(GTK_ENTRY(network_port));
+  host = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_host)));
+  portstr = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_port)));
   port = atoi(portstr);
 
   server_list_iterate(list, pserver) {
-    char buf[20];
+    char buf[35];
 
     if (pserver->humans >= 0) {
       fc_snprintf(buf, sizeof(buf), "%d", pserver->humans);
@@ -786,11 +816,11 @@ static gboolean check_server_scan(gpointer data)
 
     type = server_scan_get_type(scan);
     srvrs = server_scan_get_list(scan);
-    fc_allocate_mutex(&srvrs->mutex);
+    fc_mutex_allocate(&srvrs->mutex);
     holding_srv_list_mutex = TRUE;
     update_server_list(type, srvrs->servers);
     holding_srv_list_mutex = FALSE;
-    fc_release_mutex(&srvrs->mutex);
+    fc_mutex_release(&srvrs->mutex);
   }
 
   if (stat == SCAN_STATUS_ERROR || stat == SCAN_STATUS_DONE) {
@@ -804,12 +834,12 @@ static gboolean check_server_scan(gpointer data)
   Callback function for when there's an error in the server scan.
 **************************************************************************/
 static void server_scan_error(struct server_scan *scan,
-			      const char *message)
+                              const char *message)
 {
   output_window_append(ftc_client, message);
   log_error("%s", message);
 
-  /* Main thread will finalize the scan later (or even concurrently) - 
+  /* Main thread will finalize the scan later (or even concurrently) -
    * do not do anything here to cause double free or raze condition. */
 }
 
@@ -831,8 +861,8 @@ static void update_network_lists(void)
   Network connection state defines.
 **************************************************************************/
 enum connection_state {
-  LOGIN_TYPE, 
-  NEW_PASSWORD_TYPE, 
+  LOGIN_TYPE,
+  NEW_PASSWORD_TYPE,
   ENTER_PASSWORD_TYPE,
   WAITING_TYPE
 };
@@ -866,6 +896,7 @@ static void clear_network_statusbar(void)
     txt = g_queue_pop_head(statusbar_queue);
     free(txt);
   }
+
   gtk_label_set_text(GTK_LABEL(statusbar), "");
 }
 
@@ -890,14 +921,13 @@ void append_network_statusbar(const char *text, bool force)
 GtkWidget *create_statusbar(void)
 {
   statusbar_frame = gtk_frame_new(NULL);
-  gtk_frame_set_shadow_type(GTK_FRAME(statusbar_frame), GTK_SHADOW_IN);
 
   statusbar = gtk_label_new("");
   gtk_widget_set_margin_start(statusbar, 2);
   gtk_widget_set_margin_end(statusbar, 2);
   gtk_widget_set_margin_top(statusbar, 2);
   gtk_widget_set_margin_bottom(statusbar, 2);
-  gtk_container_add(GTK_CONTAINER(statusbar_frame), statusbar);
+  gtk_frame_set_child(GTK_FRAME(statusbar_frame), statusbar);
 
   statusbar_queue = g_queue_new();
   statusbar_timer = g_timeout_add(2000, update_network_statusbar, NULL);
@@ -914,8 +944,10 @@ static void set_connection_state(enum connection_state state)
   case LOGIN_TYPE:
     append_network_statusbar("", FALSE);
 
-    gtk_entry_set_text(GTK_ENTRY(network_password), "");
-    gtk_entry_set_text(GTK_ENTRY(network_confirm_password), "");
+    gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_password)),
+                              "", -1);
+    gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_confirm_password)),
+                              "", -1);
 
     gtk_widget_set_sensitive(network_host, TRUE);
     gtk_widget_set_sensitive(network_port, TRUE);
@@ -928,8 +960,9 @@ static void set_connection_state(enum connection_state state)
     break;
   case NEW_PASSWORD_TYPE:
     set_client_page(PAGE_NETWORK);
-    gtk_entry_set_text(GTK_ENTRY(network_password), "");
-    gtk_entry_set_text(GTK_ENTRY(network_confirm_password), "");
+    gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_password)), "", -1);
+    gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_confirm_password)),
+                              "", -1);
 
     gtk_widget_set_sensitive(network_host, FALSE);
     gtk_widget_set_sensitive(network_port, FALSE);
@@ -944,8 +977,9 @@ static void set_connection_state(enum connection_state state)
     break;
   case ENTER_PASSWORD_TYPE:
     set_client_page(PAGE_NETWORK);
-    gtk_entry_set_text(GTK_ENTRY(network_password), "");
-    gtk_entry_set_text(GTK_ENTRY(network_confirm_password), "");
+    gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_password)), "", -1);
+    gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_confirm_password)),
+                              "", -1);
 
     gtk_widget_set_sensitive(network_host, FALSE);
     gtk_widget_set_sensitive(network_port, FALSE);
@@ -996,12 +1030,12 @@ void handle_authentication_req(enum authentication_type type,
     set_connection_state(NEW_PASSWORD_TYPE);
     return;
   case AUTH_LOGIN_FIRST:
-    /* if we magically have a password already present in 'password'
+    /* if we magically have a password already present in 'fc_password'
      * then, use that and skip the password entry dialog */
-    if (password[0] != '\0') {
+    if (fc_password[0] != '\0') {
       struct packet_authentication_reply reply;
 
-      sz_strlcpy(reply.password, password);
+      sz_strlcpy(reply.password, fc_password);
       send_packet_authentication_reply(&client.conn, &reply);
       return;
     } else {
@@ -1028,10 +1062,12 @@ static void connect_callback(GtkWidget *w, gpointer data)
 
   switch (connection_status) {
   case LOGIN_TYPE:
-    sz_strlcpy(user_name, gtk_entry_get_text(GTK_ENTRY(network_login)));
-    sz_strlcpy(server_host, gtk_entry_get_text(GTK_ENTRY(network_host)));
-    server_port = atoi(gtk_entry_get_text(GTK_ENTRY(network_port)));
-  
+    sz_strlcpy(user_name,
+               gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_login))));
+    sz_strlcpy(server_host,
+               gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_host))));
+    server_port = atoi(gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_port))));
+
     if (connect_to_server(user_name, server_host, server_port,
                           errbuf, sizeof(errbuf)) != -1) {
     } else {
@@ -1039,29 +1075,29 @@ static void connect_callback(GtkWidget *w, gpointer data)
 
       output_window_append(ftc_client, errbuf);
     }
-    return; 
+    return;
   case NEW_PASSWORD_TYPE:
     if (w != network_password) {
-      sz_strlcpy(password,
-	  gtk_entry_get_text(GTK_ENTRY(network_password)));
+      sz_strlcpy(fc_password,
+          gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_password))));
       sz_strlcpy(reply.password,
-	  gtk_entry_get_text(GTK_ENTRY(network_confirm_password)));
-      if (strncmp(reply.password, password, MAX_LEN_NAME) == 0) {
-	password[0] = '\0';
-	send_packet_authentication_reply(&client.conn, &reply);
+          gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_confirm_password))));
+      if (!fc_strncmp(reply.password, fc_password, MAX_LEN_NAME)) {
+        fc_password[0] = '\0';
+        send_packet_authentication_reply(&client.conn, &reply);
 
-	set_connection_state(WAITING_TYPE);
-      } else { 
-	append_network_statusbar(_("Passwords don't match, enter password."),
-	    TRUE);
+        set_connection_state(WAITING_TYPE);
+      } else {
+        append_network_statusbar(_("Passwords don't match, enter password."),
+                                 TRUE);
 
-	set_connection_state(NEW_PASSWORD_TYPE);
+        set_connection_state(NEW_PASSWORD_TYPE);
       }
     }
     return;
   case ENTER_PASSWORD_TYPE:
     sz_strlcpy(reply.password,
-	gtk_entry_get_text(GTK_ENTRY(network_password)));
+               gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(network_password))));
     send_packet_authentication_reply(&client.conn, &reply);
 
     set_connection_state(WAITING_TYPE);
@@ -1077,9 +1113,9 @@ static void connect_callback(GtkWidget *w, gpointer data)
   Connect on list item double-click.
 **************************************************************************/
 static void network_activate_callback(GtkTreeView *view,
-                      		      GtkTreePath *arg1,
-				      GtkTreeViewColumn *arg2,
-				      gpointer data)
+                                      GtkTreePath *arg1,
+                                      GtkTreeViewColumn *arg2,
+                                      gpointer data)
 {
   connect_callback(NULL, data);
 }
@@ -1138,15 +1174,16 @@ static void network_list_callback(GtkTreeSelection *select, gpointer data)
     path = gtk_tree_model_get_path(model, &it);
     if (!holding_srv_list_mutex) {
       /* We are not yet inside mutex protected block */
-      fc_allocate_mutex(&srvrs->mutex);
+      fc_mutex_allocate(&srvrs->mutex);
     }
     if (srvrs->servers && path) {
       gint pos = gtk_tree_path_get_indices(path)[0];
+
       pserver = server_list_get(srvrs->servers, pos);
     }
     if (!holding_srv_list_mutex) {
       /* We are not yet inside mutex protected block */
-      fc_release_mutex(&srvrs->mutex);
+      fc_mutex_release(&srvrs->mutex);
     }
     gtk_tree_path_free(path);
   }
@@ -1154,9 +1191,9 @@ static void network_list_callback(GtkTreeSelection *select, gpointer data)
 
   gtk_tree_model_get(model, &it, 0, &host, 1, &port, -1);
 
-  gtk_entry_set_text(GTK_ENTRY(network_host), host);
+  gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_host)), host, -1);
   fc_snprintf(portstr, sizeof(portstr), "%d", port);
-  gtk_entry_set_text(GTK_ENTRY(network_port), portstr);
+  gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_port)), portstr, -1);
 }
 
 /**********************************************************************//**
@@ -1169,10 +1206,10 @@ static void update_network_page(void)
   gtk_tree_selection_unselect_all(lan_selection);
   gtk_tree_selection_unselect_all(meta_selection);
 
-  gtk_entry_set_text(GTK_ENTRY(network_login), user_name);
-  gtk_entry_set_text(GTK_ENTRY(network_host), server_host);
+  gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_login)), user_name, -1);
+  gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_host)), server_host, -1);
   fc_snprintf(buf, sizeof(buf), "%d", server_port);
-  gtk_entry_set_text(GTK_ENTRY(network_port), buf);
+  gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(network_port)), buf, -1);
 }
 
 /**********************************************************************//**
@@ -1184,17 +1221,16 @@ GtkWidget *create_network_page(void)
   GtkWidget *button, *label, *view, *sw, *table;
   GtkTreeSelection *selection;
   GtkListStore *store;
+  GtkEventController *controller;
 
-  box = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(box),
-                                 GTK_ORIENTATION_VERTICAL);
+  box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
   gtk_widget_set_margin_start(box, 4);
   gtk_widget_set_margin_end(box, 4);
   gtk_widget_set_margin_top(box, 4);
   gtk_widget_set_margin_bottom(box, 4);
 
   notebook = gtk_notebook_new();
-  gtk_container_add(GTK_CONTAINER(box), notebook);
+  gtk_box_append(GTK_BOX(box), notebook);
 
   /* LAN pane. */
   lan_store = gtk_list_store_new(7, G_TYPE_STRING, /* host */
@@ -1214,8 +1250,12 @@ GtkWidget *create_network_page(void)
   selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(view));
   lan_selection = selection;
   gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
-  g_signal_connect(view, "focus",
-      		   G_CALLBACK(gtk_true), NULL);
+
+  controller = gtk_event_controller_focus_new();
+  g_signal_connect(controller, "enter",
+                   G_CALLBACK(terminate_signal_processing), NULL);
+  gtk_widget_add_controller(view, controller);
+
   g_signal_connect(view, "row-activated",
                    G_CALLBACK(network_activate_callback), NULL);
   g_signal_connect(selection, "changed",
@@ -1231,16 +1271,15 @@ GtkWidget *create_network_page(void)
 
   label = gtk_label_new_with_mnemonic(_("Local _Area Network"));
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_widget_set_margin_start(sw, 4);
   gtk_widget_set_margin_end(sw, 4);
   gtk_widget_set_margin_top(sw, 4);
   gtk_widget_set_margin_bottom(sw, 4);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
-				 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), view);
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), sw, label);
 
 
@@ -1262,8 +1301,12 @@ GtkWidget *create_network_page(void)
   selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(view));
   meta_selection = selection;
   gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
-  g_signal_connect(view, "focus",
-      		   G_CALLBACK(gtk_true), NULL);
+
+  controller = gtk_event_controller_focus_new();
+  g_signal_connect(controller, "enter",
+                   G_CALLBACK(terminate_signal_processing), NULL);
+  gtk_widget_add_controller(view, controller);
+
   g_signal_connect(view, "row-activated",
                    G_CALLBACK(network_activate_callback), NULL);
   g_signal_connect(selection, "changed",
@@ -1279,16 +1322,15 @@ GtkWidget *create_network_page(void)
 
   label = gtk_label_new_with_mnemonic(_("Internet _Metaserver"));
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_widget_set_margin_start(sw, 4);
   gtk_widget_set_margin_end(sw, 4);
   gtk_widget_set_margin_top(sw, 4);
   gtk_widget_set_margin_bottom(sw, 4);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
-				 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), view);
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
   if (GUI_GTK_OPTION(metaserver_tab_first)) {
     gtk_notebook_prepend_page(GTK_NOTEBOOK(notebook), sw, label);
   } else {
@@ -1296,20 +1338,20 @@ GtkWidget *create_network_page(void)
   }
 
   /* Bottom part of the page, outside the inner notebook. */
-  sbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(sbox),
-                                 GTK_ORIENTATION_VERTICAL);
-  gtk_container_add(GTK_CONTAINER(box), sbox);
+  sbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_box_append(GTK_BOX(box), sbox);
 
-  hbox = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hbox), 12);
-  g_object_set(hbox, "margin", 8, NULL);
-  gtk_container_add(GTK_CONTAINER(sbox), hbox);
+  hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  gtk_widget_set_margin_bottom(hbox, 8);
+  gtk_widget_set_margin_end(hbox, 8);
+  gtk_widget_set_margin_start(hbox, 8);
+  gtk_widget_set_margin_top(hbox, 8);
+  gtk_box_append(GTK_BOX(sbox), hbox);
 
   table = gtk_grid_new();
   gtk_grid_set_row_spacing(GTK_GRID(table), 2);
   gtk_grid_set_column_spacing(GTK_GRID(table), 12);
-  gtk_container_add(GTK_CONTAINER(hbox), table);
+  gtk_box_append(GTK_BOX(hbox), table);
 
   network_host = gtk_entry_new();
   g_signal_connect(network_host, "activate",
@@ -1317,12 +1359,12 @@ GtkWidget *create_network_page(void)
   gtk_grid_attach(GTK_GRID(table), network_host, 1, 0, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", network_host,
-		       "label", _("_Host:"),
-		       "xalign", 0.0,
-		       "yalign", 0.5,
-		       NULL);
+                       "use-underline", TRUE,
+                       "mnemonic-widget", network_host,
+                       "label", _("_Host:"),
+                       "xalign", 0.0,
+                       "yalign", 0.5,
+                       NULL);
   network_host_label = label;
   gtk_grid_attach(GTK_GRID(table), label, 0, 0, 1, 1);
 
@@ -1332,12 +1374,12 @@ GtkWidget *create_network_page(void)
   gtk_grid_attach(GTK_GRID(table), network_port, 1, 1, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", network_port,
-		       "label", _("_Port:"),
-		       "xalign", 0.0,
-		       "yalign", 0.5,
-		       NULL);
+                       "use-underline", TRUE,
+                       "mnemonic-widget", network_port,
+                       "label", _("_Port:"),
+                       "xalign", 0.0,
+                       "yalign", 0.5,
+                       NULL);
   network_port_label = label;
   gtk_grid_attach(GTK_GRID(table), label, 0, 1, 1, 1);
 
@@ -1348,12 +1390,12 @@ GtkWidget *create_network_page(void)
   gtk_grid_attach(GTK_GRID(table), network_login, 1, 3, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", network_login,
-		       "label", _("_Login:"),
-		       "xalign", 0.0,
-		       "yalign", 0.5,
-		       NULL);
+                       "use-underline", TRUE,
+                       "mnemonic-widget", network_login,
+                       "label", _("_Login:"),
+                       "xalign", 0.0,
+                       "yalign", 0.5,
+                       NULL);
   gtk_widget_set_margin_top(label, 10);
   network_login_label = label;
   gtk_grid_attach(GTK_GRID(table), label, 0, 3, 1, 1);
@@ -1365,12 +1407,12 @@ GtkWidget *create_network_page(void)
   gtk_grid_attach(GTK_GRID(table), network_password, 1, 4, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", network_password,
-		       "label", _("Pass_word:"),
-		       "xalign", 0.0,
-		       "yalign", 0.5,
-		       NULL);
+                       "use-underline", TRUE,
+                       "mnemonic-widget", network_password,
+                       "label", _("Pass_word:"),
+                       "xalign", 0.0,
+                       "yalign", 0.5,
+                       NULL);
   network_password_label = label;
   gtk_grid_attach(GTK_GRID(table), label, 0, 4, 1, 1);
 
@@ -1381,12 +1423,12 @@ GtkWidget *create_network_page(void)
   gtk_grid_attach(GTK_GRID(table), network_confirm_password, 1, 5, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", network_confirm_password,
-		       "label", _("Conf_irm Password:"),
-		       "xalign", 0.0,
-		       "yalign", 0.5,
-		       NULL);
+                       "use-underline", TRUE,
+                       "mnemonic-widget", network_confirm_password,
+                       "label", _("Conf_irm Password:"),
+                       "xalign", 0.0,
+                       "yalign", 0.5,
+                       NULL);
   network_confirm_password_label = label;
   gtk_grid_attach(GTK_GRID(table), label, 0, 5, 1, 1);
 
@@ -1405,40 +1447,38 @@ GtkWidget *create_network_page(void)
   add_treeview_column(view, _("Nation"), G_TYPE_STRING, 3);
   server_playerlist_view = view;
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
-				 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), view);
-  gtk_container_add(GTK_CONTAINER(hbox), sw);
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
+  gtk_box_append(GTK_BOX(hbox), sw);
 
-
-  bbox = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
-  g_object_set(bbox, "margin", 2, NULL);
-  gtk_button_box_set_layout(GTK_BUTTON_BOX(bbox), GTK_BUTTONBOX_END);
+  bbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_widget_set_margin_bottom(bbox, 2);
+  gtk_widget_set_margin_end(bbox, 2);
+  gtk_widget_set_margin_start(bbox, 2);
+  gtk_widget_set_margin_top(bbox, 2);
   gtk_box_set_spacing(GTK_BOX(bbox), 12);
-  gtk_container_add(GTK_CONTAINER(sbox), bbox);
+  gtk_box_append(GTK_BOX(sbox), bbox);
 
-  button = gtk_button_new_from_icon_name("view-refresh", GTK_ICON_SIZE_BUTTON);
-  gtk_container_add(GTK_CONTAINER(bbox), button);
-  gtk_button_box_set_child_secondary(GTK_BUTTON_BOX(bbox), button, TRUE);
+  button = gtk_button_new_from_icon_name("view-refresh");
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
-      G_CALLBACK(update_network_lists), NULL);
+                   G_CALLBACK(update_network_lists), NULL);
 
-  button = gtk_button_new_with_label(_("Cancel"));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(main_callback), NULL);
 
   button = gtk_button_new_with_mnemonic(_("C_onnect"));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
-      G_CALLBACK(connect_callback), NULL);
+                   G_CALLBACK(connect_callback), NULL);
 
   return box;
 }
-
 
 /****************************************************************************
                                   START PAGE
@@ -1450,6 +1490,7 @@ static GtkWidget *observe_button, *ready_button, *nation_button;
 static GtkTreeStore *connection_list_store;
 static GtkTreeView *connection_list_view;
 static GtkWidget *start_aifill_spin = NULL;
+static GtkWidget *ai_lvl_combobox = NULL;
 
 
 /* NB: Must match creation arguments in connection_list_store_new(). */
@@ -1576,26 +1617,25 @@ static void game_options_callback(GtkWidget *w, gpointer data)
 **************************************************************************/
 static void ai_skill_callback(GtkWidget *w, gpointer data)
 {
-  enum ai_level level;
   enum ai_level *levels = (enum ai_level *)data;
   const char *name;
   int i;
 
   i = gtk_combo_box_get_active(GTK_COMBO_BOX(w));
 
-  if (i == -1) {
-    level = AI_LEVEL_DEFAULT;
-  } else {
-    level = levels[i];
+  if (i != -1) {
+    enum ai_level level = levels[i];
+
+    /* Suppress changes provoked by server rather than local user */
+    if (server_ai_level() != level) {
+      name = ai_level_cmd(level);
+      send_chat_printf("/%s", name);
+    }
   }
-
-  name = ai_level_cmd(level);
-
-  send_chat_printf("/%s", name);
 }
 
 /* HACK: sometimes when creating the ruleset combo the value is set without
- * the user's control.  In this case we don't want to do a /read. */
+ * the user's control. In this case we don't want to do a /read. */
 static bool no_ruleset_callback = FALSE;
 
 /**********************************************************************//**
@@ -1666,87 +1706,124 @@ void update_start_page(void)
 }
 
 /**********************************************************************//**
+  Close connection menu.
+**************************************************************************/
+static void close_conn_menu_popover(void)
+{
+  if (conn_popover != NULL){
+    gtk_widget_unparent(conn_popover);
+    g_object_unref(conn_popover);
+
+    conn_popover = NULL;
+  }
+}
+
+/**********************************************************************//**
   Callback for when a team is chosen from the conn menu.
 **************************************************************************/
-static void conn_menu_team_chosen(GObject *object, gpointer data)
+static void conn_menu_team_chosen(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data)
 {
   struct player *pplayer;
-  struct team_slot *tslot = data;
+  struct team_slot *tslot = g_object_get_data(G_OBJECT(action), "slot");
+  GMenu *menu = data;
 
-  if (object_extract(object, &pplayer, NULL)
+  if (object_extract(G_OBJECT(menu), &pplayer, NULL)
       && NULL != tslot
       && team_slot_index(tslot) != team_number(pplayer->team)) {
     send_chat_printf("/team \"%s\" \"%s\"",
                      player_name(pplayer),
                      team_slot_rule_name(tslot));
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
   Callback for when the "ready" entry is chosen from the conn menu.
 **************************************************************************/
-static void conn_menu_ready_chosen(GObject *object, gpointer data)
+static void conn_menu_ready_chosen(GSimpleAction *action, GVariant *parameter,
+                                   gpointer data)
 {
   struct player *pplayer;
+  GMenu *menu = data;
 
-  if (object_extract(object, &pplayer, NULL)) {
+  if (object_extract(G_OBJECT(menu), &pplayer, NULL)) {
     dsend_packet_player_ready(&client.conn,
                               player_number(pplayer), !pplayer->is_ready);
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
   Callback for when the pick-nation entry is chosen from the conn menu.
 **************************************************************************/
-static void conn_menu_nation_chosen(GObject *object, gpointer data)
+static void conn_menu_nation_chosen(GSimpleAction *action, GVariant *parameter,
+                                    gpointer data)
 {
   struct player *pplayer;
+  GMenu *menu = data;
 
-  if (object_extract(object, &pplayer, NULL)) {
+  if (object_extract(G_OBJECT(menu), &pplayer, NULL)) {
     popup_races_dialog(pplayer);
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
   Miscellaneous callback for the conn menu that allows an arbitrary command
   (/observe, /remove, /hard, etc.) to be run on the player.
 **************************************************************************/
-static void conn_menu_player_command(GObject *object, gpointer data)
+static void conn_menu_player_command(GSimpleAction *action, GVariant *parameter,
+                                     gpointer data)
 {
   struct player *pplayer;
+  GMenu *menu = data;
 
-  if (object_extract(object, &pplayer, NULL)) {
+  if (object_extract(G_OBJECT(menu), &pplayer, NULL)) {
     send_chat_printf("/%s \"%s\"",
-                     (char *) g_object_get_data(G_OBJECT(data), "command"),
+                     (char *) g_object_get_data(G_OBJECT(action), "command"),
                      player_name(pplayer));
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
   Take command in the conn menu.
 **************************************************************************/
-static void conn_menu_player_take(GObject *object, gpointer data)
+static void conn_menu_player_take(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data)
 {
   struct player *pplayer;
+  GMenu *menu = data;
 
-  if (object_extract(object, &pplayer, NULL)) {
+  if (object_extract(G_OBJECT(menu), &pplayer, NULL)) {
     client_take_player(pplayer);
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
   Miscellaneous callback for the conn menu that allows an arbitrary command
   (/cmdlevel, /cut, etc.) to be run on the connection.
 **************************************************************************/
-static void conn_menu_connection_command(GObject *object, gpointer data)
+static void conn_menu_connection_command(GSimpleAction *action,
+                                         GVariant *parameter, gpointer data)
 {
   struct connection *pconn;
+  GMenu *menu = data;
 
-  if (object_extract(object, NULL, &pconn)) {
-    send_chat_printf("/%s \"%s\"",
-                     (char *) g_object_get_data(G_OBJECT(data), "command"),
+  if (object_extract(G_OBJECT(menu), NULL, &pconn)) {
+    send_chat_printf(SERVER_COMMAND_PREFIX_STR "%s \"%s\"",
+                     (char *) g_object_get_data(G_OBJECT(action), "command"),
                      pconn->username);
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
@@ -1772,25 +1849,29 @@ static void show_conn_popup(struct player *pplayer, struct connection *pconn)
 
   /* Show popup. */
   popup = gtk_message_dialog_new(NULL, 0,
-				 GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
-				 "%s", buf);
+                                 GTK_MESSAGE_INFO, GTK_BUTTONS_CLOSE,
+                                 "%s", buf);
   gtk_window_set_title(GTK_WINDOW(popup), _("Player/conn info"));
   setup_dialog(popup, toplevel);
-  g_signal_connect(popup, "response", G_CALLBACK(gtk_widget_destroy), NULL);
+  g_signal_connect(popup, "response", G_CALLBACK(gtk_window_destroy), NULL);
   gtk_window_present(GTK_WINDOW(popup));
 }
 
 /**********************************************************************//**
   Callback for when the "info" entry is chosen from the conn menu.
 **************************************************************************/
-static void conn_menu_info_chosen(GObject *object, gpointer data)
+static void conn_menu_info_chosen(GSimpleAction *action, GVariant *parameter,
+                                  gpointer data)
 {
   struct player *pplayer;
   struct connection *pconn;
+  GMenu *menu = data;
 
-  if (object_extract(object, &pplayer, &pconn)) {
+  if (object_extract(G_OBJECT(menu), &pplayer, &pconn)) {
     show_conn_popup(pplayer, pconn);
   }
+
+  close_conn_menu_popover();
 }
 
 /**********************************************************************//**
@@ -1800,80 +1881,81 @@ static void conn_menu_info_chosen(GObject *object, gpointer data)
 static GtkWidget *create_conn_menu(struct player *pplayer,
                                    struct connection *pconn)
 {
-  GtkWidget *menu;
-  GtkWidget *item;
+  GMenu *menu;
   gchar *buf;
+  GSimpleAction *act;
+  GActionGroup *group;
 
-  menu = gtk_menu_new();
+  group = G_ACTION_GROUP(g_simple_action_group_new());
+
+  menu = g_menu_new();
+
   object_put(G_OBJECT(menu), pplayer, pconn);
 
   buf = g_strdup_printf(_("%s info"),
                         pconn ? pconn->username : player_name(pplayer));
-  item = gtk_menu_item_new_with_label(buf);
-  g_free(buf);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-  g_signal_connect_swapped(item, "activate",
-                           G_CALLBACK(conn_menu_info_chosen), menu);
+
+  act = g_simple_action_new("info", NULL);
+  g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+  g_signal_connect(act, "activate", G_CALLBACK(conn_menu_info_chosen), menu);
+  menu_item_append_unref(menu, g_menu_item_new(buf, "win.info"));
 
   if (NULL != pplayer) {
-    item = gtk_menu_item_new_with_label(_("Toggle player ready"));
-    gtk_widget_set_sensitive(item, is_human(pplayer));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    g_signal_connect_swapped(item, "activate",
-                             G_CALLBACK(conn_menu_ready_chosen), menu);
+    act = g_simple_action_new("toggle_ready", NULL);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(conn_menu_ready_chosen), menu);
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act), is_human(pplayer));
+    menu_item_append_unref(menu, g_menu_item_new(_("Toggle player ready"),
+                                                 "win.toggle_ready"));
 
-    item = gtk_menu_item_new_with_label(_("Pick nation"));
-    gtk_widget_set_sensitive(item,
-                             can_conn_edit_players_nation(&client.conn,
-                                                          pplayer));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    g_signal_connect_swapped(item, "activate",
-                             G_CALLBACK(conn_menu_nation_chosen), menu);
+    act = g_simple_action_new("pick_nation", NULL);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(conn_menu_nation_chosen), menu);
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(act),
+                                can_conn_edit_players_nation(&client.conn,
+                                                             pplayer));
+    menu_item_append_unref(menu, g_menu_item_new(_("Pick nation"), "win.pick_nation"));
 
-    item = gtk_menu_item_new_with_label(_("Observe this player"));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    g_object_set_data_full(G_OBJECT(item), "command", g_strdup("observe"),
+    act = g_simple_action_new("observe", NULL);
+    g_object_set_data_full(G_OBJECT(act), "command", g_strdup("observe"),
                            (GDestroyNotify) g_free);
-    g_signal_connect_swapped(item, "activate",
-                             G_CALLBACK(conn_menu_player_command), menu);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(conn_menu_player_command), menu);
+    menu_item_append_unref(menu, g_menu_item_new(_("Observe this player"),
+                                                 "win.observe"));
 
-    item = gtk_menu_item_new_with_label(_("Take this player"));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    g_signal_connect_swapped(item, "activate",
-                             G_CALLBACK(conn_menu_player_take), menu);
+    act = g_simple_action_new("take_plr", NULL);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(conn_menu_player_take), menu);
+    menu_item_append_unref(menu, g_menu_item_new(_("Take this player"),
+                                                 "win.take_plr"));
   }
 
   if (ALLOW_CTRL <= client.conn.access_level && NULL != pconn
-      && (pconn->id != client.conn.id || NULL != pplayer)) {
-    item = gtk_separator_menu_item_new();
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
-    if (pconn->id != client.conn.id) {
-      item = gtk_menu_item_new_with_label(_("Cut connection"));
-      gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-      g_object_set_data_full(G_OBJECT(item), "command", g_strdup("cut"),
-                             (GDestroyNotify) g_free);
-      g_signal_connect_swapped(item, "activate",
-                               G_CALLBACK(conn_menu_connection_command),
-                               menu);
-    }
+      && pconn->id != client.conn.id) {
+    act = g_simple_action_new("cut_conn", NULL);
+    g_object_set_data_full(G_OBJECT(act), "command", g_strdup("cut"),
+                           (GDestroyNotify) g_free);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(conn_menu_connection_command), menu);
+    menu_item_append_unref(menu, g_menu_item_new(_("Cut connection"), "win.cut_conn"));
   }
 
   if (ALLOW_CTRL <= client.conn.access_level && NULL != pplayer) {
-    item = gtk_menu_item_new_with_label(_("Aitoggle player"));
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-    g_object_set_data_full(G_OBJECT(item), "command", g_strdup("aitoggle"),
+    act = g_simple_action_new("aitoggle", NULL);
+    g_object_set_data_full(G_OBJECT(act), "command", g_strdup("aitoggle"),
                            (GDestroyNotify) g_free);
-    g_signal_connect_swapped(item, "activate",
-                             G_CALLBACK(conn_menu_player_command), menu);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+    g_signal_connect(act, "activate", G_CALLBACK(conn_menu_connection_command), menu);
+    menu_item_append_unref(menu, g_menu_item_new(_("Aitoggle player"), "win.aitoggle"));
 
     if (pplayer != client.conn.playing && game.info.is_new_game) {
-      item = gtk_menu_item_new_with_label(_("Remove player"));
-      gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-      g_object_set_data_full(G_OBJECT(item), "command", g_strdup("remove"),
+      act = g_simple_action_new("remove", NULL);
+      g_object_set_data_full(G_OBJECT(act), "command", g_strdup("remove"),
                              (GDestroyNotify) g_free);
-      g_signal_connect_swapped(item, "activate",
-                               G_CALLBACK(conn_menu_player_command), menu);
+      g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+      g_signal_connect(act, "activate", G_CALLBACK(conn_menu_connection_command), menu);
+      menu_item_append_unref(menu, g_menu_item_new(_("Remove player"), "win.remove"));
     }
   }
 
@@ -1883,19 +1965,21 @@ static GtkWidget *create_conn_menu(struct player *pplayer,
 
     /* No item for hack access; that would be a serious security hole. */
     for (level = cmdlevel_min(); level < client.conn.access_level; level++) {
-      /* TRANS: Give access level to a connection. */
-      buf = g_strdup_printf(_("Give %s access"),
-                            cmdlevel_name(level));
-      item = gtk_menu_item_new_with_label(buf);
-      g_free(buf);
-      gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-      g_object_set_data_full(G_OBJECT(item), "command",
+      char actbuf[128];
+
+      buf = g_strdup_printf(_("Give %s access"), cmdlevel_name(level));
+      fc_snprintf(actbuf, sizeof(actbuf), "cmdlevel_%d", level);
+
+      act = g_simple_action_new(actbuf, NULL);
+      g_object_set_data_full(G_OBJECT(act), "command",
                              g_strdup_printf("cmdlevel %s",
                                              cmdlevel_name(level)),
                              (GDestroyNotify) g_free);
-      g_signal_connect_swapped(item, "activate",
-                               G_CALLBACK(conn_menu_connection_command),
-                               menu);
+      g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+      g_signal_connect(act, "activate", G_CALLBACK(conn_menu_connection_command), menu);
+      fc_snprintf(actbuf, sizeof(actbuf), "win.cmdlevel_%d", level);
+      menu_item_append_unref(menu, g_menu_item_new(buf, actbuf));
+      g_free(buf);
     }
   }
 
@@ -1903,34 +1987,36 @@ static GtkWidget *create_conn_menu(struct player *pplayer,
       && NULL != pplayer && is_ai(pplayer)) {
     enum ai_level level;
 
-    item = gtk_separator_menu_item_new();
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-
     for (level = 0; level < AI_LEVEL_COUNT; level++) {
       if (is_settable_ai_level(level)) {
-        const char *level_name = ai_level_translated_name(level);
-        const char *level_cmd = ai_level_cmd(level);
+        char actbuf[128];
 
-        item = gtk_menu_item_new_with_label(level_name);
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-        g_object_set_data_full(G_OBJECT(item), "command",
-                               g_strdup(level_cmd), (GDestroyNotify) g_free);
-        g_signal_connect_swapped(item, "activate",
-                                 G_CALLBACK(conn_menu_player_command), menu);
+        buf = g_strdup_printf(_("Difficulty: %s"), ai_level_translated_name(level));
+        fc_snprintf(actbuf, sizeof(actbuf), "ailevel_%d", level);
+
+        act = g_simple_action_new(actbuf, NULL);
+        g_object_set_data_full(G_OBJECT(act), "command",
+                               g_strdup(ai_level_cmd(level)),
+                               (GDestroyNotify) g_free);
+        g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+        g_signal_connect(act, "activate", G_CALLBACK(conn_menu_player_command), menu);
+        fc_snprintf(actbuf, sizeof(actbuf), "win.ailevel_%d", level);
+        menu_item_append_unref(menu, g_menu_item_new(buf, actbuf));
+        g_free(buf);
       }
     }
   }
 
-  if (pplayer && game.info.is_new_game) {
+  if (pplayer != NULL /* && game.info.is_new_game */) {
     const int count = pplayer->team
-                      ? player_list_size(team_members(pplayer->team)) : 0;
+      ? player_list_size(team_members(pplayer->team)) : 0;
     bool need_empty_team = (count != 1);
-
-    item = gtk_separator_menu_item_new();
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
 
     /* Can't use team_iterate here since it skips empty teams. */
     team_slots_iterate(tslot) {
+      char actbuf[128];
+      int id;
+
       if (!team_slot_is_used(tslot)) {
         if (!need_empty_team) {
           continue;
@@ -1938,21 +2024,29 @@ static GtkWidget *create_conn_menu(struct player *pplayer,
         need_empty_team = FALSE;
       }
 
+      id = team_number(team_slot_get_team(tslot));
+
       /* TRANS: e.g., "Put on Team 5" */
       buf = g_strdup_printf(_("Put on %s"),
                             team_slot_name_translation(tslot));
-      item = gtk_menu_item_new_with_label(buf);
+      fc_snprintf(actbuf, sizeof(actbuf), "team_%d", id);
+
+      act = g_simple_action_new(actbuf, NULL);
+      g_object_set_data(G_OBJECT(act), "slot", tslot);
+      g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+      g_signal_connect(act, "activate", G_CALLBACK(conn_menu_team_chosen), menu);
+      fc_snprintf(actbuf, sizeof(actbuf), "win.team_%d", id);
+      menu_item_append_unref(menu, g_menu_item_new(buf, actbuf));
       g_free(buf);
-      gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-      object_put(G_OBJECT(item), pplayer, NULL);
-      g_signal_connect(item, "activate", G_CALLBACK(conn_menu_team_chosen),
-                       tslot);
     } team_slots_iterate_end;
   }
 
-  gtk_widget_show(menu);
+  close_conn_menu_popover();
+  conn_popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+  g_object_ref(conn_popover);
+  gtk_widget_insert_action_group(conn_popover, "win", group);
 
-  return menu;
+  return conn_popover;
 }
 
 /**********************************************************************//**
@@ -1972,57 +2066,85 @@ static gboolean delayed_unselect_path(gpointer data)
 }
 
 /**********************************************************************//**
-  Called on a button event on the pregame player list.
+  Called on a left button click on the pregame player list.
 **************************************************************************/
-static gboolean connection_list_event(GtkWidget *widget,
-                                      GdkEventButton *event,
-                                      gpointer data)
+static gboolean connect_list_left_button(GtkGestureClick *gesture,
+                                         int n_press,
+                                         double x, double y, gpointer data)
 {
-  GtkTreeView *tree = GTK_TREE_VIEW(widget);
+  GtkEventController *controller = GTK_EVENT_CONTROLLER(gesture);
+  GtkTreeView *tree = GTK_TREE_VIEW(gtk_event_controller_get_widget(controller));
   GtkTreePath *path = NULL;
   GtkTreeSelection *selection = gtk_tree_view_get_selection(tree);
-  gboolean ret = FALSE;
 
-  if ((1 != event->button && 3 != event->button)
-      || GDK_BUTTON_PRESS != event->type
-      || !gtk_tree_view_get_path_at_pos(tree,
-                                        event->x, event->y,
-                                        &path, NULL, NULL, NULL)) {
+  if (!gtk_tree_view_get_path_at_pos(tree,
+                                     x, y,
+                                     &path, NULL, NULL, NULL)) {
     return FALSE;
   }
 
-  if (1 == event->button) {
-    if (gtk_tree_selection_path_is_selected(selection, path)) {
-      /* Need to delay to avoid problem with the expander. */
-      g_idle_add(delayed_unselect_path, path);
-      return FALSE;     /* Return now, don't free the path. */
-    }
-  } else if (3 == event->button) {
-    GtkTreeModel *model = gtk_tree_view_get_model(tree);
-    GtkTreeIter iter;
-    GtkWidget *menu;
-    int player_no, conn_id;
-    struct player *pplayer;
-    struct connection *pconn;
-
-    if (!gtk_tree_selection_path_is_selected(selection, path)) {
-      gtk_tree_selection_select_path(selection, path);
-    }
-    gtk_tree_model_get_iter(model, &iter, path);
-
-    gtk_tree_model_get(model, &iter, CL_COL_PLAYER_NUMBER, &player_no, -1);
-    pplayer = player_by_number(player_no);
-
-    gtk_tree_model_get(model, &iter, CL_COL_CONN_ID, &conn_id, -1);
-    pconn = conn_by_number(conn_id);
-
-    menu = create_conn_menu(pplayer, pconn);
-    gtk_menu_popup_at_pointer(GTK_MENU(menu), NULL);
-    ret = TRUE;
+  if (gtk_tree_selection_path_is_selected(selection, path)) {
+    /* Need to delay to avoid problem with the expander. */
+    g_idle_add(delayed_unselect_path, path);
+    return FALSE;     /* Return now, don't free the path. */
   }
 
   gtk_tree_path_free(path);
-  return ret;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Called on a right button click on the pregame player list.
+**************************************************************************/
+static gboolean connect_list_right_button(GtkGestureClick *gesture,
+                                          int n_press,
+                                          double x, double y, gpointer data)
+{
+  GtkEventController *controller = GTK_EVENT_CONTROLLER(gesture);
+  GtkWidget *tree = gtk_event_controller_get_widget(controller);
+  GtkWidget *parent = data;
+  GtkTreePath *path = NULL;
+  GtkWidget *menu;
+  GtkTreeSelection *selection;
+  GtkTreeModel *model;
+  GtkTreeIter iter;
+  int player_no, conn_id;
+  struct player *pplayer;
+  struct connection *pconn;
+  int bx, by;
+  GdkRectangle rect = { .x = x, .y = y, .width = 1, .height = 1};
+
+  gtk_tree_view_convert_widget_to_bin_window_coords(GTK_TREE_VIEW(tree), x, y, &bx, &by);
+
+  if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(tree), bx, by,
+                                     &path, NULL, NULL, NULL)) {
+    return FALSE;
+  }
+
+  selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+  model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree));
+
+  if (!gtk_tree_selection_path_is_selected(selection, path)) {
+    gtk_tree_selection_select_path(selection, path);
+  }
+  gtk_tree_model_get_iter(model, &iter, path);
+
+  gtk_tree_model_get(model, &iter, CL_COL_PLAYER_NUMBER, &player_no, -1);
+  pplayer = player_by_number(player_no);
+
+  gtk_tree_model_get(model, &iter, CL_COL_CONN_ID, &conn_id, -1);
+  pconn = conn_by_number(conn_id);
+
+  menu = create_conn_menu(pplayer, pconn);
+  gtk_widget_set_parent(menu, parent); /* Gtk bug prevents tree view parenting */
+  gtk_popover_set_pointing_to(GTK_POPOVER(menu), &rect);
+
+  gtk_popover_popup(GTK_POPOVER(menu));
+
+  gtk_tree_path_free(path);
+
+  return TRUE;
 }
 
 /**********************************************************************//**
@@ -2077,8 +2199,7 @@ static bool conn_list_selection(struct player **ppplayer,
 }
 
 /**********************************************************************//**
-  Returns TRUE if a row is selected in the connection/player list. Fills
-  the not null data.
+  Selects connection's row in the connection/player list.
 **************************************************************************/
 static void conn_list_select_conn(struct connection *pconn)
 {
@@ -2195,17 +2316,17 @@ static void update_start_page_buttons(void)
 
   /*** Ready button. ***/
   if (can_client_control()) {
-    sensitive = TRUE;
+    sensitive = client_player()->is_alive;
     if (client_player()->is_ready) {
       text = _("Not _ready");
     } else {
       int num_unready = 0;
 
-      players_iterate(pplayer) {
+      players_iterate_alive(pplayer) {
         if (is_human(pplayer) && !pplayer->is_ready) {
           num_unready++;
         }
-      } players_iterate_end;
+      } players_iterate_alive_end;
 
       if (num_unready > 1) {
         text = _("_Ready");
@@ -2219,14 +2340,14 @@ static void update_start_page_buttons(void)
     text = _("_Start");
     if (can_client_access_hack()) {
       sensitive = TRUE;
-      players_iterate(plr) {
+      players_iterate_alive(plr) {
         if (is_human(plr)) {
           /* There's human controlled player(s) in game, so it's their
            * job to start the game. */
           sensitive = FALSE;
           break;
         }
-      } players_iterate_end;
+      } players_iterate_alive_end;
     } else {
       sensitive = FALSE;
     }
@@ -2330,7 +2451,7 @@ static bool model_get_conn_iter(GtkTreeModel *model, GtkTreeIter *iter,
 /**********************************************************************//**
   Update the connected users list at pregame state.
 **************************************************************************/
-void real_conn_list_dialog_update(void)
+void real_conn_list_dialog_update(void *unused)
 {
   if (client_state() == C_S_PREPARING
       && get_client_page() == PAGE_START
@@ -2349,6 +2470,26 @@ void real_conn_list_dialog_update(void)
     char name[MAX_LEN_NAME + 8];
     enum cmdlevel access_level;
     int conn_id;
+
+    /* Refresh the AI skill level control */
+    if (ai_lvl_combobox) {
+      enum ai_level new_level = server_ai_level(), level;
+      int i = 0;
+
+      for (level = 0; level < AI_LEVEL_COUNT; level++) {
+        if (is_settable_ai_level(level)) {
+          if (level == new_level) {
+            gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), i);
+            break;
+          }
+          i++;
+        }
+      }
+      if (level == AI_LEVEL_COUNT) {
+        /* Probably ai_level_invalid() */
+        gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), -1);
+      }
+    }
 
     /* Save the selected connection. */
     (void) conn_list_selection(&pselected_player, &pselected_conn);
@@ -2553,7 +2694,7 @@ void real_conn_list_dialog_update(void)
 /**********************************************************************//**
   Helper function for adding columns to a tree view. If 'key' is not NULL
   then the added column is added to the object data of the treeview using
-  g_object_set_data under 'key'.
+  g_object_set_data() under 'key'.
 **************************************************************************/
 static void add_tree_col(GtkWidget *treeview, GType gtype,
                          const char *title, int colnum, const char *key)
@@ -2591,8 +2732,8 @@ static void add_tree_col(GtkWidget *treeview, GType gtype,
 **************************************************************************/
 GtkWidget *create_start_page(void)
 {
-  GtkWidget *box, *sbox, *table, *vbox;
-  GtkWidget *view, *sw, *text, *toolkit_view, *button, *spin, *ai_lvl_combobox;
+  GtkWidget *box, *sbox, *table, *vgrid;
+  GtkWidget *view, *sw, *text, *toolkit_view, *button, *spin;
   GtkWidget *label;
   GtkTreeSelection *selection;
   enum ai_level level;
@@ -2601,6 +2742,11 @@ GtkWidget *create_start_page(void)
      but this is set safely to the max */
   static enum ai_level levels[AI_LEVEL_COUNT];
   int i = 0;
+  int box_row = 0;
+  int sbox_col = 0;
+  int grid_row = 0;
+  GtkGesture *gesture;
+  GtkEventController *controller;
 
   box = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(box),
@@ -2613,30 +2759,34 @@ GtkWidget *create_start_page(void)
 
   sbox = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(sbox), 12);
-  gtk_container_add(GTK_CONTAINER(box), sbox);
+  gtk_grid_attach(GTK_GRID(box), sbox, 0, box_row++, 1, 1);
 
-  vbox = gtk_grid_new();
-  g_object_set(vbox, "margin", 12, NULL);
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+  vgrid = gtk_grid_new();
+  gtk_widget_set_margin_bottom(vgrid, 12);
+  gtk_widget_set_margin_end(vgrid, 12);
+  gtk_widget_set_margin_start(vgrid, 12);
+  gtk_widget_set_margin_top(vgrid, 12);
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(vbox), 2);
-  gtk_widget_set_halign(vbox, GTK_ALIGN_CENTER);
-  gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
-  gtk_container_add(GTK_CONTAINER(sbox), vbox);
+  gtk_grid_set_row_spacing(GTK_GRID(vgrid), 2);
+  gtk_widget_set_halign(vgrid, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(vgrid, GTK_ALIGN_CENTER);
+  gtk_grid_attach(GTK_GRID(sbox), vgrid, sbox_col++, 0, 1, 1);
 
   table = gtk_grid_new();
   start_options_table = table;
   gtk_grid_set_row_spacing(GTK_GRID(table), 2);
   gtk_grid_set_column_spacing(GTK_GRID(table), 12);
-  gtk_container_add(GTK_CONTAINER(vbox), table);
+  gtk_grid_attach(GTK_GRID(vgrid), table, 0, grid_row++, 1, 1);
 
   spin = gtk_spin_button_new_with_range(1, MAX_NUM_PLAYERS, 1);
   start_aifill_spin = spin;
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(spin), 0);
-  gtk_spin_button_set_update_policy(GTK_SPIN_BUTTON(spin), 
+  gtk_spin_button_set_update_policy(GTK_SPIN_BUTTON(spin),
                                     GTK_UPDATE_IF_VALID);
   if (server_optset != NULL) {
     struct option *paifill = optset_option_by_name(server_optset, "aifill");
+
     if (paifill) {
       gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin),
                                 option_int_get(paifill));
@@ -2648,8 +2798,8 @@ GtkWidget *create_start_page(void)
   gtk_grid_attach(GTK_GRID(table), spin, 1, 0, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", spin,
+                       "use-underline", TRUE,
+                       "mnemonic-widget", spin,
                        /* TRANS: Keep individual lines short */
                        "label", _("Number of _Players\n(including AI):"),
                        "xalign", 0.0,
@@ -2668,15 +2818,15 @@ GtkWidget *create_start_page(void)
       i++;
     }
   }
-  gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), 0);
+  gtk_combo_box_set_active(GTK_COMBO_BOX(ai_lvl_combobox), -1);
   g_signal_connect(ai_lvl_combobox, "changed",
                    G_CALLBACK(ai_skill_callback), levels);
 
   gtk_grid_attach(GTK_GRID(table), ai_lvl_combobox, 1, 1, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", ai_lvl_combobox,
+                       "use-underline", TRUE,
+                       "mnemonic-widget", ai_lvl_combobox,
                        "label", _("AI Skill _Level:"),
                        "xalign", 0.0,
                        "yalign", 0.5,
@@ -2690,8 +2840,8 @@ GtkWidget *create_start_page(void)
   gtk_grid_attach(GTK_GRID(table), ruleset_combo, 1, 2, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
-		       "use-underline", TRUE,
-		       "mnemonic-widget", GTK_COMBO_BOX_TEXT(ruleset_combo),
+                       "use-underline", TRUE,
+                       "mnemonic-widget", GTK_COMBO_BOX_TEXT(ruleset_combo),
                        "label", _("Ruleset:"),
                        "xalign", 0.0,
                        "yalign", 0.5,
@@ -2700,12 +2850,15 @@ GtkWidget *create_start_page(void)
 
   button = icon_label_button_new("preferences-system",
                                  _("_More Game Options..."));
-  g_object_set(button, "margin", 8, NULL);
+  gtk_widget_set_margin_bottom(button, 8);
+  gtk_widget_set_margin_end(button, 8);
+  gtk_widget_set_margin_start(button, 8);
+  gtk_widget_set_margin_top(button, 8);
   gtk_widget_set_halign(button, GTK_ALIGN_CENTER);
   gtk_widget_set_valign(button, GTK_ALIGN_CENTER);
   g_signal_connect(button, "clicked",
       G_CALLBACK(game_options_callback), NULL);
-  gtk_container_add(GTK_CONTAINER(vbox), button);
+  gtk_grid_attach(GTK_GRID(vgrid), button, 0, grid_row++, 1, 1);
 
   connection_list_store = connection_list_store_new();
   view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(connection_list_store));
@@ -2734,8 +2887,11 @@ GtkWidget *create_start_page(void)
   add_tree_col(view, G_TYPE_STRING, _("Team"),
                CL_COL_TEAM, NULL);
 
-  g_signal_connect(view, "button-press-event",
-                   G_CALLBACK(connection_list_event), NULL);
+  controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
+  g_signal_connect(controller, "pressed",
+                   G_CALLBACK(connect_list_left_button), NULL);
+  gtk_widget_add_controller(view, controller);
+
   g_signal_connect(view, "row-collapsed",
                    G_CALLBACK(connection_list_row_callback),
                    GINT_TO_POINTER(TRUE));
@@ -2743,24 +2899,31 @@ GtkWidget *create_start_page(void)
                    G_CALLBACK(connection_list_row_callback),
                    GINT_TO_POINTER(FALSE));
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC,
                                  GTK_POLICY_ALWAYS);
   gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(sw), 200);
-  gtk_container_add(GTK_CONTAINER(sw), view);
-  gtk_container_add(GTK_CONTAINER(sbox), sw);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
 
+  /* This is for a workaround against gtk bug that we can't parent
+   * popup to the tree view - we have to parent it all the way to sw */
+  gesture = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 3);
+  controller = GTK_EVENT_CONTROLLER(gesture);
+  g_signal_connect(controller, "pressed",
+                   G_CALLBACK(connect_list_right_button), sw);
+  gtk_widget_add_controller(view, controller);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  gtk_grid_attach(GTK_GRID(sbox), sw, sbox_col++, 0, 1, 1);
+
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC,
                                  GTK_POLICY_ALWAYS);
-  gtk_container_add(GTK_CONTAINER(box), sw);
+  gtk_grid_attach(GTK_GRID(box), sw, 0, box_row++, 1, 1);
 
   text = gtk_text_view_new_with_buffer(message_buffer);
   gtk_widget_set_hexpand(text, TRUE);
@@ -2770,20 +2933,19 @@ GtkWidget *create_start_page(void)
   gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text), GTK_WRAP_WORD);
   gtk_text_view_set_left_margin(GTK_TEXT_VIEW(text), 5);
   gtk_text_view_set_editable(GTK_TEXT_VIEW(text), FALSE);
-  gtk_container_add(GTK_CONTAINER(sw), text);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), text);
 
 
   /* Vote widgets. */
   if (pregame_votebar == NULL) {
     pregame_votebar = voteinfo_bar_new(TRUE);
   }
-  gtk_container_add(GTK_CONTAINER(box), pregame_votebar);
-  
+  gtk_grid_attach(GTK_GRID(box), pregame_votebar, 0, box_row++, 1, 1);
 
   toolkit_view = inputline_toolkit_view_new();
-  gtk_container_add(GTK_CONTAINER(box), toolkit_view);
+  gtk_grid_attach(GTK_GRID(box), toolkit_view, 0, box_row++, 1, 1);
 
-  button = gtk_button_new_with_label(_("Cancel"));
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
   inputline_toolkit_view_append_button(toolkit_view, button);
   g_signal_connect(button, "clicked", G_CALLBACK(main_callback), NULL);
 
@@ -2816,7 +2978,7 @@ void handle_game_load(bool load_successful, const char *filename)
     set_client_page(PAGE_START);
 
     if (game.info.is_new_game) {
-      /* It's pregame. Create a player and connect to him */
+      /* It's pregame. Create a player and connect to it */
       send_chat("/take -");
     }
   }
@@ -2848,7 +3010,7 @@ static void load_callback(void)
 }
 
 /**********************************************************************//**
-  Call the default GTK+ requester for saved game loading.
+  Call the default GTK requester for saved game loading.
 **************************************************************************/
 static void load_browse_callback(GtkWidget *w, gpointer data)
 {
@@ -2879,6 +3041,8 @@ GtkWidget *create_load_page(void)
 
   GtkWidget *button, *label, *view, *sw;
   GtkCellRenderer *rend;
+  int box_row = 0;
+  int sbox_row = 0;
 
   box = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(box),
@@ -2905,13 +3069,13 @@ GtkWidget *create_load_page(void)
 
   g_signal_connect(view, "row-activated",
                    G_CALLBACK(load_callback), NULL);
-  
+
   sbox = gtk_grid_new();
   gtk_widget_set_halign(sbox, GTK_ALIGN_CENTER);
   gtk_orientable_set_orientation(GTK_ORIENTABLE(sbox),
                                  GTK_ORIENTATION_VERTICAL);
   gtk_grid_set_row_spacing(GTK_GRID(sbox), 2);
-  gtk_container_add(GTK_CONTAINER(box), sbox);
+  gtk_grid_attach(GTK_GRID(box), sbox, 0, box_row++, 1, 1);
 
   label = g_object_new(GTK_TYPE_LABEL,
     "use-underline", TRUE,
@@ -2920,36 +3084,33 @@ GtkWidget *create_load_page(void)
     "xalign", 0.0,
     "yalign", 0.5,
     NULL);
-  gtk_container_add(GTK_CONTAINER(sbox), label);
+  gtk_grid_attach(GTK_GRID(sbox), label, 0, sbox_row++, 1, 1);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(sw), 300);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_AUTOMATIC,
-  				 GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), view);
-  gtk_container_add(GTK_CONTAINER(sbox), sw);
+                                 GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
+  gtk_grid_attach(GTK_GRID(sbox), sw, 0, sbox_row++, 1, 1);
 
-  bbox = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+  bbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   gtk_widget_set_hexpand(bbox, TRUE);
-  gtk_button_box_set_layout(GTK_BUTTON_BOX(bbox), GTK_BUTTONBOX_END);
   gtk_box_set_spacing(GTK_BOX(bbox), 12);
-  gtk_container_add(GTK_CONTAINER(box), bbox);
+  gtk_grid_attach(GTK_GRID(box), bbox, 0, box_row++, 1, 1);
 
   button = gtk_button_new_with_mnemonic(_("_Browse..."));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
-  gtk_button_box_set_child_secondary(GTK_BUTTON_BOX(bbox), button, TRUE);
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(load_browse_callback), NULL);
 
-  button = gtk_button_new_with_label(_("Cancel"));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(main_callback), NULL);
 
-  button = gtk_button_new_with_label(_("OK"));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  button = gtk_button_new_with_mnemonic(_("_OK"));
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(load_callback), NULL);
 
@@ -2971,11 +3132,11 @@ static void scenario_list_callback(void)
 
   if (gtk_tree_selection_get_selected(scenario_selection, NULL, &it)) {
     gtk_tree_model_get(GTK_TREE_MODEL(scenario_store), &it,
-		       2, &description, -1);
+                       2, &description, -1);
     gtk_tree_model_get(GTK_TREE_MODEL(scenario_store), &it,
-		       3, &authors, -1);
+                       3, &authors, -1);
     gtk_tree_model_get(GTK_TREE_MODEL(scenario_store), &it,
-		       1, &filename, -1);
+                       1, &filename, -1);
     gtk_tree_model_get(GTK_TREE_MODEL(scenario_store), &it,
                        4, &ver, -1);
     filename = skip_to_basename(filename);
@@ -2986,7 +3147,13 @@ static void scenario_list_callback(void)
       maj = ver / 1000000;
       ver %= 1000000;
       min = ver / 10000;
-      fc_snprintf(vername, sizeof(vername), "%d.%d", maj, min);
+      ver %= 10000;
+      if (ver >= 9000) {
+        /* Development version, have '+' */
+        fc_snprintf(vername, sizeof(vername), "%d.%d+", maj, min);
+      } else {
+        fc_snprintf(vername, sizeof(vername), "%d.%d", maj, min);
+      }
     } else {
       /* TRANS: Old scenario format version */
       fc_snprintf(vername, sizeof(vername), _("pre-2.6"));
@@ -3023,7 +3190,7 @@ static void scenario_callback(void)
 }
 
 /**********************************************************************//**
-  call the default GTK+ requester for scenario loading.
+  Call the default GTK requester for scenario loading.
 **************************************************************************/
 static void scenario_browse_callback(GtkWidget *w, gpointer data)
 {
@@ -3050,7 +3217,15 @@ static void update_scenario_page(void)
         && secfile_lookup_bool_default(sf, TRUE, "scenario.is_scenario")) {
       const char *sname, *sdescription, *sauthors;
       int fcver;
+      int fcdev;
       int current_ver = MAJOR_VERSION * 1000000 + MINOR_VERSION * 10000;
+      int current_dev;
+
+      current_dev = current_ver;
+      if (PATCH_VERSION >= 90) {
+        /* Patch level matters on development versions */
+        current_dev += PATCH_VERSION * 100;
+      }
 
       fcver = secfile_lookup_int_default(sf, 0, "scenario.game_version");
       if (fcver < 30000) {
@@ -3059,15 +3234,19 @@ static void update_scenario_page(void)
          * multiply by 100. */
         fcver *= 100;
       }
-      fcver -= (fcver % 10000); /* Patch level does not affect compatibility */
+      if (fcver % 10000 >= 9000) {
+        fcdev = fcver - (fcver % 100);   /* Emergency version does not count. */
+      } else {
+        fcdev = fcver - (fcver % 10000); /* Patch version does not count. */
+      }
       sname = secfile_lookup_str_default(sf, NULL, "scenario.name");
       sdescription = secfile_lookup_str_default(sf, NULL,
                                                 "scenario.description");
       sauthors = secfile_lookup_str_default(sf, NULL, "scenario.authors");
       log_debug("scenario file: %s from %s", sname, pfile->fullname);
 
-      /* Ignore scenarios for newer freeciv versions than we are */
-      if (fcver <= current_ver) {
+      /* Ignore scenarios for newer freeciv versions than we are. */
+      if (fcdev <= current_dev) {
         bool add_new = TRUE;
 
         if (sname != NULL) {
@@ -3141,19 +3320,23 @@ static void update_scenario_page(void)
 **************************************************************************/
 GtkWidget *create_scenario_page(void)
 {
-  GtkWidget *vbox, *hbox, *sbox, *bbox, *filenamebox, *descbox;
+  GtkWidget *vgrid, *hbox, *sbox, *bbox, *filenamebox, *descbox;
   GtkWidget *versionbox, *vertext;
   GtkWidget *button, *label, *view, *sw, *swa, *text;
   GtkCellRenderer *rend;
+  int grid_row = 0;
+  int filenamecol = 0;
+  int vercol = 0;
+  int descrow = 0;
 
-  vbox = gtk_grid_new();
-  gtk_orientable_set_orientation(GTK_ORIENTABLE(vbox),
+  vgrid = gtk_grid_new();
+  gtk_orientable_set_orientation(GTK_ORIENTABLE(vgrid),
                                  GTK_ORIENTATION_VERTICAL);
-  gtk_grid_set_row_spacing(GTK_GRID(vbox), 18);
-  gtk_widget_set_margin_start(vbox, 4);
-  gtk_widget_set_margin_end(vbox, 4);
-  gtk_widget_set_margin_top(vbox, 4);
-  gtk_widget_set_margin_bottom(vbox, 4);
+  gtk_grid_set_row_spacing(GTK_GRID(vgrid), 18);
+  gtk_widget_set_margin_start(vgrid, 4);
+  gtk_widget_set_margin_end(vgrid, 4);
+  gtk_widget_set_margin_top(vgrid, 4);
+  gtk_widget_set_margin_bottom(vgrid, 4);
 
   scenario_store = gtk_list_store_new(5, G_TYPE_STRING,
                                          G_TYPE_STRING,
@@ -3186,7 +3369,7 @@ GtkWidget *create_scenario_page(void)
     "xalign", 0.0,
     "yalign", 0.5,
     NULL);
-  gtk_container_add(GTK_CONTAINER(vbox), label);
+  gtk_grid_attach(GTK_GRID(vgrid), label, 0, grid_row++, 1, 1);
 
   sbox = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(sbox), 12);
@@ -3194,18 +3377,17 @@ GtkWidget *create_scenario_page(void)
   gtk_orientable_set_orientation(GTK_ORIENTABLE(sbox),
                                  GTK_ORIENTATION_VERTICAL);
   gtk_grid_set_row_spacing(GTK_GRID(sbox), 2);
-  gtk_container_add(GTK_CONTAINER(vbox), sbox);
+  gtk_grid_attach(GTK_GRID(vgrid), sbox, 0, grid_row++, 1, 1);
 
   hbox = gtk_grid_new();
   gtk_grid_set_column_homogeneous(GTK_GRID(hbox), TRUE);
   gtk_grid_set_column_spacing(GTK_GRID(hbox), 12);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_AUTOMATIC,
-  				 GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), view);
+                                 GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), view);
   gtk_grid_attach(GTK_GRID(sbox), sw, 0, 0, 1, 2);
 
   text = gtk_text_view_new();
@@ -3216,12 +3398,11 @@ GtkWidget *create_scenario_page(void)
   gtk_text_view_set_editable(GTK_TEXT_VIEW(text), FALSE);
   scenario_description = text;
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-				      GTK_SHADOW_ETCHED_IN);
+  sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_AUTOMATIC,
-  				 GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(sw), text);
+                                 GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), text);
 
   text = gtk_text_view_new();
   gtk_widget_set_hexpand(text, TRUE);
@@ -3231,12 +3412,11 @@ GtkWidget *create_scenario_page(void)
   gtk_text_view_set_editable(GTK_TEXT_VIEW(text), FALSE);
   scenario_authors = text;
 
-  swa = gtk_scrolled_window_new(NULL, NULL);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(swa),
-                                      GTK_SHADOW_ETCHED_IN);
+  swa = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(swa), TRUE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(swa), GTK_POLICY_AUTOMATIC,
                                  GTK_POLICY_AUTOMATIC);
-  gtk_container_add(GTK_CONTAINER(swa), text);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(swa), text);
 
   text = gtk_label_new(_("Filename:"));
   scenario_filename = gtk_label_new("");
@@ -3246,10 +3426,14 @@ GtkWidget *create_scenario_page(void)
 
   filenamebox = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(hbox), 12);
-  g_object_set(filenamebox, "margin", 5, NULL);
+  gtk_widget_set_margin_bottom(filenamebox, 5);
+  gtk_widget_set_margin_end(filenamebox, 5);
+  gtk_widget_set_margin_start(filenamebox, 5);
+  gtk_widget_set_margin_top(filenamebox, 5);
 
-  gtk_container_add(GTK_CONTAINER(filenamebox), text);
-  gtk_container_add(GTK_CONTAINER(filenamebox), scenario_filename);
+  gtk_grid_attach(GTK_GRID(filenamebox), text, filenamecol++, 0, 1, 1);
+  gtk_grid_attach(GTK_GRID(filenamebox), scenario_filename,
+                  filenamecol++, 0, 1, 1);
 
   /* TRANS: Scenario format version */
   vertext = gtk_label_new(_("Format:"));
@@ -3260,43 +3444,47 @@ GtkWidget *create_scenario_page(void)
 
   versionbox = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(hbox), 12);
-  g_object_set(versionbox, "margin", 5, NULL);
+  gtk_widget_set_margin_bottom(versionbox, 5);
+  gtk_widget_set_margin_end(versionbox, 5);
+  gtk_widget_set_margin_start(versionbox, 5);
+  gtk_widget_set_margin_top(versionbox, 5);
 
-  gtk_container_add(GTK_CONTAINER(versionbox), vertext);
-  gtk_container_add(GTK_CONTAINER(versionbox), scenario_version);
+  gtk_grid_attach(GTK_GRID(versionbox), vertext, vercol++, 0, 1, 1);
+  gtk_grid_attach(GTK_GRID(versionbox), scenario_version,
+                  vercol++, 0, 1, 1);
 
   descbox = gtk_grid_new();
   gtk_orientable_set_orientation(GTK_ORIENTABLE(descbox),
                                  GTK_ORIENTATION_VERTICAL);
   gtk_grid_set_row_spacing(GTK_GRID(descbox), 6);
-  gtk_container_add(GTK_CONTAINER(descbox), sw);
-  gtk_container_add(GTK_CONTAINER(descbox), swa);
-  gtk_container_add(GTK_CONTAINER(descbox), filenamebox);
-  gtk_container_add(GTK_CONTAINER(descbox), versionbox);
+  gtk_grid_attach(GTK_GRID(descbox), sw, 0, descrow++, 1, 1);
+  gtk_grid_attach(GTK_GRID(descbox), swa, 0, descrow++, 1, 1);
+  gtk_grid_attach(GTK_GRID(descbox), filenamebox,
+                  0, descrow++, 1, 1);
+  gtk_grid_attach(GTK_GRID(descbox), versionbox,
+                  0, descrow++, 1, 1);
   gtk_grid_attach(GTK_GRID(sbox), descbox, 1, 0, 1, 2);
 
-  bbox = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
-  gtk_button_box_set_layout(GTK_BUTTON_BOX(bbox), GTK_BUTTONBOX_END);
+  bbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   gtk_box_set_spacing(GTK_BOX(bbox), 12);
-  gtk_container_add(GTK_CONTAINER(vbox), bbox);
+  gtk_grid_attach(GTK_GRID(vgrid), bbox, 0, grid_row++, 1, 1);
 
   button = gtk_button_new_with_mnemonic(_("_Browse..."));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
-  gtk_button_box_set_child_secondary(GTK_BUTTON_BOX(bbox), button, TRUE);
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
       G_CALLBACK(scenario_browse_callback), NULL);
 
-  button = gtk_button_new_with_label(_("Cancel"));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  button = gtk_button_new_with_mnemonic(_("_Cancel"));
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(main_callback), NULL);
 
-  button = gtk_button_new_with_label(_("OK"));
-  gtk_container_add(GTK_CONTAINER(bbox), button);
+  button = gtk_button_new_with_mnemonic(_("_OK"));
+  gtk_box_append(GTK_BOX(bbox), button);
   g_signal_connect(button, "clicked",
                    G_CALLBACK(scenario_callback), NULL);
 
-  return vbox;
+  return vgrid;
 }
 
 /**********************************************************************//**
@@ -3308,7 +3496,7 @@ enum client_pages get_current_client_page(void)
 }
 
 /**********************************************************************//**
-  Changes the current page.  The action is delayed.
+  Changes the current page. The action is delayed.
 **************************************************************************/
 void real_set_client_page(enum client_pages new_page)
 {
@@ -3349,14 +3537,10 @@ void real_set_client_page(enum client_pages new_page)
   case PAGE_MAIN:
   case PAGE_START:
     if (is_server_running()) {
-      if (game.info.is_new_game) {
-        gtk_widget_show(start_options_table);
-      } else {
-        gtk_widget_hide(start_options_table);
-      }
+      gtk_widget_set_visible(start_options_table, game.info.is_new_game);
       update_start_page();
     } else {
-      gtk_widget_hide(start_options_table);
+      gtk_widget_set_visible(start_options_table, FALSE);
     }
     voteinfo_gui_update();
     overview_size_changed();
@@ -3386,19 +3570,19 @@ void real_set_client_page(enum client_pages new_page)
     break;
   }
 
-  /* hide/show statusbar. */
+  /* Hide/show statusbar. */
   if (new_page == PAGE_START || new_page == PAGE_GAME) {
     clear_network_statusbar();
-    gtk_widget_hide(statusbar_frame);
+    gtk_widget_set_visible(statusbar_frame, FALSE);
   } else {
-    gtk_widget_show(statusbar_frame);
+    gtk_widget_set_visible(statusbar_frame, TRUE);
   }
 
   gtk_notebook_set_current_page(GTK_NOTEBOOK(toplevel_tabs), new_page);
 
   /* Update the GUI. */
-  while (gtk_events_pending()) {
-    gtk_main_iteration();
+  while (g_main_context_pending(NULL)) {
+    g_main_context_iteration(NULL, FALSE);
   }
 
   switch (new_page) {
@@ -3419,6 +3603,8 @@ void real_set_client_page(enum client_pages new_page)
     refresh_chat_buttons();
     center_on_something();
     mapview_thaw();
+    add_idle_callback(main_message_area_resize, NULL);
+    add_idle_callback(animation_idle_cb, NULL);
     break;
   case PAGE_NETWORK:
     update_network_lists();
@@ -3455,7 +3641,7 @@ void save_game_dialog_popup(void)
   shell = save_dialog_new(_("Save Game"), _("Saved _Games:"),
                           _("Save _Filename:"), send_save_game,
                           save_dialog_savegame_list);
-  g_signal_connect(shell, "destroy", G_CALLBACK(gtk_widget_destroyed),
+  g_signal_connect(shell, "destroy", G_CALLBACK(widget_destroyed),
                    &shell);
   gtk_window_present(GTK_WINDOW(shell));
 }
@@ -3490,7 +3676,7 @@ void save_scenario_dialog_popup(void)
   shell = save_dialog_new(_("Save Scenario"), _("Saved Sce_narios:"),
                           _("Save Sc_enario:"), save_dialog_save_scenario,
                           save_dialog_scenario_list);
-  g_signal_connect(shell, "destroy", G_CALLBACK(gtk_widget_destroyed),
+  g_signal_connect(shell, "destroy", G_CALLBACK(widget_destroyed),
                    &shell);
   gtk_window_present(GTK_WINDOW(shell));
 }
@@ -3519,7 +3705,7 @@ void save_mapimg_dialog_popup(void)
   shell = save_dialog_new(_("Save Map Image"), _("Saved Map _Images:"),
                           _("Save _Map Images:"), mapimg_client_save,
                           save_dialog_mapimg_list);
-  g_signal_connect(shell, "destroy", G_CALLBACK(gtk_widget_destroyed),
+  g_signal_connect(shell, "destroy", G_CALLBACK(widget_destroyed),
                    &shell);
   gtk_window_present(GTK_WINDOW(shell));
 }
@@ -3533,12 +3719,13 @@ void mapimg_client_save(const char *filename)
     char msg[512];
 
     fc_snprintf(msg, sizeof(msg), "(%s)", mapimg_error());
-    popup_notify_dialog("Error", "Error Creating the Map Image!", msg);
+    popup_notify_dialog(_("Error"),
+                        _("Error Creating the Map Image!"), msg);
   }
 }
 
 /**********************************************************************//**
-  Set the list of available rulesets.  The default ruleset should be
+  Set the list of available rulesets. The default ruleset should be
   "default", and if the user changes this then set_ruleset() should be
   called.
 **************************************************************************/
@@ -3548,7 +3735,7 @@ void set_rulesets(int num_rulesets, char **rulesets)
   int def_idx = -1;
 
   gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(ruleset_combo));
-  for (i = 0; i < num_rulesets; i++){
+  for (i = 0; i < num_rulesets; i++) {
 
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(ruleset_combo), rulesets[i]);
     if (!strcmp("default", rulesets[i])) {
@@ -3558,7 +3745,7 @@ void set_rulesets(int num_rulesets, char **rulesets)
 
   no_ruleset_callback = TRUE;
 
-  /* HACK: server should tell us the current ruleset. */
+  /* HACK: Server should tell us the current ruleset. */
   gtk_combo_box_set_active(GTK_COMBO_BOX(ruleset_combo), def_idx);
 
   no_ruleset_callback = FALSE;

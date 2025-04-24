@@ -2,9 +2,9 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes,
+; for other "maintenance". If you want to make custom changes,
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
@@ -12,9 +12,21 @@
 ; than minor changes.
 
 [datafile]
-description="Alien World buildings data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Alien World buildings data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
+
+[control]
+
+; Names for custom building flags. There can be up to 8 of these.
+; name          = rule name; In some circumstances user may see this
+;                 as part of some sentences, so try to make it descriptive
+;                 and sensible.
+; helptxt       = displayed in the help for building types with this flag
+;                 (optional)
+;building_flags =
+;  { "name", "helptxt"
+;  }
 
 ; /* <-- avoid gettext warnings
 ;
@@ -34,15 +46,20 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; genus	        = genus; one of:
-;                 "GreatWonder", "SmallWonder", "Improvement", "Special".
+;                 "GreatWonder", "SmallWonder", "Improvement", "Special",
+;                 or "Convert".
 ; reqs		= requirements to build the building (see effects.ruleset
 ;		  and README.effects for help on requirements)
-; graphic	= icon of improvement (used in city dialog)
-; graphic_alt	= alternate icon of improvement
+; graphic       = icon of improvement (used in city dialog)
+; graphic_alt   = alternate icon of improvement
+; graphic_alt2  = second alternative icon.
 ; obsolete_by	= requirements for the building to become obsolete
 ; build_cost	= production shields required to build
 ; upkeep	= monetary upkeep value
 ; sabotage	= percent chance of diplomat sabotage being successful
+; sound         = tag of the sound to play when building finished
+; sound_alt     = alternate sound tag
+; sound_alt2    = second alternative sound tag
 ; flags         = special flag strings
 ;
 ; ** Building flags **
@@ -55,10 +72,13 @@ format_version=20
 ;                      Should only be used with genus "SmallWonder".
 ; "Gold"             = Not a real building; production turned into gold
 ;                      indefinitely (capitalization/coinage).
-;                      Genus should be "Special".
+;                      Genus should be "Convert".
+; "Infra"            = Not a real building; production turned into infrapoints
+;                      indefinitely. Genus should be "Convert".
 ; "DisasterProof"    = Disasters never destroy this building. Is meaningful
 ;                      only for genus "Improvement" buildings as others are
 ;                      automatically disaster proof.
+; "Indestructible"   = Surgical strike can never destroy this building.
 ;
 ; */ <-- avoid gettext warnings
 
@@ -71,6 +91,7 @@ reqs	=
     }
 graphic         = "b.antigrav_port"
 graphic_alt     = "b.airport"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -79,6 +100,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_airport"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Allows one unit airlift from and to city, increased to three once \
@@ -93,6 +115,7 @@ reqs	=
     }
 graphic         = "b.archive"
 graphic_alt     = "b.library"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -101,6 +124,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_library"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the science production of a city by 75%.")
@@ -108,8 +132,12 @@ Increases the science production of a city by 75%.")
 [building_basic_infrastructure]
 name		= _("Basic Infrastructure")
 genus		= "Improvement"
+reqs	=
+    { "type", "name", "range"
+    }
 graphic         = "b.basic_infra"
 graphic_alt     = "b.super_highways"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -118,6 +146,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "b_super_highways"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Basic Infrastructure to the city. This improvement has no maintenance, and \
@@ -132,10 +161,11 @@ reqs    =
     {
       "type", "name", "range"
       "Tech", "Underground Habitat", "Player"
-      "TerrainClass", "Land", "Local"
+      "TerrainClass", "Land", "Tile"
     }
 graphic         = "b.bunker"
 graphic_alt     = "b.sam_battery"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -144,6 +174,7 @@ upkeep          = 1
 sabotage        = 15
 sound           = "b_sam_battery"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Revolt cannot be incited in a city with bunker.\
@@ -155,10 +186,11 @@ genus           = "Improvement"
 reqs    =
     { "type", "name", "range"
       "Tech", "Mining", "Player"
-      "TerrainClass", "Land", "Local"
+      "TerrainClass", "Land", "Tile"
     }
 graphic         = "b.central_mine"
 graphic_alt     = "b.mfg_plant"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -167,6 +199,7 @@ upkeep          = 1
 sabotage        = 80
 sound           = "b_mfg_plant"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 City center tile produces three extra shields.\
@@ -181,6 +214,7 @@ reqs	=
     }
 graphic         = "b.cyberpart_factory"
 graphic_alt     = "b.marketplace"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -189,6 +223,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_marketplace"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the tax output in a city by 75%.\
@@ -203,6 +238,7 @@ reqs    =
     }
 graphic         = "b.factory"
 graphic_alt     = "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -211,6 +247,7 @@ upkeep          = 1
 sabotage        = 50
 sound           = "b_factory"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 helptext        = _("\
 Factory produces spare parts for two units removing their production upkeep.\
 ")
@@ -225,6 +262,7 @@ reqs    =
     }
 graphic         = "b.filter"
 graphic_alt     = "b.sewer_system"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -233,6 +271,7 @@ upkeep          = 1
 sabotage        = 30
 sound           = "b_sewer_system"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 helptext        = _("\
 Filter System gets 1 extra food and 1 extra production from each oceanic tile.\
 ")
@@ -247,6 +286,7 @@ reqs    =
     }
 graphic         = "b.force_walls"
 graphic_alt     = "b.city_walls"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -255,6 +295,7 @@ upkeep          = 1
 sabotage        = 30
 sound           = "b_city_walls"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext        = _("\
 Force Walls doubles city defense against all kind of attacks. \
@@ -268,14 +309,16 @@ reqs	=
     }
 graphic         = "b.headquarters"
 graphic_alt     = "b.palace"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
 build_cost	= 80
-upkeep		= 1
+upkeep		= 0
 sabotage	= 0
 sound		= "b_palace"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Headquarters building marks city as your capital. City with \
@@ -290,6 +333,7 @@ reqs	=
     }
 graphic         = "b.hospital"
 graphic_alt     = "b.aqueduct"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -298,6 +342,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_aqueduct"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Damaged units which stay in city without moving, heal 50% of their hitpoints \
@@ -311,15 +356,17 @@ reqs	=
       "Tech", "Global Knowledge", "Player"
     }
 graphic         = "b.information_distillery"
-graphic_alt     = "b.isaac_newtons_college"
+graphic_alt     = "b.research_lab"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
 build_cost	= 280
-upkeep		= 1
+upkeep		= 0
 sabotage	= 100
 sound		= "w_isaac_newtons_college"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Improved information gathering. Only 2 other factions needs to know \
@@ -334,6 +381,7 @@ reqs	=
     }
 graphic         = "b.mood_center"
 graphic_alt     = "b.colosseum"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -342,6 +390,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_colosseum"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Makes 3 unhappy citizens content.\
@@ -356,6 +405,7 @@ reqs	=
     }
 graphic         = "b.training_facility"
 graphic_alt     = "b.barracks_i"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -364,6 +414,7 @@ upkeep		= 2
 sabotage	= 100
 sound		= "b_barracks_i"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 All new units are built as Elite ones.\
@@ -378,6 +429,7 @@ reqs	=
     }
 graphic         = "b.transportation"
 graphic_alt     = "b.mass_transit"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -386,6 +438,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_mass_transit"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 City workers can travel further from city center to work and \
@@ -403,6 +456,7 @@ reqs	=
     }
 graphic         = "b.radar_tower"
 graphic_alt     = "b.coastal_defense"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -411,6 +465,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_coastal_defense"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 City with Radar Tower sees much further than one without.")
 
@@ -423,6 +478,7 @@ reqs	=
     }
 graphic         = "b.radiation_resistor"
 graphic_alt     = "b.nuclear_plant"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -431,6 +487,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_nuclear_plant"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Radiation Resistor increases maximum city size by 3.\
 ")
@@ -444,6 +501,7 @@ reqs	=
     }
 graphic         = "b.research_nest"
 graphic_alt     = "b.university"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -452,6 +510,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_university"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Increases the science production of a city by 100%.")
@@ -465,6 +524,7 @@ reqs    =
     }
 graphic         = "b.secret_police"
 graphic_alt     = "b.police_station"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -473,6 +533,7 @@ upkeep          = 1
 sabotage        = 100
 sound           = "b_police_station"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 helptext        = _("\
 Secret Police is good at leading army.\n\n\
 Makes martial law possible. Each military unit in city makes one unhappy \
@@ -487,6 +548,7 @@ reqs    =
     }
 graphic         = "b.skyscraper"
 graphic_alt     = "b.stock_exchange"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -495,6 +557,7 @@ upkeep          = 2
 sabotage        = 100
 sound           = "b_stock_exchange"
 sound_alt       = "b_generic"
+sound_alt2      = "-"
 helptext        = _("\
 Radiation is weaker miles high. Top levels of really tall buildings can safely house \
 more people.\n\nCities can grow 5 sizes bigger.")
@@ -508,6 +571,7 @@ reqs	=
     }
 graphic         = "b.vr_theatre"
 graphic_alt     = "b.temple"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -516,6 +580,7 @@ upkeep		= 1
 sabotage	= 100
 sound		= "b_temple"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 Makes two unhappy citizens content.\
@@ -523,7 +588,7 @@ Makes two unhappy citizens content.\
 
 [building_coinage]
 name		= _("Coinage")
-genus		= "Special"
+genus		= "Convert"
 flags		= "Gold"
 reqs	=
     { "type", "name", "range"
@@ -531,6 +596,7 @@ reqs	=
     }
 graphic         = "b.coinage"
 graphic_alt     = "b.capitalization"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -538,7 +604,7 @@ build_cost	= 999
 upkeep		= 0
 sabotage	= 0
 helptext	= _("\
-This is not a normal improvement.  Instead, setting a city's\
+This is not a normal improvement. Instead, setting a city's\
  production to Coinage means its shield production is\
  converted to tax output (money, coins!).\
 ")
@@ -553,6 +619,7 @@ reqs	=
     }
 graphic         = "b.space_component"
 graphic_alt	= "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -561,6 +628,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_space_component"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Space Components can be differentiated into Propulsion and Fuel\
  Components.  Each pair of them reduces your spaceship's travel\
@@ -576,6 +644,7 @@ reqs	=
     }
 graphic         = "b.space_modules"
 graphic_alt	= "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -584,6 +653,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_space_module"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Space Modules are the most expensive parts of spaceships.  There\
  are three different types of Space Module:\
@@ -608,6 +678,7 @@ reqs	=
     }
 graphic         = "b.space_structural"
 graphic_alt	= "-"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -616,6 +687,7 @@ upkeep		= 0
 sabotage	= 100
 sound		= "b_space_structural"
 sound_alt	= "b_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Space Structurals form the base of your spaceship.  All other\
  spaceship parts need to be connected to Structurals in order to\
@@ -630,6 +702,7 @@ reqs	=
     }
 graphic         = "b.earth_monument"
 graphic_alt     = "b.colossus"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -638,6 +711,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_colossus"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Monument to celebrate our true home planet, Earth.\n\n\
 Each square around the city where this wonder is built that is already \
@@ -653,6 +727,7 @@ reqs	=
     }
 graphic         = "b.great_tunnel"
 graphic_alt     = "b.king_richards_crusade"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -661,6 +736,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_king_richards_crusade"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Real deep mining.\n\n\
 Each square around the city where this wonder is built that is already \
@@ -676,6 +752,7 @@ reqs	=
     }
 graphic         = "b.antigrav_ctrl_center"
 graphic_alt     = "b.eiffel_tower"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -684,6 +761,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_eiffel_tower"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 All player's antigravity units will regenerate 50% of their hitpoints each \
@@ -696,10 +774,11 @@ genus		= "GreatWonder"
 reqs	=
     { "type", "name", "range"
       "Tech", "Ocean Cities", "Player"
-      "TerrainClass", "Oceanic", "Local"
+      "TerrainClass", "Oceanic", "Tile"
     }
 graphic         = "b.oceanic_downtown"
 graphic_alt     = "b.asmiths_trading_co"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -708,6 +787,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_asmiths_trading_co"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Each oceanic city center generates 3 points more trade and production.\
 ")
@@ -721,6 +801,7 @@ reqs	=
     }
 graphic         = "b.monument_co_op"
 graphic_alt     = "b.womens_suffrage"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -729,6 +810,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_womens_suffrage"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 ; /* xgettext:no-c-format */
 helptext	= _("\
 All player's native alien units will regenerate 50% of their hitpoints each \
@@ -744,6 +826,7 @@ reqs	=
     }
 graphic         = "b.protector"
 graphic_alt     = "b.great_wall"
+graphic_alt2    = "-"
 obsolete_by	=
     { "type", "name", "range"
     }
@@ -752,6 +835,7 @@ upkeep		= 0
 sabotage	= 0
 sound		= "w_great_wall"
 sound_alt	= "w_generic"
+sound_alt2      = "-"
 helptext	= _("\
 Provides additional protection against radiation making it possible for \
 all cities player owns to grow 2 sizes bigger, unless growth is blocked by \

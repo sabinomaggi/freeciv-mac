@@ -30,6 +30,14 @@
 
 #include "music.h"
 
+
+struct musicset {
+  char name[MAX_LEN_NAME];
+  char version[MAX_LEN_NAME];
+  char *summary;
+  char *description;
+} current_ms = { .summary = NULL, .description = NULL };
+
 /**********************************************************************//**
   Start music suitable for current game situation
 **************************************************************************/
@@ -59,7 +67,7 @@ void start_style_music(void)
       switch (client.conn.playing->client.mood) {
       case MOOD_COUNT:
         fc_assert(client.conn.playing->client.mood != MOOD_COUNT);
-        /* No break but use default tag */
+        fc__fallthrough; /* No break but use default tag */
       case MOOD_PEACEFUL:
         tag = pms->music_peaceful;
         break;
@@ -130,4 +138,128 @@ void musicspec_reread_callback(struct option *poption)
   } else {
     start_style_music();
   }
+}
+
+/**********************************************************************//**
+  Load specified musicspec.
+
+  This is called from the audio code, and not the vice versa.
+**************************************************************************/
+struct section_file *musicspec_load(const char *ms_filename)
+{
+  struct section_file *tagfile = secfile_load(ms_filename, TRUE);
+
+  if (tagfile != NULL) {
+    const char *mstr;
+
+    mstr = secfile_lookup_str(tagfile, "musicspec.name");
+
+    if (mstr == NULL) {
+      log_error(_("Musicset from %s has no name defined!"), ms_filename);
+      secfile_destroy(tagfile);
+
+      return NULL;
+    }
+
+    /* Musicset name found */
+    sz_strlcpy(current_ms.name, mstr);
+
+    mstr = secfile_lookup_str_default(tagfile, "", "musicspec.version");
+    if (mstr[0] != '\0') {
+    /* Musicset version found */
+      sz_strlcpy(current_ms.version, mstr);
+    } else {
+      /* No version information */
+      current_ms.version[0] = '\0';
+    }
+
+    mstr = secfile_lookup_str_default(tagfile, "", "musicspec.summary");
+    if (mstr[0] != '\0') {
+      size_t len;
+
+      /* Musicset summary found */
+      len = strlen(mstr);
+      current_ms.summary = fc_malloc(len + 1);
+      fc_strlcpy(current_ms.summary, mstr, len + 1);
+    } else {
+      /* No summary */
+      if (current_ms.summary != NULL) {
+        free(current_ms.summary);
+        current_ms.summary = NULL;
+      }
+    }
+
+    mstr = secfile_lookup_str_default(tagfile, "", "musicspec.description");
+    if (mstr[0] != '\0') {
+      size_t len;
+
+      /* Musicset description found */
+      len = strlen(mstr);
+      current_ms.description = fc_malloc(len + 1);
+      fc_strlcpy(current_ms.description, mstr, len + 1);
+    } else {
+      /* No Description */
+      if (current_ms.description != NULL) {
+        free(current_ms.description);
+        current_ms.description = NULL;
+      }
+    }
+  }
+
+  return tagfile;
+}
+
+/**********************************************************************//**
+  Close the musicspec.
+  Tagfile should refer to currently active musicspec as some data
+  is not retrievable from tagfile alone, but currently active music only.
+
+  This is called from the audio code, and not the vice versa.
+**************************************************************************/
+void musicspec_close(struct section_file *tagfile)
+{
+  if (tagfile != NULL) {
+    free(current_ms.summary);
+    current_ms.summary = NULL;
+    free(current_ms.description);
+    current_ms.description = NULL;
+
+    secfile_destroy(tagfile);
+  }
+}
+
+/**********************************************************************//**
+  Return name of the current musicset.
+**************************************************************************/
+const char *current_musicset_name(void)
+{
+  return current_ms.name;
+}
+
+/**********************************************************************//**
+  Return version of the current musicset. Can be NULL.
+**************************************************************************/
+const char *current_musicset_version(void)
+{
+  if (current_ms.version[0] == '\0') {
+    return NULL;
+  }
+
+  return current_ms.version;
+}
+
+/**********************************************************************//**
+  Return summary of the current musicset. Can be NULL.
+**************************************************************************/
+const char *current_musicset_summary(void)
+{
+  return current_ms.summary;
+}
+
+/**********************************************************************//**
+  Return description of the current musicset. Can be NULL.
+**************************************************************************/
+const char *current_musicset_description(void)
+{
+  return current_ms.description;
 }

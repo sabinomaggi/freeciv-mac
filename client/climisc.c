@@ -97,7 +97,7 @@ void client_remove_unit(struct unit *punit)
   game_remove_unit(&wld, punit);
   punit = NULL;
   if (old > 0 && get_num_units_in_focus() == 0) {
-    unit_focus_advance();
+    unit_focus_advance(TRUE);
   } else if (update) {
     update_unit_pix_label(get_units_in_focus());
     update_unit_info_label(get_units_in_focus());
@@ -180,7 +180,7 @@ void client_change_all(struct universal *from, struct universal *to)
   connection_do_buffer(&client.conn);
   city_list_iterate (client.conn.playing->cities, pcity) {
     if (are_universals_equal(&pcity->production, from)
-        && can_city_build_now(pcity, to)) {
+        && can_city_build_now(&(wld.map), pcity, to)) {
       city_change_production(pcity, to);
     }
   } city_list_iterate_end;
@@ -192,7 +192,7 @@ void client_change_all(struct universal *from, struct universal *to)
   Return a string indicating one nation's embassy status with another
 **************************************************************************/
 const char *get_embassy_status(const struct player *me,
-			       const struct player *them)
+                               const struct player *them)
 {
   if (!me || !them
       || me == them
@@ -220,7 +220,7 @@ const char *get_embassy_status(const struct player *me,
   Return a string indicating one nation's shaed vision status with another
 **************************************************************************/
 const char *get_vision_status(const struct player *me,
-			      const struct player *them)
+                              const struct player *them)
 {
   if (me && them && gives_shared_vision(me, them)) {
     if (gives_shared_vision(them, me)) {
@@ -239,16 +239,16 @@ const char *get_vision_status(const struct player *me,
   Copy a string that describes the given clause into the return buffer.
 **************************************************************************/
 void client_diplomacy_clause_string(char *buf, int bufsiz,
-				    struct Clause *pclause)
+                                    struct Clause *pclause)
 {
   struct city *pcity;
 
-  switch(pclause->type) {
+  switch (pclause->type) {
   case CLAUSE_ADVANCE:
     fc_snprintf(buf, bufsiz, _("The %s give %s"),
                 nation_plural_for_player(pclause->from),
                 advance_name_translation(advance_by_number(pclause->value)));
-    break;
+    return;
   case CLAUSE_CITY:
     pcity = game_city_by_number(pclause->value);
     if (pcity) {
@@ -259,44 +259,50 @@ void client_diplomacy_clause_string(char *buf, int bufsiz,
       fc_snprintf(buf, bufsiz,_("The %s give an unknown city"),
                   nation_plural_for_player(pclause->from));
     }
-    break;
+    return;
   case CLAUSE_GOLD:
     fc_snprintf(buf, bufsiz, PL_("The %s give %d gold",
                                  "The %s give %d gold", pclause->value),
                 nation_plural_for_player(pclause->from),
                 pclause->value);
-    break;
+    return;
   case CLAUSE_MAP:
     fc_snprintf(buf, bufsiz, _("The %s give their worldmap"),
                 nation_plural_for_player(pclause->from));
-    break;
+    return;
   case CLAUSE_SEAMAP:
     fc_snprintf(buf, bufsiz, _("The %s give their seamap"),
                 nation_plural_for_player(pclause->from));
-    break;
+    return;
   case CLAUSE_CEASEFIRE:
     fc_snprintf(buf, bufsiz, _("The parties agree on a cease-fire"));
-    break;
+    return;
   case CLAUSE_PEACE:
     fc_snprintf(buf, bufsiz, _("The parties agree on a peace"));
-    break;
+    return;
   case CLAUSE_ALLIANCE:
     fc_snprintf(buf, bufsiz, _("The parties create an alliance"));
-    break;
+    return;
   case CLAUSE_VISION:
     fc_snprintf(buf, bufsiz, _("The %s give shared vision"),
                 nation_plural_for_player(pclause->from));
-    break;
+    return;
   case CLAUSE_EMBASSY:
     fc_snprintf(buf, bufsiz, _("The %s give an embassy"),
                 nation_plural_for_player(pclause->from));
-    break;
-  default:
+    return;
+  case CLAUSE_SHARED_TILES:
+    fc_snprintf(buf, bufsiz, _("The %s share tiles"),
+                nation_plural_for_player(pclause->from));
+    return;
+  case CLAUSE_COUNT:
     fc_assert(FALSE);
-    if (bufsiz > 0) {
-      *buf = '\0';
-    }
-    break;
+    return;
+  }
+
+  fc_assert(FALSE);
+  if (bufsiz > 0) {
+    *buf = '\0';
   }
 }
 
@@ -396,6 +402,7 @@ struct sprite *client_cooling_sprite(void)
   } else {
     idx = 0;
   }
+
   return get_indicator_sprite(tileset, INDICATOR_COOLING, idx);
 }
 
@@ -424,6 +431,7 @@ void center_on_something(void)
 {
   struct city *pcity;
   struct unit *punit;
+  const struct civ_map *nmap = &(wld.map);
 
   if (!can_client_change_view()) {
     return;
@@ -433,7 +441,7 @@ void center_on_something(void)
   if (get_num_units_in_focus() > 0) {
     center_tile_mapcanvas(unit_tile(head_of_units_in_focus()));
   } else if (client_has_player()
-             && NULL != (pcity = player_capital(client_player()))) {
+             && NULL != (pcity = player_primary_capital(client_player()))) {
     /* Else focus on the capital. */
     center_tile_mapcanvas(pcity->tile);
   } else if (NULL != client.conn.playing
@@ -449,17 +457,18 @@ void center_on_something(void)
     fc_assert_ret(punit != NULL);
     center_tile_mapcanvas(unit_tile(punit));
   } else {
-    struct tile *ctile = native_pos_to_tile(&(wld.map), wld.map.xsize / 2, wld.map.ysize / 2);
+    struct tile *ctile = native_pos_to_tile(nmap, MAP_NATIVE_WIDTH / 2,
+                                            MAP_NATIVE_HEIGHT / 2);
 
     /* Just any known tile will do; search near the middle first. */
-    /* Iterate outward from the center tile.  We have to give a radius that
-     * is guaranteed to be larger than the map will be.  Although this is
+    /* Iterate outward from the center tile. We have to give a radius that
+     * is guaranteed to be larger than the map will be. Although this is
      * a misuse of map.xsize and map.ysize (which are native dimensions),
      * it should give a sufficiently large radius. */
-    iterate_outward(&(wld.map), ctile, wld.map.xsize + wld.map.ysize, ptile) {
+    iterate_outward(nmap, ctile, MAP_NATIVE_WIDTH + MAP_NATIVE_HEIGHT, ptile) {
       if (client_tile_get_known(ptile) != TILE_UNKNOWN) {
-	ctile = ptile;
-	break;
+        ctile = ptile;
+        break;
       }
     } iterate_outward_end;
 
@@ -481,7 +490,7 @@ cid cid_encode(struct universal target)
 /**********************************************************************//**
   Encode a CID for the target unit type.
 **************************************************************************/
-cid cid_encode_unit(struct unit_type *punittype)
+cid cid_encode_unit(const struct unit_type *punittype)
 {
   struct universal target = {
     .kind = VUT_UTYPE,
@@ -493,7 +502,7 @@ cid cid_encode_unit(struct unit_type *punittype)
 /**********************************************************************//**
   Encode a CID for the target building.
 **************************************************************************/
-cid cid_encode_building(struct impr_type *pimprove)
+cid cid_encode_building(const struct impr_type *pimprove)
 {
   struct universal target = {
     .kind = VUT_IMPROVEMENT,
@@ -537,7 +546,7 @@ bool city_unit_supported(const struct city *pcity,
                          const struct universal *target)
 {
   if (VUT_UTYPE == target->kind) {
-    struct unit_type *tvtype = target->value.utype;
+    const struct unit_type *tvtype = target->value.utype;
 
     unit_list_iterate(pcity->units_supported, punit) {
       if (unit_type_get(punit) == tvtype) {
@@ -556,7 +565,7 @@ bool city_unit_present(const struct city *pcity,
                        const struct universal *target)
 {
   if (VUT_UTYPE == target->kind) {
-    struct unit_type *tvtype = target->value.utype;
+    const struct unit_type *tvtype = target->value.utype;
 
     unit_list_iterate(pcity->tile->units, punit) {
       if (unit_type_get(punit) == tvtype) {
@@ -579,6 +588,15 @@ bool city_building_present(const struct city *pcity,
 }
 
 /**********************************************************************//**
+  A TestCityFunc wrapper for can_city_build_now()
+**************************************************************************/
+bool can_city_build_now_client(const struct city *pcity,
+                               const struct universal *target)
+{
+  return can_city_build_now(&(wld.map), pcity, target);
+}
+
+/**********************************************************************//**
   Return the numerical "section" of an item.  This is used for sorting.
 **************************************************************************/
 static int target_get_section(struct universal target)
@@ -590,7 +608,7 @@ static int target_get_section(struct universal target)
       return 3;
     }
   } else {
-    if (improvement_has_flag(target.value.building, IF_GOLD)) {
+    if (is_convert_improvement(target.value.building)) {
       return 1;
     } else if (is_small_wonder(target.value.building)) {
       return 4;
@@ -603,7 +621,7 @@ static int target_get_section(struct universal target)
 }
 
 /**********************************************************************//**
-  Helper for name_and_sort_items.
+  Helper for name_and_sort_items().
 **************************************************************************/
 static int fc_cmp(const void *p1, const void *p2)
 {
@@ -614,6 +632,7 @@ static int fc_cmp(const void *p1, const void *p2)
   if (s1 == s2) {
     return fc_strcasecmp(i1->descr, i2->descr);
   }
+
   return s1 - s2;
 }
 
@@ -629,8 +648,8 @@ static int fc_cmp(const void *p1, const void *p2)
   section 5: great wonders
 **************************************************************************/
 void name_and_sort_items(struct universal *targets, int num_targets,
-			 struct item *items,
-			 bool show_cost, struct city *pcity)
+                         struct item *items,
+                         bool show_cost, struct city *pcity)
 {
   int i;
 
@@ -644,13 +663,17 @@ void name_and_sort_items(struct universal *targets, int num_targets,
 
     if (VUT_UTYPE == target.kind) {
       name = utype_values_translation(target.value.utype);
-      cost = utype_build_shield_cost(target.value.utype);
+      cost = utype_build_shield_cost(pcity, client_player(), target.value.utype);
     } else {
       name = city_improvement_name_translation(pcity, target.value.building);
-      if (improvement_has_flag(target.value.building, IF_GOLD)) {
-	cost = -1;
+      if (is_convert_improvement(target.value.building)) {
+        cost = -1;
       } else {
-	cost = impr_build_shield_cost(target.value.building);
+        if (pcity != NULL) {
+          cost = impr_build_shield_cost(pcity, target.value.building);
+        } else {
+          cost = MAX(target.value.building->build_cost * game.info.shieldbox / 100, 1);
+        }
       }
     }
 
@@ -713,12 +736,14 @@ int collect_production_targets(struct universal *targets,
       }
     }
 
-    if (!append)
+    if (!append) {
       continue;
+    }
 
     targets[items_used] = target;
     items_used++;
   }
+
   return items_used;
 }
 
@@ -797,6 +822,7 @@ int collect_eventually_buildable_targets(struct universal *targets,
 {
   struct player *pplayer = client_player();
   int cids_used = 0;
+  const struct civ_map *nmap = &(wld.map);
 
   improvement_iterate(pimprove) {
     bool can_build;
@@ -845,8 +871,8 @@ int collect_eventually_buildable_targets(struct universal *targets,
 
     if (NULL != pcity) {
       /* Can the city build? */
-      can_build = can_city_build_unit_now(pcity, punittype);
-      can_eventually_build = can_city_build_unit_later(pcity, punittype);
+      can_build = can_city_build_unit_now(nmap, pcity, punittype);
+      can_eventually_build = can_city_build_unit_later(nmap, pcity, punittype);
     } else if (NULL != pplayer) {
       /* Can our player build? */
       can_build = can_player_build_unit_now(pplayer, punittype);
@@ -885,7 +911,7 @@ int collect_eventually_buildable_targets(struct universal *targets,
   Collect the cids of all improvements which are built in the given city.
 **************************************************************************/
 int collect_already_built_targets(struct universal *targets,
-				  struct city *pcity)
+                                  struct city *pcity)
 {
   int cids_used = 0;
 
@@ -952,7 +978,7 @@ void handle_event(const char *featured_text, struct tile *ptile,
   if (!event_type_is_valid(event))  {
     /* Server may have added a new event; leave as MW_OUTPUT */
     log_verbose("Unknown event type %d!", event);
-  } else if (event >= 0)  {
+  } else {
     where = messages_where[event];
   }
 
@@ -1103,9 +1129,10 @@ struct city *get_nearest_city(const struct unit *punit, int *sq_dist)
     players_iterate(pplayer) {
       city_list_iterate(pplayer->cities, pcity_current) {
         int dist = sq_map_distance(pcity_current->tile, unit_tile(punit));
+
         if (pcity_near_dist == -1 || dist < pcity_near_dist
-	    || (dist == pcity_near_dist
-		&& unit_owner(punit) == city_owner(pcity_current))) {
+            || (dist == pcity_near_dist
+                && unit_owner(punit) == city_owner(pcity_current))) {
           pcity_near = pcity_current;
           pcity_near_dist = dist;
         }
@@ -1129,20 +1156,21 @@ void cityrep_buy(struct city *pcity)
 {
   int value;
 
-  if (city_production_has_flag(pcity, IF_GOLD)) {
+  if (city_production_is_genus(pcity, IG_CONVERT)) {
     create_event(pcity->tile, E_BAD_COMMAND, ftc_client,
                  _("You can't buy %s in %s!"),
                  improvement_name_translation(pcity->production.value.building),
                  city_link(pcity));
     return;
   }
-  value = city_production_buy_gold_cost(pcity);
+  value = pcity->client.buy_cost;
 
   if (city_owner(pcity)->economic.gold >= value) {
     city_buy_production(pcity);
   } else {
     /* Split into two to allow localization of two pluralisations. */
     char buf[MAX_LEN_MSG];
+
     /* TRANS: %s is a production type; this whole string is a sentence
      * fragment that is only ever included in one other string
      * (search comments for this string to find it) */
@@ -1163,7 +1191,7 @@ void cityrep_buy(struct city *pcity)
 /**********************************************************************//**
   Switch between tax/sci/lux at given slot.
 **************************************************************************/
-void common_taxrates_callback(int i)
+void common_taxrates_callback(int idx, bool reverse)
 {
   int lux_end, sci_end, tax, lux, sci;
   int delta = 10;
@@ -1179,17 +1207,32 @@ void common_taxrates_callback(int i)
   sci = client.conn.playing->economic.science;
   tax = client.conn.playing->economic.tax;
 
-  i *= 10;
-  if (i < lux_end) {
-    lux -= delta;
-    sci += delta;
-  } else if (i < sci_end) {
-    sci -= delta;
-    tax += delta;
+  idx *= 10;
+
+  if (reverse) {
+    if (idx < lux_end) {
+      lux -= delta;
+      tax += delta;
+    } else if (idx < sci_end) {
+      sci -= delta;
+      lux += delta;
+    } else {
+      tax -= delta;
+      sci += delta;
+    }
   } else {
-    tax -= delta;
-    lux += delta;
+    if (idx < lux_end) {
+      lux -= delta;
+      sci += delta;
+    } else if (idx < sci_end) {
+      sci -= delta;
+      tax += delta;
+    } else {
+      tax -= delta;
+      lux += delta;
+    }
   }
+
   dsend_packet_player_rates(&client.conn, tax, lux, sci);
 }
 
@@ -1197,7 +1240,7 @@ void common_taxrates_callback(int i)
   Returns TRUE if any of the units can do the connect activity.
 **************************************************************************/
 bool can_units_do_connect(struct unit_list *punits,
-			  enum unit_activity activity,
+                          enum unit_activity activity,
                           struct extra_type *tgt)
 {
   unit_list_iterate(punits, punit) {
@@ -1260,10 +1303,11 @@ enum unit_bg_color_type unit_color_type(const struct unit_type *punittype)
 static int city_buy_cost_compare(const void *a, const void *b)
 {
   const struct city *ca, *cb;
+
   ca = *((const struct city **) a);
   cb = *((const struct city **) b);
-  return (city_production_buy_gold_cost(ca)
-          - city_production_buy_gold_cost(cb));
+
+  return ca->client.buy_cost - cb->client.buy_cost;
 }
 
 /**********************************************************************//**
@@ -1273,6 +1317,8 @@ static int city_buy_cost_compare(const void *a, const void *b)
 void buy_production_in_selected_cities(void)
 {
   const struct player *pplayer = client_player();
+  struct connection *pconn;
+
   if (!pplayer || !pplayer->cities
       || city_list_size(pplayer->cities) < 1) {
     return;
@@ -1300,11 +1346,11 @@ void buy_production_in_selected_cities(void)
 
   qsort(cities, count, sizeof(*cities), city_buy_cost_compare);
 
-  struct connection *pconn = &client.conn;
+  pconn = &client.conn;
   connection_do_buffer(pconn);
 
   for (i = 0; i < count && gold > 0; i++) {
-    gold -= city_production_buy_gold_cost(cities[i]);
+    gold -= cities[i]->client.buy_cost;
     city_buy_production(cities[i]);
   }
 
@@ -1392,8 +1438,6 @@ bool mapimg_client_define(void)
   for (layer = mapimg_layer_begin(); layer != mapimg_layer_end();
        layer = mapimg_layer_next(layer)) {
     if (gui_options.mapimg_layer[layer]) {
-      cat_snprintf(mi_map, sizeof(mi_map), "%s",
-                   mapimg_layer_name(layer));
       mi_map[map_pos++] = mapimg_layer_name(layer)[0];
     }
   }
@@ -1455,6 +1499,7 @@ struct nation_set *client_current_nation_set(void)
       || (setting_str = option_str_get(poption)) == NULL) {
     setting_str = "";
   }
+
   return nation_set_by_setting_value(setting_str);
 }
 
@@ -1464,4 +1509,26 @@ struct nation_set *client_current_nation_set(void)
 bool client_nation_is_in_current_set(const struct nation_type *pnation)
 {
   return nation_is_in_set(pnation, client_current_nation_set());
+}
+
+/**********************************************************************//**
+  Returns the current AI skill level on the server, if the same level is
+  currently used for all current AI players and will be for new ones;
+  else return ai_level_invalid() to indicate inconsistency.
+**************************************************************************/
+enum ai_level server_ai_level(void)
+{
+  enum ai_level lvl = game.info.skill_level;
+
+  players_iterate(pplayer) {
+    if (is_ai(pplayer) && pplayer->ai_common.skill_level != lvl) {
+      return ai_level_invalid();
+    }
+  } players_iterate_end;
+
+  if (!is_settable_ai_level(lvl)) {
+    return ai_level_invalid();
+  }
+
+  return lvl;
 }

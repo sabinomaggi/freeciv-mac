@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,23 +22,24 @@ extern "C" {
 #include "gotodlg_g.h"
 }
 
-//Qt
-#include <QWidget>
+// Qt
+#include <QDialog>
 
-//common
+// common
+#include "dialogs.h"
 #include "unit.h"
 
-class QTableWidget;
-class QPushButton;
 class QCheckBox;
 class QGridLayout;
 class QItemSelection;
 class QLabel;
+class QPushButton;
+class QTableWidget;
 
 /***************************************************************************
- Class for displaying goto/airlift dialog (widget)
+ Class for displaying goto/airlift dialog
 ***************************************************************************/
-class goto_dialog : public QWidget
+class goto_dialog: public qfc_dialog
 {
   Q_OBJECT
   QTableWidget *goto_tab;
@@ -57,12 +58,15 @@ public:
   void show_me();
   void sort_def();
 
+public slots:
+  void close_dlg();
+
 private slots:
   void go_to_city();
   void airlift_to();
-  void close_dlg();
   void item_selected(const QItemSelection &sl, const QItemSelection &ds);
-  void checkbox_changed(int state);
+  void checkbox_changed(Qt::CheckState state);
+  void checkbox_changed_depr(int state);
 protected:
   void paint(QPainter *painter, QPaintEvent *event);
   void paintEvent(QPaintEvent *event);
@@ -72,4 +76,4 @@ private:
   struct tile *original_tile;
 };
 
-#endif /* FC__GOTODLG_H */
+#endif // FC__GOTODLG_H

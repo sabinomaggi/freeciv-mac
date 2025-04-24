@@ -16,6 +16,7 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QPushButton>
@@ -46,7 +47,7 @@ tab_nation::tab_nation(ruledit_gui *ui_in) : QWidget()
 
   main_layout->setSizeConstraint(QLayout::SetMaximumSize);
 
-  via_include = new QRadioButton(QString::fromUtf8(R__("Use nationlist")));
+  via_include = new QCheckBox(QString::fromUtf8(R__("Use nationlist")));
   main_layout->addWidget(via_include, row++, 0);
   connect(via_include, SIGNAL(toggled(bool)), this, SLOT(nationlist_toggle(bool)));
 
@@ -66,7 +67,7 @@ tab_nation::tab_nation(ruledit_gui *ui_in) : QWidget()
 **************************************************************************/
 void tab_nation::refresh()
 {
-  if (ui->data.nationlist == NULL) {
+  if (ui->data.nationlist == nullptr) {
     via_include->setChecked(false);
     nationlist->setEnabled(false);
   } else {
@@ -84,9 +85,12 @@ void tab_nation::flush_widgets()
   FC_FREE(ui->data.nationlist);
 
   if (via_include->isChecked()) {
-    ui->data.nationlist = fc_strdup(nationlist->text().toUtf8().data());
+    QByteArray nln_bytes;
+
+    nln_bytes = nationlist->text().toUtf8();
+    ui->data.nationlist = fc_strdup(nln_bytes.data());
   } else {
-    ui->data.nationlist = NULL;
+    ui->data.nationlist = nullptr;
   }
 }
 
@@ -96,15 +100,18 @@ void tab_nation::flush_widgets()
 void tab_nation::nationlist_toggle(bool checked)
 {
   if (checked) {
-    if (ui->data.nationlist_saved != NULL) {
+    if (ui->data.nationlist_saved != nullptr) {
       ui->data.nationlist = ui->data.nationlist_saved;
     } else {
       ui->data.nationlist = fc_strdup("default/nationlist.ruleset");
     }
   } else {
+    QByteArray nln_bytes;
+
     FC_FREE(ui->data.nationlist_saved);
-    ui->data.nationlist_saved = fc_strdup(nationlist->text().toUtf8().data());
-    ui->data.nationlist = NULL;
+    nln_bytes = nationlist->text().toUtf8();
+    ui->data.nationlist_saved = fc_strdup(nln_bytes.data());
+    ui->data.nationlist = nullptr;
   }
 
   refresh();

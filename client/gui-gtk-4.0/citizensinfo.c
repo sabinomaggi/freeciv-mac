@@ -15,7 +15,6 @@
 #include <fc_config.h>
 #endif
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +25,7 @@
 /* common */
 #include "citizens.h"
 #include "city.h"
+#include "nation.h"
 #include "player.h"
 
 /* client/gui-gtk-4.0 */
@@ -241,16 +241,15 @@ static struct citizens_dialog *citizens_dialog_create(const struct city *pcity)
   gtk_widget_set_hexpand(GTK_WIDGET(pdialog->list), TRUE);
   gtk_widget_set_vexpand(GTK_WIDGET(pdialog->list), TRUE);
 
-  sw = gtk_scrolled_window_new(NULL, NULL);
+  sw = gtk_scrolled_window_new();
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                  GTK_POLICY_AUTOMATIC,
                                  GTK_POLICY_AUTOMATIC);
-  gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(sw),
-                                      GTK_SHADOW_NONE);
-  gtk_container_add(GTK_CONTAINER(sw), pdialog->list);
+  gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(sw), FALSE);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), pdialog->list);
 
   frame = gtk_frame_new(_("Citizens"));
-  gtk_container_add(GTK_CONTAINER(frame), sw);
+  gtk_frame_set_child(GTK_FRAME(frame), sw);
 
   pdialog->shell = frame;
 
@@ -264,7 +263,7 @@ static struct citizens_dialog *citizens_dialog_create(const struct city *pcity)
 /*************************************************************************//**
   Initialize citizens dialog
 *****************************************************************************/
-void citizens_dialog_init()
+void citizens_dialog_init(void)
 {
   dialog_list = dialog_list_new();
 }
@@ -272,7 +271,7 @@ void citizens_dialog_init()
 /*************************************************************************//**
   Free resources allocated for citizens dialog
 *****************************************************************************/
-void citizens_dialog_done()
+void citizens_dialog_done(void)
 {
   dialog_list_destroy(dialog_list);
 }
@@ -364,15 +363,16 @@ void citizens_dialog_close(const struct city *pcity)
 {
   struct citizens_dialog *pdialog = citizens_dialog_get(pcity);
 
-  if (pdialog == NULL) {
+  if (pdialog == nullptr) {
     return;
   }
 
-  gtk_widget_hide(pdialog->shell);
+  gtk_widget_set_visible(pdialog->shell, FALSE);
 
   dialog_list_remove(dialog_list, pdialog);
 
-  gtk_widget_destroy(pdialog->shell);
+  gtk_box_remove(GTK_BOX(gtk_widget_get_parent(pdialog->shell)),
+                 pdialog->shell);
   free(pdialog);
 }
 
@@ -383,11 +383,11 @@ GtkWidget *citizens_dialog_display(const struct city *pcity)
 {
   struct citizens_dialog *pdialog = citizens_dialog_get(pcity);
 
-  if (!pdialog) {
+  if (pdialog == nullptr) {
     pdialog = citizens_dialog_create(pcity);
   }
 
-  gtk_widget_show(pdialog->shell);
+  gtk_widget_set_visible(pdialog->shell, TRUE);
   citizens_dialog_refresh(pcity);
 
   return pdialog->shell;

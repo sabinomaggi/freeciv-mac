@@ -20,6 +20,9 @@
 #include <string.h>
 #include <math.h> /* exp, sqrt */
 
+/* dependencies/lua */
+#include "lua.h" /* lua_Integer */
+
 /* utility */
 #include "fcintl.h"
 #include "log.h"
@@ -38,6 +41,7 @@
 #include "calendar.h"
 #include "citizens.h"
 #include "city.h"
+#include "counters.h"
 #include "culture.h"
 #include "events.h"
 #include "disaster.h"
@@ -75,7 +79,6 @@
 /* server/advisors */
 #include "advbuilding.h"
 #include "advdata.h"
-#include "autosettlers.h"
 
 /* server/scripting */
 #include "script_server.h"
@@ -85,7 +88,7 @@ static struct city_list *city_refresh_queue = NULL;
 
 /* The game is currently considering to remove the listed units because of
  * missing gold upkeep. A unit ends up here if it has gold upkeep that
- * can't be payed. A random unit in the list will be removed until the
+ * can't be paid. A random unit in the list will be removed until the
  * problem is solved. */
 static struct unit_list *uk_rem_gold = NULL;
 
@@ -93,18 +96,22 @@ static void check_pollution(struct city *pcity);
 static void city_populate(struct city *pcity, struct player *nationality);
 
 static bool worklist_change_build_target(struct player *pplayer,
-					 struct city *pcity);
+                                         struct city *pcity);
 
 static bool city_distribute_surplus_shields(struct player *pplayer,
-					    struct city *pcity);
+                                            struct city *pcity);
 static bool city_build_building(struct player *pplayer, struct city *pcity);
 static bool city_build_unit(struct player *pplayer, struct city *pcity);
 static bool city_build_stuff(struct player *pplayer, struct city *pcity);
-static struct impr_type *building_upgrades_to(struct city *pcity,
-					      struct impr_type *pimprove);
+static struct unit *city_create_unit(struct city *pcity,
+                                     const struct unit_type *utype,
+                                     struct citizens_reduction *red)
+  fc__attribute((nonnull (1, 2)));
+static const struct impr_type *building_upgrades_to(struct city *pcity,
+                                                    const struct impr_type *pimprove);
 static void upgrade_building_prod(struct city *pcity);
-static struct unit_type *unit_upgrades_to(struct city *pcity,
-					  struct unit_type *id);
+static const struct unit_type *unit_upgrades_to(struct city *pcity,
+                                                const struct unit_type *id);
 static void upgrade_unit_prod(struct city *pcity);
 
 /* Helper struct for associating a building to a city. */
@@ -131,9 +138,6 @@ static citizens city_reduce_workers(struct city *pcity, citizens change);
 
 static bool city_balance_treasury_buildings(struct city *pcity);
 static bool city_balance_treasury_units(struct city *pcity);
-static bool player_balance_treasury_units_and_buildings
-            (struct player *pplayer);
-static bool player_balance_treasury_units(struct player *pplayer);
 
 static bool disband_city(struct city *pcity);
 
@@ -154,12 +158,13 @@ static bool check_city_migrations_player(const struct player *pplayer);
 bool city_refresh(struct city *pcity)
 {
   bool retval;
+  const struct civ_map *nmap = &(wld.map);
 
   pcity->server.needs_refresh = FALSE;
 
   retval = city_map_update_radius_sq(pcity);
-  city_units_upkeep(pcity); /* update unit upkeep */
-  city_refresh_from_main_map(pcity, NULL);
+  city_units_upkeep(pcity); /* Update unit upkeep */
+  city_refresh_from_main_map(nmap, pcity, NULL);
   city_style_refresh(pcity);
 
   if (retval) {
@@ -234,10 +239,10 @@ void remove_obsolete_buildings_city(struct city *pcity, bool refresh)
 
   city_built_iterate(pcity, pimprove) {
     if (improvement_obsolete(pplayer, pimprove, pcity)
-     && can_city_sell_building(pcity, pimprove)) {
+        && can_city_sell_building(pcity, pimprove)) {
       int sgold;
 
-      do_sell_building(pplayer, pcity, pimprove);
+      do_sell_building(pplayer, pcity, pimprove, "obsolete");
       sgold = impr_sell_gold(pimprove);
       notify_player(pplayer, city_tile(pcity), E_IMP_SOLD, ftc_server,
                     PL_("%s is selling %s (obsolete) for %d.",
@@ -269,17 +274,18 @@ void remove_obsolete_buildings(struct player *pplayer)
   } city_list_iterate_end;
 }
 
-/**************************************************************************
-  Rearrange workers according to a cm_result struct.  The caller must make
+/**********************************************************************//**
+  Rearrange workers according to a cm_result struct. The caller must make
   sure that the result is valid.
 **************************************************************************/
 void apply_cmresult_to_city(struct city *pcity,
                             const struct cm_result *cmr)
 {
   struct tile *pcenter = city_tile(pcity);
+  const struct civ_map *nmap = &(wld.map);
 
   /* Now apply results */
-  city_tile_iterate_skip_free_worked(city_map_radius_sq_get(pcity), pcenter,
+  city_tile_iterate_skip_free_worked(nmap, city_map_radius_sq_get(pcity), pcenter,
                                      ptile, idx, x, y) {
     struct city *pwork = tile_worked(ptile);
 
@@ -302,30 +308,89 @@ void apply_cmresult_to_city(struct city *pcity,
 }
 
 /**********************************************************************//**
+  Set default city manager parameter for the city.
+**************************************************************************/
+static void set_default_city_manager(struct cm_parameter *cmp,
+                                     struct city *pcity)
+{
+  int csize = city_size_get(pcity);
+  int gsize = city_granary_size(csize);
+
+  cmp->require_happy = FALSE;
+  cmp->allow_disorder = FALSE;
+  cmp->allow_specialists = TRUE;
+
+  /* We used to look at pplayer->ai.xxx_priority to determine the values
+   * to be used here. However that doesn't work at all because those values
+   * are on a different scale. Later the AI may wish to adjust its
+   * priorities - this should be done via a separate set of variables. */
+  if (csize > 1) {
+    if (csize <= game.info.notradesize) {
+      cmp->factor[O_FOOD] = 15;
+    } else {
+      if (gsize == pcity->food_stock) {
+        /* We don't need more food if the granary is full. */
+        cmp->factor[O_FOOD] = 0;
+      } else {
+        cmp->factor[O_FOOD] = 10;
+      }
+    }
+  } else {
+    /* Growing to size 2 is the highest priority. */
+    cmp->factor[O_FOOD] = 20;
+  }
+
+  cmp->factor[O_SHIELD] = 5;
+  cmp->factor[O_TRADE] = 0; /* Trade only provides gold/science. */
+  cmp->factor[O_GOLD] = 2;
+  cmp->factor[O_LUXURY] = 0; /* Luxury only influences happiness. */
+  cmp->factor[O_SCIENCE] = 2;
+  cmp->happy_factor = 0;
+
+  if (gsize == pcity->food_stock) {
+    cmp->minimal_surplus[O_FOOD] = 0;
+  } else {
+    cmp->minimal_surplus[O_FOOD] = 1;
+  }
+
+  cmp->minimal_surplus[O_SHIELD] = 1;
+  cmp->minimal_surplus[O_TRADE] = 0;
+  cmp->minimal_surplus[O_GOLD] = -FC_INFINITY;
+  cmp->minimal_surplus[O_LUXURY] = 0;
+  cmp->minimal_surplus[O_SCIENCE] = 0;
+}
+
+/**********************************************************************//**
   Call sync_cities() to send the affected cities to the clients.
 **************************************************************************/
 void auto_arrange_workers(struct city *pcity)
 {
   struct cm_parameter cmp;
+  struct cm_parameter *pcmp;
   struct cm_result *cmr;
+  bool broadcast_needed;
 
   /* See comment in freeze_workers(): we can't rearrange while
    * workers are frozen (i.e. multiple updates need to be done). */
   if (pcity->server.workers_frozen > 0) {
-    pcity->server.needs_arrange = TRUE;
+    if (pcity->server.needs_arrange == CNA_NOT) {
+      pcity->server.needs_arrange = CNA_NORMAL;
+    }
     return;
   }
   TIMING_LOG(AIT_CITIZEN_ARRANGE, TIMER_START);
 
+  broadcast_needed = (pcity->server.needs_arrange == CNA_BROADCAST_PENDING);
+
   /* Freeze the workers and make sure all the tiles around the city
-   * are up to date.  Then thaw, but hackishly make sure that thaw
+   * are up to date. Then thaw, but hackishly make sure that thaw
    * doesn't call us recursively, which would waste time. */
   city_freeze_workers(pcity);
-  pcity->server.needs_arrange = FALSE;
+  pcity->server.needs_arrange = CNA_NOT;
 
   city_map_update_all(pcity);
 
-  pcity->server.needs_arrange = FALSE;
+  pcity->server.needs_arrange = CNA_NOT;
   city_thaw_workers(pcity);
 
   /* Now start actually rearranging. */
@@ -334,76 +399,64 @@ void auto_arrange_workers(struct city *pcity)
   sanity_check_city(pcity);
   cm_clear_cache(pcity);
 
-  cm_init_parameter(&cmp);
-  cmp.require_happy = FALSE;
-  cmp.allow_disorder = FALSE;
-  cmp.allow_specialists = TRUE;
-
-  /* We used to look at pplayer->ai.xxx_priority to determine the values
-   * to be used here.  However that doesn't work at all because those values
-   * are on a different scale.  Later the ai may wish to adjust its
-   * priorities - this should be done via a separate set of variables. */
-  if (city_size_get(pcity) > 1) {
-    if (city_size_get(pcity) <= game.info.notradesize) {
-      cmp.factor[O_FOOD] = 15;
-    } else {
-      if (city_granary_size(city_size_get(pcity)) == pcity->food_stock) {
-        /* We don't need more food if the granary is full. */
-        cmp.factor[O_FOOD] = 0;
-      } else {
-        cmp.factor[O_FOOD] = 10;
-      }
-    }
+  if (pcity->cm_parameter) {
+    pcmp = pcity->cm_parameter;
   } else {
-    /* Growing to size 2 is the highest priority. */
-    cmp.factor[O_FOOD] = 20;
+    pcmp = &cmp;
+    cm_init_parameter(pcmp);
+    set_default_city_manager(pcmp, pcity);
   }
-  cmp.factor[O_SHIELD] = 5;
-  cmp.factor[O_TRADE] = 0; /* Trade only provides gold/science. */
-  cmp.factor[O_GOLD] = 2;
-  cmp.factor[O_LUXURY] = 0; /* Luxury only influences happiness. */
-  cmp.factor[O_SCIENCE] = 2;
-  cmp.happy_factor = 0;
-
-  if (city_granary_size(city_size_get(pcity)) == pcity->food_stock) {
-    cmp.minimal_surplus[O_FOOD] = 0;
-  } else {
-    cmp.minimal_surplus[O_FOOD] = 1;
-  }
-  cmp.minimal_surplus[O_SHIELD] = 1;
-  cmp.minimal_surplus[O_TRADE] = 0;
-  cmp.minimal_surplus[O_GOLD] = -FC_INFINITY;
-  cmp.minimal_surplus[O_LUXURY] = 0;
-  cmp.minimal_surplus[O_SCIENCE] = 0;
 
   /* This must be after city_refresh() so that the result gets created for the right
    * city radius */
   cmr = cm_result_new(pcity);
-  cm_query_result(pcity, &cmp, cmr, FALSE);
+  cm_query_result(pcity, pcmp, cmr, FALSE);
 
   if (!cmr->found_a_valid) {
-    /* Drop surpluses and try again. */
-    cmp.minimal_surplus[O_FOOD] = 0;
-    cmp.minimal_surplus[O_SHIELD] = 0;
-    cmp.minimal_surplus[O_GOLD] = -FC_INFINITY;
-    cm_query_result(pcity, &cmp, cmr, FALSE);
+    if (pcity->cm_parameter) {
+      /* If player-defined parameters fail, cancel and notify player. */
+      free(pcity->cm_parameter);
+      pcity->cm_parameter = NULL;
+
+      notify_player(city_owner(pcity), city_tile(pcity),
+                    E_CITY_CMA_RELEASE, ftc_server,
+                    _("The citizen governor can't fulfill the requirements "
+                     "for %s. Passing back control."),
+                    city_link(pcity));
+
+      /* Switch to default parameters, and try with them */
+      pcmp = &cmp;
+      cm_init_parameter(pcmp);
+      set_default_city_manager(pcmp, pcity);
+      cm_query_result(pcity, pcmp, cmr, FALSE);
+    }
+
+    if (!cmr->found_a_valid) {
+      /* Drop surpluses and try again. */
+      output_type_iterate(o) {
+        cmp.minimal_surplus[o] = 0;
+      } output_type_iterate_end;
+      cmp.minimal_surplus[O_GOLD] = -FC_INFINITY;
+      cm_query_result(pcity, pcmp, cmr, FALSE);
+    }
   }
   if (!cmr->found_a_valid) {
-    /* Emergency management.  Get _some_ result.  This doesn't use
-     * cm_init_emergency_parameter so we can keep the factors from
+    /* Emergency management. Get _some_ result. This doesn't use
+     * cm_init_emergency_parameter() so we can keep the factors from
      * above. */
     output_type_iterate(o) {
       cmp.minimal_surplus[o] = MIN(cmp.minimal_surplus[o],
-				   MIN(pcity->surplus[o], 0));
+                                   MIN(pcity->surplus[o], 0));
     } output_type_iterate_end;
     cmp.require_happy = FALSE;
     cmp.allow_disorder = is_ai(city_owner(pcity)) ? FALSE : TRUE;
-    cm_query_result(pcity, &cmp, cmr, FALSE);
+    cm_query_result(pcity, pcmp, cmr, FALSE);
   }
   if (!cmr->found_a_valid) {
     CITY_LOG(LOG_DEBUG, pcity, "emergency management");
-    cm_init_emergency_parameter(&cmp);
-    cm_query_result(pcity, &cmp, cmr, TRUE);
+    pcmp = &cmp;
+    cm_init_emergency_parameter(pcmp);
+    cm_query_result(pcity, pcmp, cmr, TRUE);
   }
   fc_assert_ret(cmr->found_a_valid);
 
@@ -423,6 +476,10 @@ void auto_arrange_workers(struct city *pcity)
   }
   sanity_check_city(pcity);
 
+  if (broadcast_needed) {
+    broadcast_city_info(pcity);
+  }
+
   cm_result_destroy(cmr);
   TIMING_LOG(AIT_CITIZEN_ARRANGE, TIMER_STOP);
 }
@@ -433,12 +490,12 @@ void auto_arrange_workers(struct city *pcity)
 static void city_global_turn_notify(struct conn_list *dest)
 {
   cities_iterate(pcity) {
-    struct impr_type *pimprove = pcity->production.value.building;
+    const struct impr_type *pimprove = pcity->production.value.building;
 
     if (VUT_IMPROVEMENT == pcity->production.kind
         && is_great_wonder(pimprove)
-        && great_wonder_is_available(pimprove)
-        && (1 >= city_production_turns_to_build(pcity, TRUE))) {
+        && (1 >= city_production_turns_to_build(pcity, TRUE)
+        && can_city_build_improvement_now(pcity, pimprove))) {
       notify_conn(dest, city_tile(pcity),
                   E_WONDER_WILL_BE_BUILT, ftc_server,
                   _("Notice: Wonder %s in %s will be finished next turn."),
@@ -455,7 +512,7 @@ static void city_turn_notify(const struct city *pcity,
                              struct conn_list *dest,
                              const struct player *cache_for_player)
 {
-  struct impr_type *pimprove = pcity->production.value.building;
+  const struct impr_type *pimprove = pcity->production.value.building;
   struct packet_chat_msg packet;
   int turns_growth, turns_granary;
 
@@ -463,12 +520,12 @@ static void city_turn_notify(const struct city *pcity,
     turns_growth = (city_granary_size(city_size_get(pcity))
                     - pcity->food_stock - 1) / pcity->surplus[O_FOOD];
 
-    if (0 == get_city_bonus(pcity, EFT_GROWTH_FOOD)
+    if (get_city_bonus(pcity, EFT_GROWTH_FOOD) <= 0
         && 0 < get_current_construction_bonus(pcity, EFT_GROWTH_FOOD,
                                               RPT_CERTAIN)
         && 0 < pcity->surplus[O_SHIELD]) {
       /* From the check above, the surplus must always be positive. */
-      turns_granary = (impr_build_shield_cost(pimprove)
+      turns_granary = (impr_build_shield_cost(pcity, pimprove)
                        - pcity->shield_stock) / pcity->surplus[O_SHIELD];
       /* If growth and granary completion occur simultaneously, granary
        * preserves food.  -AJS. */
@@ -544,15 +601,11 @@ void send_city_turn_notifications(struct connection *pconn)
 **************************************************************************/
 void update_city_activities(struct player *pplayer)
 {
-  char buf[4 * MAX_LEN_NAME];
-  int n, gold;
+  int n;
 
-  fc_assert(NULL != pplayer);
   fc_assert(NULL != pplayer->cities);
 
   n = city_list_size(pplayer->cities);
-  gold = pplayer->economic.gold;
-  pplayer->server.bulbs_last_turn = 0;
 
   if (n > 0) {
     struct city *cities[n];
@@ -562,7 +615,7 @@ void update_city_activities(struct player *pplayer)
 
       citizens_convert(pcity);
 
-      /* Cancel traderoutes that cannot exist any more */
+      /* Cancel trade routes that cannot exist any more */
       trade_routes_iterate_safe(pcity, proute) {
         struct city *tcity = game_city_by_number(proute->partner);
 
@@ -615,43 +668,7 @@ void update_city_activities(struct player *pplayer)
       update_city_activity(cities[r]);
       cities[r] = cities[--i];
     }
-
-    if (pplayer->economic.gold < 0) {
-      switch (game.info.gold_upkeep_style) {
-      case GOLD_UPKEEP_CITY:
-        break;
-      case GOLD_UPKEEP_MIXED:
-        /* Nation pays for units. */
-        player_balance_treasury_units(pplayer);
-        break;
-      case GOLD_UPKEEP_NATION:
-        /* Nation pays for units and buildings. */
-        player_balance_treasury_units_and_buildings(pplayer);
-        break;
-      }
-    }
-
-    /* Should not happen. */
-    fc_assert(pplayer->economic.gold >= 0);
   }
-
-  /* This test includes the cost of the units because
-   * units are paid for in update_city_activity() or
-   * player_balance_treasury_units(). */
-  if (gold - (gold - pplayer->economic.gold) * 3 < 0) {
-    notify_player(pplayer, NULL, E_LOW_ON_FUNDS, ftc_server,
-                  _("WARNING, we're LOW on FUNDS %s."),
-                  ruler_title_for_player(pplayer, buf, sizeof(buf)));
-  }
-
-#if 0
-  /* Uncomment to unbalance the game, like in civ1 (CLG). */
-  if (pplayer->got_tech && pplayer->research->researched > 0) {
-    pplayer->research->researched = 0;
-  }
-#endif
-
-  city_refresh_queue_processing();
 }
 
 /**********************************************************************//**
@@ -673,7 +690,7 @@ static bool upkeep_kill_unit(struct unit *punit, Output_type_id outp,
   int punit_id;
 
   if (!action_auto_perf_unit_sel(AAPC_UNIT_UPKEEP, punit,
-                                 NULL, get_output_type(outp))) {
+                                 NULL, get_output_type(outp), NULL)) {
     /* Can't get rid of this unit. It is undisbandable for the current
      * situation. */
     return FALSE;
@@ -683,7 +700,7 @@ static bool upkeep_kill_unit(struct unit *punit, Output_type_id outp,
 
   /* Try to perform this unit's can't upkeep actions. */
   action_auto_perf_unit_do(AAPC_UNIT_UPKEEP, punit,
-                           NULL, get_output_type(outp),
+                           NULL, get_output_type(outp), NULL,
                            NULL, NULL, NULL, NULL);
 
   if (wipe_in_the_end && unit_is_alive(punit_id)) {
@@ -722,10 +739,11 @@ static citizens city_reduce_workers(struct city *pcity, citizens change)
 {
   struct tile *pcenter = city_tile(pcity);
   int want = change;
+  const struct civ_map *nmap = &(wld.map);
 
   fc_assert_ret_val(0 < change, 0);
 
-  city_tile_iterate_skip_free_worked(city_map_radius_sq_get(pcity), pcenter,
+  city_tile_iterate_skip_free_worked(nmap, city_map_radius_sq_get(pcity), pcenter,
                                      ptile, _index, _x, _y) {
     if (0 < want && tile_worked(ptile) == pcity) {
       city_map_update_empty(pcity, ptile);
@@ -737,8 +755,9 @@ static citizens city_reduce_workers(struct city *pcity, citizens change)
 }
 
 /**********************************************************************//**
-  Reduce the city size.  Return TRUE if the city survives the population
-  loss.
+  Reduce the city size. Return TRUE if the city survives the population
+  loss. Even if the city has wrong sum of nationalities entering
+  this function, leaves it with correct citizens.
 **************************************************************************/
 bool city_reduce_size(struct city *pcity, citizens pop_loss,
                       struct player *destroyer, const char *reason)
@@ -751,13 +770,16 @@ bool city_reduce_size(struct city *pcity, citizens pop_loss,
   }
 
   if (city_size_get(pcity) <= pop_loss) {
+    int id = pcity->id;
 
-    script_server_signal_emit("city_destroyed", 3,
-                              API_TYPE_CITY, pcity,
-                              API_TYPE_PLAYER, pcity->owner,
-                              API_TYPE_PLAYER, destroyer);
+    citizens_update(pcity, NULL); /* To avoid warnings during the script */
+    /* Won't refresh a doomed city, or should we? */
+    script_server_signal_emit("city_destroyed", pcity, pcity->owner,
+                              destroyer);
 
-    remove_city(pcity);
+    if (city_exist(id)) {
+      remove_city(pcity);
+    }
     return FALSE;
   }
   old_radius_sq = tile_border_source_radius_sq(pcity->tile);
@@ -775,7 +797,10 @@ bool city_reduce_size(struct city *pcity, citizens pop_loss,
 
   if (loss_remain > 0) {
     /* Take it out on workers */
-    loss_remain -= city_reduce_workers(pcity, loss_remain);
+#ifndef FREECIV_NDEBUG
+    loss_remain -=
+#endif /* FREECIV_NDEBUG */
+      city_reduce_workers(pcity, loss_remain);
   }
 
   /* Update citizens. */
@@ -810,10 +835,8 @@ bool city_reduce_size(struct city *pcity, citizens pop_loss,
   if (reason != NULL) {
     int id = pcity->id;
 
-    script_server_signal_emit("city_size_change", 3,
-                              API_TYPE_CITY, pcity,
-                              API_TYPE_INT, -pop_loss,
-                              API_TYPE_STRING, reason);
+    script_server_signal_emit("city_size_change", pcity,
+                              (lua_Integer)(-pop_loss), reason);
 
     return city_exist(id);
   }
@@ -833,7 +856,10 @@ void city_repair_size(struct city *pcity, int change)
     int need = change + city_reduce_specialists(pcity, -change);
 
     if (0 > need) {
-      need += city_reduce_workers(pcity, -need);
+#ifndef FREECIV_NDEBUG
+      need +=
+#endif /* FREECIV_NDEBUG */
+        city_reduce_workers(pcity, -need);
     }
 
     fc_assert_msg(0 == need,
@@ -843,12 +869,13 @@ void city_repair_size(struct city *pcity, int change)
 }
 
 /**********************************************************************//**
-  Return the percentage of food that is lost in this city.
+  Return the percentage of food that is kept in this city after city
+  grows.
 
   Normally this value is 0% but this can be increased by EFT_GROWTH_FOOD
   effects.
 **************************************************************************/
-static int granary_savings(const struct city *pcity)
+int city_growth_granary_savings(const struct city *pcity)
 {
   int savings = get_city_bonus(pcity, EFT_GROWTH_FOOD);
 
@@ -856,16 +883,33 @@ static int granary_savings(const struct city *pcity)
 }
 
 /**********************************************************************//**
+  Return the percentage of food that is kept in this city after city
+  shrinks.
+
+  Normally this value is 0% but this can be increased by EFT_SHRINK_FOOD
+  effects.
+**************************************************************************/
+int city_shrink_granary_savings(const struct city *pcity)
+{
+  int savings = get_city_bonus(pcity, EFT_SHRINK_FOOD);
+
+  return CLIP(0, savings, 100);
+}
+
+/**********************************************************************//**
   Reset the foodbox, usually when a city grows or shrinks.
   By default it is reset to zero, but this can be increased by Growth_Food
-  effects.
+  of Shrink_Food effects.
   Usually this should be called before the city changes size.
 **************************************************************************/
-static void city_reset_foodbox(struct city *pcity, int new_size)
+static void city_reset_foodbox(struct city *pcity, int new_size,
+                               bool shrink)
 {
-  fc_assert_ret(pcity != NULL);
-  pcity->food_stock = (city_granary_size(new_size)
-                       * granary_savings(pcity)) / 100;
+  int savings_pct = ( shrink
+                      ? city_shrink_granary_savings(pcity)
+                      : city_growth_granary_savings(pcity));
+
+  pcity->food_stock = (city_granary_size(new_size) * savings_pct) / 100;
 }
 
 /**********************************************************************//**
@@ -873,19 +917,19 @@ static void city_reset_foodbox(struct city *pcity, int new_size)
   the city to the clients as part of this function. There might be several
   calls to this function at once, and those actions are needed only once.
 **************************************************************************/
-static bool city_increase_size(struct city *pcity, struct player *nationality)
+static bool city_increase_size(struct city *pcity)
 {
   int new_food;
-  int savings_pct = granary_savings(pcity);
+  int savings_pct = city_growth_granary_savings(pcity);
   bool have_square = FALSE;
-  bool rapture_grow = city_rapture_grow(pcity); /* check before size increase! */
+  bool rapture_grow = city_rapture_grow(pcity); /* Check before size increase! */
   struct tile *pcenter = city_tile(pcity);
   struct player *powner = city_owner(pcity);
-  struct impr_type *pimprove = pcity->production.value.building;
-  int saved_id = pcity->id;
+  const struct impr_type *pimprove = pcity->production.value.building;
+  const struct civ_map *nmap = &(wld.map);
 
   if (!city_can_grow_to(pcity, city_size_get(pcity) + 1)) {
-    /* need improvement */
+    /* Need improvement */
     if (get_current_construction_bonus(pcity, EFT_SIZE_ADJ, RPT_CERTAIN) > 0
         || get_current_construction_bonus(pcity, EFT_SIZE_UNLIMIT, RPT_CERTAIN) > 0) {
       notify_player(powner, city_tile(pcity), E_CITY_AQ_BUILDING, ftc_server,
@@ -903,6 +947,7 @@ static bool city_increase_size(struct city *pcity, struct player *nationality)
                 * (100 * 100 - game.server.aqueductloss * (100 - savings_pct))
                 / (100 * 100));
     pcity->food_stock = MIN(pcity->food_stock, new_food);
+
     return FALSE;
   }
 
@@ -920,9 +965,9 @@ static bool city_increase_size(struct city *pcity, struct player *nationality)
    * make new citizens into scientists or taxmen -- Massimo */
 
   /* Ignore food if no square can be worked */
-  city_tile_iterate_skip_free_worked(city_map_radius_sq_get(pcity), pcenter,
+  city_tile_iterate_skip_free_worked(nmap, city_map_radius_sq_get(pcity), pcenter,
                                      ptile, _index, _x, _y) {
-    if (tile_worked(ptile) != pcity /* quick test */
+    if (tile_worked(ptile) != pcity /* Quick test */
      && city_can_work_tile(pcity, ptile)) {
       have_square = TRUE;
     }
@@ -932,11 +977,27 @@ static bool city_increase_size(struct city *pcity, struct player *nationality)
       && is_city_option_set(pcity, CITYO_SCIENCE_SPECIALISTS)) {
     pcity->specialists[best_specialist(O_SCIENCE, pcity)]++;
   } else if ((pcity->surplus[O_FOOD] >= 2 || !have_square)
-	     && is_city_option_set(pcity, CITYO_GOLD_SPECIALISTS)) {
+             && is_city_option_set(pcity, CITYO_GOLD_SPECIALISTS)) {
     pcity->specialists[best_specialist(O_GOLD, pcity)]++;
   } else {
     pcity->specialists[DEFAULT_SPECIALIST]++; /* or else city is !sane */
   }
+
+  /* Deprecated signal. Connect your lua functions to "city_size_change" that's
+   * emitted from calling functions which know the 'reason' of the increase. */
+  script_server_signal_emit("city_growth", pcity,
+                            (lua_Integer)city_size_get(pcity));
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Do the city refresh after its size has increased, by any amount.
+**************************************************************************/
+static void city_refresh_after_city_size_increase(struct city *pcity,
+                                                  struct player *nationality)
+{
+  struct player *powner = city_owner(pcity);
 
   /* Update citizens. */
   citizens_update(pcity, nationality);
@@ -959,22 +1020,13 @@ static bool city_increase_size(struct city *pcity, struct player *nationality)
                 _("%s grows to size %d."),
                 city_link(pcity), city_size_get(pcity));
 
-  /* Deprecated signal. Connect your lua functions to "city_size_change" that's
-   * emitted from calling functions which know the 'reason' of the increase. */
-  script_server_signal_emit("city_growth", 2,
-                            API_TYPE_CITY, pcity,
-                            API_TYPE_INT, city_size_get(pcity));
-  if (city_exist(saved_id)) {
-    /* Script didn't destroy this city */
-    sanity_check_city(pcity);
-  }
-  sync_cities();
+  sanity_check_city(pcity);
 
-  return TRUE;
+  sync_cities();
 }
 
 /**********************************************************************//**
-  Change the city size.  Return TRUE iff the city is still alive afterwards.
+  Change the city size. Return TRUE iff the city is still alive afterwards.
 **************************************************************************/
 bool city_change_size(struct city *pcity, citizens size,
                       struct player *nationality, const char *reason)
@@ -984,22 +1036,28 @@ bool city_change_size(struct city *pcity, citizens size,
   if (change > 0) {
     int old_size = city_size_get(pcity);
     int real_change;
+    int current_size = city_size_get(pcity);
+    int id = pcity->id;
 
     /* Increase city size until size reached, or increase fails */
-    while (size > city_size_get(pcity)
-           && city_increase_size(pcity, nationality)) {
-      /* city_increase_size() does all the work. */
+    while (size > current_size && city_increase_size(pcity)) {
+      /* TODO: This is currently needed only because there's
+       *       deprecated script signal "city_growth" emitted.
+       *       Check the need after signal has been dropped completely. */
+      if (!city_exist(id)) {
+        return FALSE;
+      }
+
+      current_size++;
     }
 
-    real_change = city_size_get(pcity) - old_size;
+    city_refresh_after_city_size_increase(pcity, nationality);
+
+    real_change = current_size - old_size;
 
     if (real_change != 0 && reason != NULL) {
-      int id = pcity->id;
-
-      script_server_signal_emit("city_size_change", 3,
-                                API_TYPE_CITY, pcity,
-                                API_TYPE_INT, real_change,
-                                API_TYPE_STRING, reason);
+      script_server_signal_emit("city_size_change", pcity,
+                                (lua_Integer)real_change, reason);
 
       if (!city_exist(id)) {
         return FALSE;
@@ -1038,14 +1096,13 @@ static void city_populate(struct city *pcity, struct player *nationality)
     } else {
       bool success;
 
-      success = city_increase_size(pcity, nationality);
+      success = city_increase_size(pcity);
       map_claim_border(pcity->tile, pcity->owner, -1);
 
       if (success) {
-        script_server_signal_emit("city_size_change", 3,
-                                  API_TYPE_CITY, pcity,
-                                  API_TYPE_INT, 1,
-                                  API_TYPE_STRING, "growth");
+        city_refresh_after_city_size_increase(pcity, nationality);
+        script_server_signal_emit("city_size_change", pcity,
+                                  (lua_Integer)1, "growth");
       }
     }
   } else if (pcity->food_stock < 0) {
@@ -1069,9 +1126,10 @@ static void city_populate(struct city *pcity, struct player *nationality)
         }
 
         if (city_exist(saved_id)) {
-          city_reset_foodbox(pcity, city_size_get(pcity));
+          city_reset_foodbox(pcity, city_size_get(pcity), TRUE);
         }
-	return;
+
+        return;
       }
     } unit_list_iterate_safe_end;
     if (city_size_get(pcity) > 1) {
@@ -1082,22 +1140,1058 @@ static void city_populate(struct city *pcity, struct player *nationality)
     } else {
       notify_player(city_owner(pcity), city_tile(pcity),
                     E_CITY_FAMINE, ftc_server,
-		    _("Famine destroys %s entirely."),
-		    city_link(pcity));
+                    _("Famine destroys %s entirely."),
+                    city_link(pcity));
     }
-    city_reset_foodbox(pcity, city_size_get(pcity) - 1);
-    city_reduce_size(pcity, 1, NULL, "famine");
+    city_reset_foodbox(pcity, city_size_get(pcity) - 1, TRUE);
+    if (city_reduce_size(pcity, 1, NULL, "famine")) {
+      pcity->had_famine = TRUE;
+    }
   }
 }
 
 /**********************************************************************//**
-  Examine the worklist and change the build target.  Return 0 if no
-  targets are available to change to.  Otherwise return non-zero.  Has
+  Examine an unbuildable build target from a city's worklist to see if it
+  can be postponed. Returns TRUE if it never can be build and should be
+  purged or if the city is gone.
+  Returns FALSE if the item can be postponed.
+**************************************************************************/
+static bool worklist_item_postpone_req_vec(struct universal *target,
+                                           struct city *pcity,
+                                           struct player *pplayer,
+                                           int saved_id)
+{
+  const void *ptarget;
+  const char *tgt_name;
+  const struct requirement_vector *build_reqs;
+  const char *signal_name;
+  const struct req_context city_ctxt = {
+    .player = pplayer,
+    .city = pcity,
+    .tile = city_tile(pcity)
+    /* FIXME: Setting .unittype is currently redundant,
+     *        but can_city_build_unit_direct() does it */
+  };
+  bool purge = FALSE;
+  bool known = FALSE;
+
+  if (pcity->wlcb == WLCB_ALWAYS_PURGE) {
+    return TRUE;
+  }
+
+  switch (target->kind) {
+  case VUT_UTYPE:
+    ptarget = target->value.utype;
+    build_reqs = &target->value.utype->build_reqs;
+    tgt_name = utype_name_translation(ptarget);
+    signal_name = "unit_cant_be_built";
+    break;
+  case VUT_IMPROVEMENT:
+    ptarget = target->value.building;
+    build_reqs = &target->value.building->reqs;
+    tgt_name = city_improvement_name_translation(pcity, ptarget);
+    signal_name = "building_cant_be_built";
+    break;
+  default:
+    fc_assert_ret_val((target->kind == VUT_IMPROVEMENT
+                       || target->kind == VUT_UTYPE), FALSE);
+    return FALSE;
+  }
+
+  if (pcity->wlcb == WLCB_ALWAYS_POSTPONE) {
+    notify_player(pplayer, city_tile(pcity),
+                  E_CITY_CANTBUILD, ftc_server,
+                  _("%s can't build %s from the worklist. "
+                    "Postponing..."),
+                  city_link(pcity),
+                  tgt_name);
+    return FALSE;
+  }
+
+  requirement_vector_iterate(build_reqs, preq) {
+    if (!is_req_active(&city_ctxt, NULL, preq, RPT_POSSIBLE)) {
+      known = TRUE;
+      switch (preq->source.kind) {
+      case VUT_COUNTER:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                        "counter %s value's checkpoint do not met "
+                        "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        counter_name_translation
+                        (preq->source.value.counter));
+        } else {
+          purge = TRUE;
+        }
+        break;
+      case VUT_ADVANCE:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "tech %s not yet available. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        advance_name_translation
+                            (preq->source.value.advance));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_tech");
+        } else {
+          /* While techs can be unlearned, this isn't useful feedback */
+          purge = TRUE;
+        }
+        break;
+      case VUT_TECHFLAG:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "no tech with flag \"%s\" yet available. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        tech_flag_id_name(preq->source.value.techflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_techflag");
+        } else {
+          /* While techs can be unlearned, this isn't useful feedback */
+          purge = TRUE;
+        }
+        break;
+      case VUT_IMPROVEMENT:
+      case VUT_SITE:
+        if (preq->range == REQ_RANGE_LOCAL) {
+          /* Building itself is never going to change */
+          purge = TRUE;
+        } else {
+          if (preq->present) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "need to have %s first. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          city_improvement_name_translation(pcity,
+                            preq->source.value.building));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "need_building");
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "need to not have %s. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          city_improvement_name_translation(pcity,
+                            preq->source.value.building));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "have_building");
+          }
+        }
+        break;
+      case VUT_IMPR_GENUS:
+        if (preq->range == REQ_RANGE_LOCAL) {
+          /* Building's own genus is never going to change */
+          purge = TRUE;
+        } else {
+          if (preq->present) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "need to have %s first. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          impr_genus_id_translated_name(
+                            preq->source.value.impr_genus));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "need_building_genus");
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "need to not have %s. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          impr_genus_id_translated_name(
+                            preq->source.value.impr_genus));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "have_building_genus");
+          }
+        }
+        break;
+      case VUT_IMPR_FLAG:
+        if (preq->range == REQ_RANGE_LOCAL) {
+          /* Building's own flags are never going to change */
+          purge = TRUE;
+        } else {
+          if (preq->present) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "need to have %s first. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          impr_flag_id_translated_name(
+                            preq->source.value.impr_flag));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "need_building_flag");
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "need to not have %s. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          impr_flag_id_translated_name(
+                            preq->source.value.impr_flag));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "have_building_flag");
+          }
+        }
+        break;
+      case VUT_PLAYER_FLAG:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "need to have %s first. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        plr_flag_id_translated_name(
+                          preq->source.value.plr_flag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_player_flag");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "need to not have %s. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        plr_flag_id_translated_name(
+                          preq->source.value.plr_flag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_player_flag");
+        }
+        break;
+      case VUT_PLAYER_STATE:
+        purge = TRUE;
+        break;
+      case VUT_GOVERNMENT:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "it needs %s government. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        government_name_translation(preq->source.value.govern));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_government");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "it cannot have %s government. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        government_name_translation(preq->source.value.govern));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_government");
+        }
+        break;
+      case VUT_ACHIEVEMENT:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "it needs \"%s\" achievement. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        achievement_name_translation(preq->source.value.achievement));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_achievement");
+        } else {
+          /* Can't unachieve things. */
+          purge = TRUE;
+        }
+        break;
+      case VUT_EXTRA:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        Q_("?extra:%s can't build %s from the worklist; "
+                           "%s is required. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        extra_name_translation(preq->source.value.extra));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_extra");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        Q_("?extra:%s can't build %s from the worklist; "
+                           "%s is prohibited. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        extra_name_translation(preq->source.value.extra));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_extra");
+        }
+        break;
+      case VUT_GOOD:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        Q_("?extra:%s can't build %s from the worklist; "
+                           "%s is required. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        goods_name_translation(preq->source.value.good));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_good");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        Q_("?extra:%s can't build %s from the worklist; "
+                           "%s is prohibited. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        goods_name_translation(preq->source.value.good));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_good");
+        }
+        break;
+      case VUT_TERRAIN:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        Q_("?terrain:%s can't build %s from the worklist; "
+                           "%s terrain is required. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        terrain_name_translation(preq->source.value.terrain));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_terrain");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        Q_("?terrain:%s can't build %s from the worklist; "
+                           "%s terrain is prohibited. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        terrain_name_translation(preq->source.value.terrain));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_terrain");
+        }
+        break;
+      case VUT_NATION:
+        if (preq->range < REQ_RANGE_TRADE_ROUTE
+            || preq->range == REQ_RANGE_PLAYER) {
+          /* At higher ranges, new players with their nations may arrive */
+          purge = TRUE;
+        } else {
+          if (preq->present) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          /* TRANS: "%s nation" is adjective */
+                          Q_("?nation:%s can't build %s from the worklist; "
+                             "%s nation is required. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          nation_adjective_translation(preq->source.value.nation));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "need_nation");
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          Q_("?nation:%s can't build %s from the worklist; "
+                             "%s nation is prohibited. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          nation_adjective_translation(preq->source.value.nation));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "have_nation");
+          }
+        }
+        break;
+      case VUT_NATIONGROUP:
+        if (preq->range < REQ_RANGE_TRADE_ROUTE
+            || preq->range == REQ_RANGE_PLAYER) {
+          /* At higher ranges, new players with their nations may arrive */
+          purge = TRUE;
+        } else {
+          if (preq->present) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          /* TRANS: "%s nation" is adjective */
+                          Q_("?ngroup:%s can't build %s from the worklist; "
+                             "%s nation is required. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          nation_group_name_translation(preq->source.value.nationgroup));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "need_nationgroup");
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          Q_("?ngroup:%s can't build %s from the worklist; "
+                             "%s nation is prohibited. Postponing..."),
+                          city_link(pcity),
+                          tgt_name,
+                          nation_group_name_translation(preq->source.value.nationgroup));
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "have_nationgroup");
+          }
+        }
+        break;
+      case VUT_STYLE:
+        /* FIXME: City styles sometimes change over time, but it isn't
+         * entirely under player control. Probably better to purge
+         * with useful explanation. */
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "only %s style cities may build this. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        style_name_translation(preq->source.value.style));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_style");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "%s style cities may not build this. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        style_name_translation(preq->source.value.style));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_style");
+        }
+        break;
+      case VUT_NATIONALITY:
+        /* FIXME: Changing citizen nationality is hard: purging might be
+         * more useful in this case. */
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: Latter %s is citizen nationality */
+                        _("%s can't build %s from the worklist; "
+                          "only city with %s may build this. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        nation_plural_translation(preq->source.value.nationality));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_nationality");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: Latter %s is citizen nationality */
+                        _("%s can't build %s from the worklist; "
+                          "only city without %s may build this. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        nation_plural_translation(preq->source.value.nationality));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_nationality");
+        }
+        break;
+      case VUT_ORIGINAL_OWNER:
+        /* Original owner of this specific city won't change.
+         * Update this when supporting ranges other than REQ_RANGE_CITY. */
+        purge = TRUE;
+        break;
+      case VUT_DIPLREL:
+      case VUT_DIPLREL_TILE: /* The tile owner is the city owner */
+      case VUT_DIPLREL_TILE_O: /* The tile owner is the city owner */
+        if (preq->present) {
+          const char *reason;
+
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: '%s' is a wide range of relationships;
+                         * e.g., 'Peace', 'Never met', 'Foreign',
+                         * 'Hosts embassy', 'Provided Casus Belli' */
+                        _("%s can't build %s from the worklist; "
+                          "the relationship '%s' is required."
+                          "  Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        diplrel_name_translation(
+                          preq->source.value.diplrel));
+
+          if (preq->source.kind == VUT_DIPLREL_TILE) {
+            reason = "need_diplrel_tile";
+          } else if (preq->source.kind == VUT_DIPLREL_TILE_O) {
+            reason = "need_diplrel_tile_o";
+          } else {
+            fc_assert(preq->source.kind == VUT_DIPLREL);
+            reason = "need_diplrel";
+          }
+
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, reason);
+        } else {
+          const char *reason;
+
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "the relationship '%s' is prohibited."
+                          "  Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        diplrel_name_translation(
+                          preq->source.value.diplrel));
+
+          if (preq->source.kind == VUT_DIPLREL_TILE) {
+            reason = "have_diplrel_tile";
+          } else if (preq->source.kind == VUT_DIPLREL_TILE_O) {
+            reason = "have_diplrel_tile_o";
+          } else {
+            fc_assert(preq->source.kind == VUT_DIPLREL);
+            reason = "have_diplrel";
+          }
+
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, reason);
+        }
+        break;
+      case VUT_DIPLREL_UNITANY:
+      case VUT_DIPLREL_UNITANY_O:
+        if (preq->present) {
+          const char *reason;
+
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: '%s' is a wide range of relationships;
+                         * e.g., 'Peace', 'Never met', 'Foreign',
+                         * 'Hosts embassy', 'Provided Casus Belli' */
+                        _("%s can't build %s from the worklist; "
+                          "unit with the relationship '%s' is required."
+                          "  Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        diplrel_name_translation(
+                          preq->source.value.diplrel));
+
+          if (preq->source.kind == VUT_DIPLREL_UNITANY) {
+            reason = "need_diplrel_unitany";
+          } else {
+            fc_assert(preq->source.kind == VUT_DIPLREL_UNITANY_O);
+            reason = "need_diplrel_unitany_o";
+          }
+
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, reason);
+        } else {
+          const char *reason;
+
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "unit with the relationship '%s' is prohibited."
+                          "  Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        diplrel_name_translation(
+                          preq->source.value.diplrel));
+
+          if (preq->source.kind == VUT_DIPLREL_UNITANY) {
+            reason = "have_diplrel_unitany";
+          } else {
+            fc_assert(preq->source.kind == VUT_DIPLREL_UNITANY_O);
+            reason = "have_diplrel_unitany_o";
+          }
+
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, reason);
+        }
+        break;
+      case VUT_MINSIZE:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "city must be of size %d or larger. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.minsize);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_minsize");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "city must be of size %d or smaller."
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        (preq->source.value.minsize - 1));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_minsize");
+        }
+        break;
+      case VUT_MINCULTURE:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "city must have culture of %d. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.minculture);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_minculture");
+        } else {
+          /* What has been written may not be unwritten. */
+          purge = TRUE;
+        }
+        break;
+      case VUT_MINFOREIGNPCT:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "city must have %d%% foreign population. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.minforeignpct);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_minforeignpct");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "city must have %d%% native population. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        100 - preq->source.value.minforeignpct);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_minforeignpct");
+        }
+        break;
+      case VUT_MINTECHS:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "%d techs must be known. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.min_techs);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_mintechs");
+        } else {
+          purge = TRUE;
+        }
+        break;
+      case VUT_MINCITIES:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "Must own %d cities. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.min_cities);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_mincities");
+        } else {
+          purge = TRUE;
+        }
+        break;
+      case VUT_MAXTILEUNITS:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        PL_("%s can't build %s from the worklist; "
+                            "more than %d unit on tile."
+                            "  Postponing...",
+                            "%s can't build %s from the worklist; "
+                            "more than %d units on tile."
+                            "  Postponing...",
+                            preq->source.value.max_tile_units),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.max_tile_units);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_tileunits");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        PL_("%s can't build %s from the worklist; "
+                            "fewer than %d unit on tile."
+                            "  Postponing...",
+                            "%s can't build %s from the worklist; "
+                            "fewer than %d units on tile."
+                            "  Postponing...",
+                            preq->source.value.max_tile_units + 1),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.max_tile_units + 1);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_tileunits");
+        }
+        break;
+      case VUT_AI_LEVEL:
+        /* Can't change AI level. */
+        purge = TRUE;
+        break;
+      case VUT_TERRAINCLASS:
+        /* Change of terrain class is expected to be very unlikely. Purge!
+         * TODO: Analyze ruleset to see how unlikely terrain class change actually is. */
+        purge = TRUE;
+        break;
+      case VUT_TERRFLAG:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "terrain with \"%s\" flag is required. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        terrain_flag_id_name(preq->source.value.terrainflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_terrainflag");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "terrain with \"%s\" flag is prohibited. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        terrain_flag_id_name(preq->source.value.terrainflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_terrainflag");
+        }
+        break;
+      case VUT_MAX_REGION_TILES:
+        /* Changing the continent size is hard; cf. VUT_TERRAINCLASS above.
+         * Change this when we support less fixed ranges (e.g. city?). */
+        purge = TRUE;
+        break;
+      case VUT_ROADFLAG:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "road with \"%s\" flag is required. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        road_flag_id_name(preq->source.value.roadflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_roadflag");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "road with \"%s\" flag is prohibited. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        road_flag_id_name(preq->source.value.roadflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_roadflag");
+        }
+        break;
+      case VUT_EXTRAFLAG:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "extra with \"%s\" flag is required. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        extra_flag_id_translated_name(preq->source.value.extraflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_extraflag");
+        } else {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "extra with \"%s\" flag is prohibited. "
+                          "Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        extra_flag_id_translated_name(preq->source.value.extraflag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_extraflag");
+        }
+        break;
+      case VUT_MINLATITUDE:
+      case VUT_MAXLATITUDE:
+        /* Can't change where the city is located. */
+        purge = TRUE;
+        break;
+      case VUT_CITYTILE:
+        if (CITYT_BORDERING_TCLASS_REGION == preq->source.value.citytile
+            && (preq->range == REQ_RANGE_CADJACENT
+                || preq->range == REQ_RANGE_ADJACENT)) {
+          if (preq->present) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "different terrain class nearby is required. "
+                            "Postponing..."),
+                          city_link(pcity),
+                          tgt_name);
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "need_different_terrainclass");
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "different terrain class nearby is prohibited. "
+                            "Postponing..."),
+                          city_link(pcity),
+                          tgt_name);
+            script_server_signal_emit(signal_name, ptarget,
+                                      pcity, "have_different_terrainclass");
+          }
+          break;
+        }
+        /* Other values should not present in build reqs */
+        fc__fallthrough;
+
+      case VUT_UTYPE:
+      case VUT_UTFLAG:
+      case VUT_UCLASS:
+      case VUT_UCFLAG:
+      case VUT_MINVETERAN:
+      case VUT_UNITSTATE:
+      case VUT_ACTIVITY:
+      case VUT_MINMOVES:
+      case VUT_MINHP:
+      case VUT_ACTION:
+      case VUT_OTYPE:
+      case VUT_SPECIALIST:
+      case VUT_MAX_DISTANCE_SQ:
+      case VUT_TILE_REL:
+      case VUT_TERRAINALTER: /* XXX could do this in principle */
+        /* Will only happen with a bogus ruleset. */
+        log_error("worklist_change_build_target() has bogus preq");
+        break;
+      case VUT_CITYSTATUS:
+        if (preq->source.value.citystatus == CITYS_TRANSFERRED) {
+          /* If there's a change, it will invalidate worklist anyway. */
+          purge = TRUE;
+        } else if (preq->source.value.citystatus == CITYS_OWNED_BY_ORIGINAL) {
+          if (preq->range == REQ_RANGE_CITY || preq->range == REQ_RANGE_TILE) {
+            /* Can't change at these ranges */
+            purge = TRUE;
+          } else {
+            if (preq->present) {
+              notify_player(pplayer, city_tile(pcity),
+                            E_CITY_CANTBUILD, ftc_server,
+                            /* TRANS: last %s is a CityStatus ("OwnedByOriginal") */
+                            _("%s can't build %s from the worklist; "
+                              "only available when city in range %s \"%s\". "
+                              "Postponing..."),
+                            city_link(pcity),
+                            tgt_name, req_range_name(preq->range),
+                            citystatus_type_name(preq->source.value.citystatus));
+              script_server_signal_emit(signal_name, ptarget,
+                                        pcity, "need_citystatus");
+            } else {
+              notify_player(pplayer, city_tile(pcity),
+                            E_CITY_CANTBUILD, ftc_server,
+                            /* TRANS: last %s is a CityStatus ("OwnedByOriginal") */
+                            _("%s can't build %s from the worklist; "
+                              "not available when city in range %s is \"%s\". "
+                              "Postponing..."),
+                            city_link(pcity),
+                            tgt_name, req_range_name(preq->range),
+                            citystatus_type_name(preq->source.value.citystatus));
+              script_server_signal_emit(signal_name, ptarget,
+                                        pcity, "have_citystatus");
+            }
+          }
+        } else {
+          /* Other status types will only happen with a bogus ruleset. */
+          log_error("worklist_change_build_target() has bogus citystatus preq");
+        }
+        break;
+      case VUT_MINYEAR:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: last %s is a date */
+                        _("%s can't build %s from the worklist; "
+                          "only available from %s. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        textyear(preq->source.value.minyear));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_minyear");
+        } else {
+          /* Can't go back in time. */
+          purge = TRUE;
+        }
+        break;
+      case VUT_MINCALFRAG:
+        /* Unlike VUT_MINYEAR, a requirement in either direction is
+         * likely to be fulfilled sooner or later. */
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: last %s is a calendar fragment from
+                         * the ruleset; may be a bare number */
+                        _("%s can't build %s from the worklist; "
+                          "only available from %s. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        textcalfrag(preq->source.value.mincalfrag));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_mincalfrag");
+        } else {
+          fc_assert_action(preq->source.value.mincalfrag > 0, break);
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: last %s is a calendar fragment from
+                         * the ruleset; may be a bare number */
+                        _("%s can't build %s from the worklist; "
+                          "not available after %s. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        textcalfrag(preq->source.value.mincalfrag - 1));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "have_mincalfrag");
+        }
+        break;
+      case VUT_TOPO:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: third %s is topology flag name
+                         * ("Hex", "ISO" */
+                        _("%s can't build %s from the worklist; "
+                          "only available in worlds with %s map."),
+                        city_link(pcity),
+                        tgt_name,
+                        _(topo_flag_name(preq->source.value.topo_property)));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_topo");
+        }
+        purge = TRUE;
+        break;
+      case VUT_WRAP:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        /* TRANS: third %s is wrap flag name
+                         * ("WrapX", "Wrapy") */
+                        _("%s can't build %s from the worklist; "
+                          "only available in worlds with %s map."),
+                        city_link(pcity),
+                        tgt_name,
+                        _(wrap_flag_name(preq->source.value.wrap_property)));
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_wrap");
+        }
+        purge = TRUE;
+        break;
+      case VUT_SERVERSETTING:
+        notify_player(pplayer, city_tile(pcity),
+                      E_CITY_CANTBUILD, ftc_server,
+                      /* TRANS: %s is a server setting, its value and
+                       * if it is required to be present or absent.
+                       * The string's format is specified in
+                       * ssetv_human_readable().
+                       * Example: "killstack is enabled". */
+                      _("%s can't build %s from the worklist; "
+                        "only available when the server setting "
+                        "%s."),
+                      city_link(pcity),
+                      tgt_name,
+                      ssetv_human_readable(preq->source.value.ssetval,
+                                           preq->present));
+        script_server_signal_emit(signal_name, ptarget,
+                                  pcity, "need_setting");
+        /* Don't assume that the server setting will be changed. */
+        purge = TRUE;
+        break;
+      case VUT_AGE:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "only available once %d turns old. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.age);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_age");
+        } else {
+          /* Can't go back in time. */
+          purge = TRUE;
+        }
+        break;
+      case VUT_FORM_AGE:
+        if (preq->present) {
+          notify_player(pplayer, city_tile(pcity),
+                        E_CITY_CANTBUILD, ftc_server,
+                        _("%s can't build %s from the worklist; "
+                          "only available once %d turns old form. Postponing..."),
+                        city_link(pcity),
+                        tgt_name,
+                        preq->source.value.age);
+          script_server_signal_emit(signal_name, ptarget,
+                                    pcity, "need_form_age");
+        } else {
+          /* Can't go back in time. */
+          purge = TRUE;
+        }
+        break;
+      case VUT_NONE:
+      case VUT_COUNT:
+        fc_assert_ret_val_msg(FALSE, TRUE,
+                              "worklist_change_build_target() "
+                              "called with invalid preq");
+      break;
+      /* No default handling here, as we want compiler warning
+       * if new requirement type is added to enum and it's not handled
+       * here. */
+      };
+      break;
+    }
+
+    /* Almost all cases emit signal in the end, so city check needed. */
+    if (!city_exist(saved_id)) {
+      /* Some script has removed city */
+      return TRUE;
+    }
+
+  } requirement_vector_iterate_end;
+
+  if (!known) {
+    /* FIXME: make can_city_build_improvement_now() return a reason enum,
+     *        so we can notify user with it.
+     *        Likely the building already exist. */
+    purge = TRUE;
+  }
+
+  return purge;
+}
+
+/**********************************************************************//**
+  Examine the worklist and change the build target. Return 0 if no
+  targets are available to change to. Otherwise return non-zero. Has
   the side-effect of removing from the worklist any no-longer-available
   targets as well as the target actually selected, if any.
 **************************************************************************/
 static bool worklist_change_build_target(struct player *pplayer,
-					 struct city *pcity)
+                                         struct city *pcity)
 {
   struct universal target;
   bool success = FALSE;
@@ -1105,6 +2199,7 @@ static bool worklist_change_build_target(struct player *pplayer,
   int saved_id = pcity->id;
   bool city_checked = TRUE; /* This is used to avoid spurious city_exist() calls */
   struct worklist *pwl = &pcity->worklist;
+  const struct civ_map *nmap = &(wld.map);
 
   if (worklist_is_empty(pwl)) {
     /* Nothing in the worklist; bail now. */
@@ -1124,7 +2219,7 @@ static bool worklist_change_build_target(struct player *pplayer,
     }
 
     if (worklist_peek_ith(pwl, &target, i)) {
-      success = can_city_build_now(pcity, &target);
+      success = can_city_build_now(nmap, pcity, &target);
     } else {
       success = FALSE;
     }
@@ -1137,64 +2232,60 @@ static bool worklist_change_build_target(struct player *pplayer,
     switch (target.kind) {
     case VUT_UTYPE:
     {
-      struct unit_type *ptarget = target.value.utype;
-      struct unit_type *pupdate = unit_upgrades_to(pcity, ptarget);
+      const struct unit_type *ptarget = target.value.utype;
+      const struct unit_type *pupdate = unit_upgrades_to(pcity, ptarget);
+      bool purge;
 
       /* Maybe we can just upgrade the target to what the city /can/ build. */
       if (U_NOT_OBSOLETED == pupdate) {
-	/* Nope, we're stuck.  Skip this item from the worklist. */
-        if (ptarget->need_government != NULL
-            && ptarget->need_government != government_of_player(pplayer)) {
-          notify_player(pplayer, city_tile(pcity),
-                        E_CITY_CANTBUILD, ftc_server,
-                        _("%s can't build %s from the worklist; "
-                          "it needs %s government. Postponing..."),
-                        city_link(pcity), utype_name_translation(ptarget),
-                        government_name_translation(ptarget->need_government));
-          script_server_signal_emit("unit_cant_be_built", 3,
-                                    API_TYPE_BUILDING_TYPE, ptarget,
-                                    API_TYPE_CITY, pcity,
-                                    API_TYPE_STRING, "need_government");
-        } else if (ptarget->need_improvement != NULL
-                   && !city_has_building(pcity, ptarget->need_improvement)) {
-          notify_player(pplayer, city_tile(pcity),
-                        E_CITY_CANTBUILD, ftc_server,
-                        _("%s can't build %s from the worklist; "
-                          "need to have %s first. Postponing..."),
-                        city_link(pcity), utype_name_translation(ptarget),
-                        city_improvement_name_translation(pcity,
-                                                  ptarget->need_improvement));
-          script_server_signal_emit("unit_cant_be_built", 3,
-                                    API_TYPE_UNIT_TYPE, ptarget,
-                                    API_TYPE_CITY, pcity,
-                                    API_TYPE_STRING, "need_building");
-        } else if (ptarget->require_advance != NULL
-                   && TECH_KNOWN != research_invention_state
-                          (research_get(pplayer),
-                           advance_number(ptarget->require_advance))) {
-          notify_player(pplayer, city_tile(pcity),
-                        E_CITY_CANTBUILD, ftc_server,
-                        _("%s can't build %s from the worklist; "
-                          "tech %s not yet available. Postponing..."),
-                        city_link(pcity), utype_name_translation(ptarget),
-                        advance_name_translation(ptarget->require_advance));
-          script_server_signal_emit("unit_cant_be_built", 3,
-                                    API_TYPE_UNIT_TYPE, ptarget,
-                                    API_TYPE_CITY, pcity,
-                                    API_TYPE_STRING, "need_tech");
+	/* Nope, we're stuck. Skip this item from the worklist. */
+        struct research *presearch = research_get(pplayer);
+        struct advance *missing = NULL;
+        bool multiple = FALSE;
+
+        unit_tech_reqs_iterate(ptarget, padv) {
+          if (research_invention_state(presearch, advance_number(padv) != TECH_KNOWN)) {
+            if (missing != NULL) {
+              multiple = TRUE;
+            } else {
+              missing = padv;
+            }
+          }
+        } unit_tech_reqs_iterate_end;
+
+
+        purge = FALSE;
+        if (missing != NULL) {
+          if (!multiple) {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "tech %s not yet available. Postponing..."),
+                          city_link(pcity), utype_name_translation(ptarget),
+                          advance_name_translation(missing));
+          } else {
+            notify_player(pplayer, city_tile(pcity),
+                          E_CITY_CANTBUILD, ftc_server,
+                          _("%s can't build %s from the worklist; "
+                            "multiple techs still needed. Postponing..."),
+                          city_link(pcity), utype_name_translation(ptarget));
+          }
+
+          script_server_signal_emit("unit_cant_be_built", ptarget, pcity,
+                                    "need_tech");
         } else {
-          /* This shouldn't happen, but in case it does... */
-          notify_player(pplayer, city_tile(pcity),
-                        E_CITY_CANTBUILD, ftc_server,
-                        _("%s can't build %s from the worklist; "
-                          "reason unknown! Postponing..."),
-                        city_link(pcity), utype_name_translation(ptarget));
+          /* Unknown or requirement from vector. */
+          purge = worklist_item_postpone_req_vec(&target, pcity, pplayer,
+                                                 saved_id);
         }
         city_checked = FALSE;
-	break;
+        if (!purge) {
+          break;
+        }
+      } else {
+        purge = !can_city_build_unit_later(nmap, pcity, pupdate);
       }
-      success = can_city_build_unit_later(pcity, pupdate);
-      if (!success) {
+      if (purge) {
 	/* If the city can never build this unit or its descendants,
 	 * drop it. */
 	notify_player(pplayer, city_tile(pcity),
@@ -1205,10 +2296,8 @@ static bool worklist_change_build_target(struct player *pplayer,
 			    in the worklist, not its obsolete-closure
 			    pupdate. */
 			 utype_name_translation(ptarget));
-        script_server_signal_emit("unit_cant_be_built", 3,
-                                  API_TYPE_UNIT_TYPE, ptarget,
-                                  API_TYPE_CITY, pcity,
-                                  API_TYPE_STRING, "never");
+        script_server_signal_emit("unit_cant_be_built", ptarget, pcity,
+                                  "never");
         if (city_exist(saved_id)) {
           city_checked = TRUE;
           /* Purge this worklist item. */
@@ -1218,7 +2307,7 @@ static bool worklist_change_build_target(struct player *pplayer,
           city_checked = FALSE;
         }
       } else {
-	/* Yep, we can go after pupdate instead.  Joy! */
+	/* Yep, we can go after pupdate instead. Joy! */
         notify_player(pplayer, city_tile(pcity), E_WORKLIST, ftc_server,
                       _("Production of %s is upgraded to %s in %s."),
                       utype_name_translation(ptarget), 
@@ -1230,791 +2319,23 @@ static bool worklist_change_build_target(struct player *pplayer,
     }
     case VUT_IMPROVEMENT:
     {
-      struct impr_type *ptarget = target.value.building;
-      struct impr_type *pupdate = building_upgrades_to(pcity, ptarget);
+      const struct impr_type *ptarget = target.value.building;
+      const struct impr_type *pupdate = building_upgrades_to(pcity, ptarget);
+      bool purge;
 
       /* If the city can never build this improvement, drop it. */
       success = can_city_build_improvement_later(pcity, pupdate);
+      purge = !success;
 
       /* Maybe this improvement has been obsoleted by something that
 	 we can build. */
-      if (success && pupdate == ptarget) {
-	bool known = FALSE;
+      if (purge) {
+        /* Nope, no use.  *sigh*  */
 
-	/* Nope, no use.  *sigh*  */
-	requirement_vector_iterate(&ptarget->reqs, preq) {
-	  if (!is_req_active(pplayer, NULL, pcity, NULL, NULL, NULL, NULL,
-                             NULL, NULL, NULL, preq, RPT_POSSIBLE)) {
-	    known = TRUE;
-	    switch (preq->source.kind) {
-	    case VUT_ADVANCE:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "tech %s not yet available. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              advance_name_translation
-                                  (preq->source.value.advance));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_tech");
-              } else {
-                /* While techs can be unlearned, this isn't useful feedback */
-                success = FALSE;
-              }
-	      break;
-            case VUT_TECHFLAG:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "no tech with flag \"%s\" yet available. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              tech_flag_id_name(preq->source.value.techflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_techflag");
-              } else {
-                /* While techs can be unlearned, this isn't useful feedback */
-                success = FALSE;
-              }
-              break;
-	    case VUT_IMPROVEMENT:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "need to have %s first. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              city_improvement_name_translation(pcity,
-						  preq->source.value.building));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_building");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "need to not have %s. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              city_improvement_name_translation(pcity,
-						  preq->source.value.building));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_building");
-              }
-	      break;
-            case VUT_IMPR_GENUS:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "need to have %s first. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              impr_genus_id_translated_name(
-                                preq->source.value.impr_genus));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_building_genus");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "need to not have %s. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              impr_genus_id_translated_name(
-                                preq->source.value.impr_genus));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_building_genus");
-              }
-              break;
-            case VUT_GOVERNMENT:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "it needs %s government. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              government_name_translation(preq->source.value.govern));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_government");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "it cannot have %s government. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              government_name_translation(preq->source.value.govern));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_government");
-              }
-	      break;
-	    case VUT_ACHIEVEMENT:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "it needs \"%s\" achievement. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              achievement_name_translation(preq->source.value.achievement));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_achievement");
-              } else {
-                /* Can't unachieve things. */
-                success = FALSE;
-              }
-	      break;
-	    case VUT_EXTRA:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?extra:%s can't build %s from the worklist; "
-                                 "%s is required. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              extra_name_translation(preq->source.value.extra));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_extra");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?extra:%s can't build %s from the worklist; "
-                                 "%s is prohibited. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              extra_name_translation(preq->source.value.extra));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_extra");
-              }
-	      break;
-            case VUT_GOOD:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?extra:%s can't build %s from the worklist; "
-                                 "%s is required. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              goods_name_translation(preq->source.value.good));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_good");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?extra:%s can't build %s from the worklist; "
-                                 "%s is prohibited. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              goods_name_translation(preq->source.value.good));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_good");
-              }
-	      break;
-	    case VUT_TERRAIN:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?terrain:%s can't build %s from the worklist; "
-                                 "%s terrain is required. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              terrain_name_translation(preq->source.value.terrain));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_terrain");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?terrain:%s can't build %s from the worklist; "
-                                 "%s terrain is prohibited. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              terrain_name_translation(preq->source.value.terrain));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_terrain");
-              }
-	      break;
-            case VUT_NATION:
-              /* Nation can be required at Alliance range, which may change. */
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: "%s nation" is adjective */
-                              Q_("?nation:%s can't build %s from the worklist; "
-                                 "%s nation is required. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              nation_adjective_translation(preq->source.value.nation));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_nation");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?nation:%s can't build %s from the worklist; "
-                                 "%s nation is prohibited. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              nation_adjective_translation(preq->source.value.nation));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_nation");
-              }
-              break;
-            case VUT_NATIONGROUP:
-              /* Nation group can be required at Alliance range, which may
-               * change. */
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: "%s nation" is adjective */
-                              Q_("?ngroup:%s can't build %s from the worklist; "
-                                 "%s nation is required. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              nation_group_name_translation(preq->source.value.nationgroup));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_nationgroup");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?ngroup:%s can't build %s from the worklist; "
-                                 "%s nation is prohibited. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              nation_group_name_translation(preq->source.value.nationgroup));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_nationgroup");
-              }
-              break;
-            case VUT_STYLE:
-              /* FIXME: City styles sometimes change over time, but it isn't
-               * entirely under player control.  Probably better to purge
-               * with useful explanation. */
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "only %s style cities may build this. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              style_name_translation(preq->source.value.style));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_style");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "%s style cities may not build this. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              style_name_translation(preq->source.value.style));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_style");
-              }
-	      break;
-	    case VUT_NATIONALITY:
-              /* FIXME: Changing citizen nationality is hard: purging might be
-               * more useful in this case. */
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: Latter %s is citizen nationality */
-                              _("%s can't build %s from the worklist; "
-                                "only city with %s may build this. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              nation_plural_translation(preq->source.value.nationality));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_nationality");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: Latter %s is citizen nationality */
-                              _("%s can't build %s from the worklist; "
-                                "only city without %s may build this. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              nation_plural_translation(preq->source.value.nationality));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_nationality");
-              }
-              break;
-            case VUT_DIPLREL:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: '%s' is a wide range of relationships;
-                               * e.g., 'Peace', 'Never met', 'Foreign',
-                               * 'Hosts embassy', 'Provided Casus Belli' */
-                              _("%s can't build %s from the worklist; "
-                                "the relationship '%s' is required."
-                                "  Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity,
-                                                                ptarget),
-                              diplrel_name_translation(
-                                preq->source.value.diplrel));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_diplrel");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "the relationship '%s' is prohibited."
-                                "  Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity,
-                                                                ptarget),
-                              diplrel_name_translation(
-                                preq->source.value.diplrel));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_diplrel");
-              }
-              break;
-	    case VUT_MINSIZE:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "city must be of size %d or larger. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              preq->source.value.minsize);
-	        script_server_signal_emit("building_cant_be_built", 3,
-				   API_TYPE_BUILDING_TYPE, ptarget,
-				   API_TYPE_CITY, pcity,
-				   API_TYPE_STRING, "need_minsize");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "city must be of size %d or smaller."
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              (preq->source.value.minsize - 1));
-	        script_server_signal_emit("building_cant_be_built", 3,
-				   API_TYPE_BUILDING_TYPE, ptarget,
-				   API_TYPE_CITY, pcity,
-				   API_TYPE_STRING, "need_minsize");
-              }
-	      break;
-	    case VUT_MINCULTURE:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "city must have culture of %d. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              preq->source.value.minculture);
-	        script_server_signal_emit("building_cant_be_built", 3,
-				   API_TYPE_BUILDING_TYPE, ptarget,
-				   API_TYPE_CITY, pcity,
-				   API_TYPE_STRING, "need_minculture");
-              } else {
-                /* What has been written may not be unwritten. */
-                success = FALSE;
-              }
-	      break;
-            case VUT_MINTECHS:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "%d techs must be known. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              preq->source.value.min_techs);
-	        script_server_signal_emit("building_cant_be_built", 3,
-				   API_TYPE_BUILDING_TYPE, ptarget,
-				   API_TYPE_CITY, pcity,
-				   API_TYPE_STRING, "need_mintechs");
-              } else {
-                success = FALSE;
-              }
-              break;
-	    case VUT_MAXTILEUNITS:
-	      if (preq->present) {
-		notify_player(pplayer, city_tile(pcity),
-			      E_CITY_CANTBUILD, ftc_server,
-			      PL_("%s can't build %s from the worklist; "
-                                  "more than %d unit on tile."
-                                  "  Postponing...",
-			          "%s can't build %s from the worklist; "
-                                  "more than %d units on tile."
-                                  "  Postponing...",
-                                  preq->source.value.max_tile_units),
-			      city_link(pcity),
-			      city_improvement_name_translation(pcity,
-								ptarget),
-                              preq->source.value.max_tile_units);
-		script_server_signal_emit("building_cant_be_built", 3,
-					  API_TYPE_BUILDING_TYPE, ptarget,
-					  API_TYPE_CITY, pcity,
-					  API_TYPE_STRING, "need_tileunits");
-	      } else {
-		notify_player(pplayer, city_tile(pcity),
-			      E_CITY_CANTBUILD, ftc_server,
-			      PL_("%s can't build %s from the worklist; "
-                                  "fewer than %d unit on tile."
-                                  "  Postponing...",
-			          "%s can't build %s from the worklist; "
-                                  "fewer than %d units on tile."
-                                  "  Postponing...",
-                                  preq->source.value.max_tile_units + 1),
-			      city_link(pcity),
-			      city_improvement_name_translation(pcity,
-								ptarget),
-                              preq->source.value.max_tile_units + 1);
-		script_server_signal_emit("building_cant_be_built", 3,
-					  API_TYPE_BUILDING_TYPE, ptarget,
-					  API_TYPE_CITY, pcity,
-					  API_TYPE_STRING, "need_tileunits");
-	      }
-              break;
-            case VUT_AI_LEVEL:
-              /* Can't change AI level. */
-              success = FALSE;
-	      break;
-	    case VUT_TERRAINCLASS:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?terrainclass:%s can't build %s from the "
-                                 "worklist; %s terrain is required."
-                                 "  Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              terrain_class_name_translation(preq->source.value.terrainclass));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_terrainclass");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              Q_("?terrainclass:%s can't build %s from the "
-                                 "worklist; %s terrain is prohibited."
-                                 "  Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              terrain_class_name_translation(preq->source.value.terrainclass));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_terrainclass");
-              }
-	      break;
-	    case VUT_TERRFLAG:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "terrain with \"%s\" flag is required. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              terrain_flag_id_name(preq->source.value.terrainflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_terrainflag");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "terrain with \"%s\" flag is prohibited. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              terrain_flag_id_name(preq->source.value.terrainflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_terrainflag");
-              }
-	      break;
-            case VUT_BASEFLAG:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "base with \"%s\" flag is required. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              base_flag_id_name(preq->source.value.baseflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_baseflag");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "base with \"%s\" flag is prohibited. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              base_flag_id_name(preq->source.value.baseflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_baseflag");
-              }
-              break;
-            case VUT_ROADFLAG:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "road with \"%s\" flag is required. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              road_flag_id_name(preq->source.value.roadflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_roadflag");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "road with \"%s\" flag is prohibited. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              road_flag_id_name(preq->source.value.roadflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_roadflag");
-              }
-	      break;
-            case VUT_EXTRAFLAG:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "extra with \"%s\" flag is required. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              extra_flag_id_translated_name(preq->source.value.extraflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_extraflag");
-              } else {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "extra with \"%s\" flag is prohibited. "
-                                "Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              extra_flag_id_translated_name(preq->source.value.extraflag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_extraflag");
-              }
-	      break;
-	    case VUT_UTYPE:
-	    case VUT_UTFLAG:
-	    case VUT_UCLASS:
-	    case VUT_UCFLAG:
-            case VUT_MINVETERAN:
-            case VUT_UNITSTATE:
-            case VUT_MINMOVES:
-            case VUT_MINHP:
-            case VUT_ACTION:
-	    case VUT_OTYPE:
-	    case VUT_SPECIALIST:
-	    case VUT_TERRAINALTER: /* XXX could do this in principle */
-	    case VUT_CITYTILE:
-	      /* Will only happen with a bogus ruleset. */
-              log_error("worklist_change_build_target() has bogus preq");
-	      break;
-            case VUT_MINYEAR:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: last %s is a date */
-                              _("%s can't build %s from the worklist; "
-                                "only available from %s. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              textyear(preq->source.value.minyear));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_minyear");
-              } else {
-                /* Can't go back in time. */
-                success = FALSE;
-              }
-              break;
-            case VUT_MINCALFRAG:
-              /* Unlike VUT_MINYEAR, a requirement in either direction is
-               * likely to be fulfilled sooner or later. */
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: last %s is a calendar fragment from
-                               * the ruleset; may be a bare number */
-                              _("%s can't build %s from the worklist; "
-                                "only available from %s. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              textcalfrag(preq->source.value.mincalfrag));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_mincalfrag");
-              } else {
-                fc_assert_action(preq->source.value.mincalfrag > 0, break);
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              /* TRANS: last %s is a calendar fragment from
-                               * the ruleset; may be a bare number */
-                              _("%s can't build %s from the worklist; "
-                                "not available after %s. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              textcalfrag(preq->source.value.mincalfrag-1));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "have_mincalfrag");
-              }
-              break;
-            case VUT_TOPO:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "only available in worlds with %s map."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              _(topo_flag_name(preq->source.value.topo_property)));
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_topo");
-              }
-              success = FALSE;
-              break;
-            case VUT_SERVERSETTING:
-              notify_player(pplayer, city_tile(pcity),
-                            E_CITY_CANTBUILD, ftc_server,
-                            /* TRANS: %s is a server setting, its value and
-                             * if it is required to be present or absent.
-                             * The string's format is specified in
-                             * ssetv_human_readable().
-                             * Example: "killstack is enabled". */
-                            _("%s can't build %s from the worklist; "
-                              "only available when the server setting "
-                              "%s."),
-                            city_link(pcity),
-                            city_improvement_name_translation(pcity,
-                                                              ptarget),
-                            ssetv_human_readable(preq->source.value.ssetval,
-                                                 preq->present));
-              script_server_signal_emit("building_cant_be_built", 3,
-                                        API_TYPE_BUILDING_TYPE, ptarget,
-                                        API_TYPE_CITY, pcity,
-                                        API_TYPE_STRING, "need_setting");
-              /* Don't assume that the server setting will be changed. */
-              success = FALSE;
-              break;
-            case VUT_AGE:
-              if (preq->present) {
-                notify_player(pplayer, city_tile(pcity),
-                              E_CITY_CANTBUILD, ftc_server,
-                              _("%s can't build %s from the worklist; "
-                                "only available once %d turns old. Postponing..."),
-                              city_link(pcity),
-                              city_improvement_name_translation(pcity, ptarget),
-                              preq->source.value.age);
-                script_server_signal_emit("building_cant_be_built", 3,
-                                          API_TYPE_BUILDING_TYPE, ptarget,
-                                          API_TYPE_CITY, pcity,
-                                          API_TYPE_STRING, "need_age");
-              } else {
-                /* Can't go back in time. */
-                success = FALSE;
-              }
-              break;
-            case VUT_NONE:
-            case VUT_COUNT:
-              fc_assert_ret_val_msg(FALSE, TRUE,
-                                    "worklist_change_build_target() "
-                                    "called with invalid preq");
-            break;
-            /* No default handling here, as we want compiler warning
-             * if new requirement type is added to enum and it's not handled
-             * here. */
-            };
-	    break;
-	  }
+        /* Can it be postponed? */
+        if (can_city_build_improvement_later(pcity, ptarget)) {
+          purge = worklist_item_postpone_req_vec(&target, pcity, pplayer,
+                                                 saved_id);
 
           /* Almost all cases emit signal in the end, so city check needed. */
           if (!city_exist(saved_id)) {
@@ -2022,19 +2343,7 @@ static bool worklist_change_build_target(struct player *pplayer,
             return FALSE;
           }
           city_checked = TRUE;
-
-	} requirement_vector_iterate_end;
-
-	if (!known) {
-	  /* This shouldn't happen...
-	     FIXME: make can_city_build_improvement_now() return a reason enum. */
-          notify_player(pplayer, city_tile(pcity),
-                        E_CITY_CANTBUILD, ftc_server,
-                        _("%s can't build %s from the worklist; "
-                          "reason unknown! Postponing..."),
-                        city_link(pcity),
-                        city_improvement_name_translation(pcity, ptarget));
-	}
+        }
       } else if (success) {
 	/* Hey, we can upgrade the improvement! */
         notify_player(pplayer, city_tile(pcity), E_WORKLIST, ftc_server,
@@ -2043,20 +2352,17 @@ static bool worklist_change_build_target(struct player *pplayer,
                       city_improvement_name_translation(pcity, pupdate),
                       city_link(pcity));
 	target.value.building = pupdate;
-	success = TRUE;
       }
 
-      if (!success) {
+      if (purge) {
 	/* Never in a million years. */
         notify_player(pplayer, city_tile(pcity),
                       E_CITY_CANTBUILD, ftc_server,
                       _("%s can't build %s from the worklist. Purging..."),
                       city_link(pcity),
                       city_improvement_name_translation(pcity, ptarget));
-        script_server_signal_emit("building_cant_be_built", 3,
-                                  API_TYPE_BUILDING_TYPE, ptarget,
-                                  API_TYPE_CITY, pcity,
-                                  API_TYPE_STRING, "never");
+        script_server_signal_emit("building_cant_be_built", ptarget, pcity,
+                                  "never");
         if (city_exist(saved_id)) {
           city_checked = TRUE;
           /* Purge this worklist item. */
@@ -2104,6 +2410,8 @@ static bool worklist_change_build_target(struct player *pplayer,
 **************************************************************************/
 void choose_build_target(struct player *pplayer, struct city *pcity)
 {
+  const struct civ_map *nmap = &(wld.map);
+
   /* Pick the next thing off the worklist. */
   if (worklist_change_build_target(pplayer, pcity)) {
     return;
@@ -2115,7 +2423,7 @@ void choose_build_target(struct player *pplayer, struct city *pcity)
   case VUT_UTYPE:
     /* We can build a unit again unless it's unique or we have lost the tech. */
     if (!utype_has_flag(pcity->production.value.utype, UTYF_UNIQUE)
-        && can_city_build_unit_now(pcity, pcity->production.value.utype)) {
+        && can_city_build_unit_now(nmap, pcity, pcity->production.value.utype)) {
       log_base(LOG_BUILD_TARGET, "%s repeats building %s", city_name_get(pcity),
                utype_rule_name(pcity->production.value.utype));
       return;
@@ -2145,11 +2453,11 @@ void choose_build_target(struct player *pplayer, struct city *pcity)
   we can build.  Returns NULL if we can't upgrade at all (including if the
   original building is unbuildable).
 **************************************************************************/
-static struct impr_type *building_upgrades_to(struct city *pcity,
-					      struct impr_type *pimprove)
+static const struct impr_type *building_upgrades_to(struct city *pcity,
+                                                    const struct impr_type *pimprove)
 {
-  struct impr_type *check = pimprove;
-  struct impr_type *best_upgrade = NULL;
+  const struct impr_type *check = pimprove;
+  const struct impr_type *best_upgrade = NULL;
 
   if (!can_city_build_improvement_direct(pcity, check)) {
     return NULL;
@@ -2168,8 +2476,8 @@ static struct impr_type *building_upgrades_to(struct city *pcity,
 **************************************************************************/
 static void upgrade_building_prod(struct city *pcity)
 {
-  struct impr_type *producing = pcity->production.value.building;
-  struct impr_type *upgrading = building_upgrades_to(pcity, producing);
+  const struct impr_type *producing = pcity->production.value.building;
+  const struct impr_type *upgrading = building_upgrades_to(pcity, producing);
 
   if (upgrading && can_city_build_improvement_now(pcity, upgrading)) {
     notify_player(city_owner(pcity), city_tile(pcity),
@@ -2191,17 +2499,18 @@ static void upgrade_building_prod(struct city *pcity)
 
   FIXME: this function is a duplicate of can_upgrade_unittype.
 **************************************************************************/
-static struct unit_type *unit_upgrades_to(struct city *pcity,
-					  struct unit_type *punittype)
+static const struct unit_type *unit_upgrades_to(struct city *pcity,
+                                                const struct unit_type *punittype)
 {
-  struct unit_type *check = punittype;
-  struct unit_type *best_upgrade = U_NOT_OBSOLETED;
+  const struct unit_type *check = punittype;
+  const struct unit_type *best_upgrade = U_NOT_OBSOLETED;
+  const struct civ_map *nmap = &(wld.map);
 
-  if (!can_city_build_unit_direct(pcity, punittype)) {
+  if (!can_city_build_unit_direct(nmap, pcity, punittype)) {
     return U_NOT_OBSOLETED;
   }
   while ((check = check->obsoleted_by) != U_NOT_OBSOLETED) {
-    if (can_city_build_unit_direct(pcity, check)) {
+    if (can_city_build_unit_direct(nmap, pcity, check)) {
       best_upgrade = check;
     }
   }
@@ -2214,10 +2523,11 @@ static struct unit_type *unit_upgrades_to(struct city *pcity,
 **************************************************************************/
 static void upgrade_unit_prod(struct city *pcity)
 {
-  struct unit_type *producing = pcity->production.value.utype;
-  struct unit_type *upgrading = unit_upgrades_to(pcity, producing);
+  const struct unit_type *producing = pcity->production.value.utype;
+  const struct unit_type *upgrading = unit_upgrades_to(pcity, producing);
+  const struct civ_map *nmap = &(wld.map);
 
-  if (upgrading && can_city_build_unit_direct(pcity, upgrading)) {
+  if (upgrading && can_city_build_unit_direct(nmap, pcity, upgrading)) {
     notify_player(city_owner(pcity), city_tile(pcity),
                   E_UNIT_UPGRADED, ftc_server,
 		  _("Production of %s is upgraded to %s in %s."),
@@ -2229,12 +2539,18 @@ static void upgrade_unit_prod(struct city *pcity)
 }
 
 /**********************************************************************//**
-  Disband units if we don't have enough shields to support them.  Returns
-  FALSE if the _city_ is disbanded as a result.
+  Disband units if we don't have enough shields to support them.
+
+  @param  pplayer  city owner
+  @param  pcity    city to check
+  @return          whether the _city_ is disbanded as a result.
 **************************************************************************/
 static bool city_distribute_surplus_shields(struct player *pplayer,
-					    struct city *pcity)
+                                            struct city *pcity)
 {
+  int size_reduction = 0;
+  struct unit *sacrifizer;
+
   if (pcity->surplus[O_SHIELD] < 0) {
     unit_list_iterate_safe(pcity->units_supported, punit) {
       if (utype_upkeep_cost(unit_type_get(punit), pplayer, O_SHIELD) > 0
@@ -2244,7 +2560,7 @@ static bool city_distribute_surplus_shields(struct player *pplayer,
         /* TODO: Should the unit try to help cities on adjacent tiles? That
          * would be a rules change. (This action is performed by the game
          * it self) */
-        if (upkeep_kill_unit(punit, O_SHIELD, ULR_DISBANDED,
+        if (upkeep_kill_unit(punit, O_SHIELD, ULR_UPKEEP,
                              game.info.muuk_shield_wipe)) {
           notify_player(pplayer, city_tile(pcity),
                         E_UNIT_LOST_MISC, ftc_server,
@@ -2266,14 +2582,9 @@ static bool city_distribute_surplus_shields(struct player *pplayer,
       int upkeep = utype_upkeep_cost(unit_type_get(punit), pplayer, O_SHIELD);
 
       if (upkeep > 0 && pcity->surplus[O_SHIELD] < 0) {
-        notify_player(pplayer, city_tile(pcity),
-                      E_UNIT_LOST_MISC, ftc_server,
-                      _("Citizens in %s perish for their failure to "
-                        "upkeep %s!"),
-                      city_link(pcity), unit_link(punit));
-	if (!city_reduce_size(pcity, 1, NULL, "upkeep_failure")) {
-	  return FALSE;
-	}
+
+        size_reduction++;
+        sacrifizer = punit;
 
 	/* No upkeep for the unit this turn. */
 	pcity->surplus[O_SHIELD] += upkeep;
@@ -2286,6 +2597,29 @@ static bool city_distribute_surplus_shields(struct player *pplayer,
   pcity->before_change_shields = pcity->shield_stock;
   pcity->last_turns_shield_surplus = pcity->surplus[O_SHIELD];
 
+  /* Previous turn values stored, and they are consistent with
+   * other previous turn data.
+   * Now reduce city size, likely messing all the values. */
+  if (size_reduction > 0) {
+    if (size_reduction == 1) {
+      notify_player(pplayer, city_tile(pcity),
+                    E_UNIT_LOST_MISC, ftc_server,
+                    _("Citizens in %s perish for their failure to "
+                      "upkeep %s!"),
+                    city_link(pcity), unit_link(sacrifizer));
+    } else {
+      notify_player(pplayer, city_tile(pcity),
+                    E_UNIT_LOST_MISC, ftc_server,
+                    _("Citizens in %s perish for their failure to "
+                      "upkeep units!"),
+                    city_link(pcity));
+    }
+
+    if (!city_reduce_size(pcity, size_reduction, NULL, "upkeep_failure")) {
+      return FALSE;
+    }
+  }
+
   return TRUE;
 }
 
@@ -2296,33 +2630,45 @@ static bool city_build_building(struct player *pplayer, struct city *pcity)
 {
   bool space_part;
   int mod;
-  struct impr_type *pimprove = pcity->production.value.building;
+  const struct impr_type *pimprove;
   int saved_id = pcity->id;
 
-  if (city_production_has_flag(pcity, IF_GOLD)) {
-    fc_assert(pcity->surplus[O_SHIELD] >= 0);
+  if (is_convert_improvement(pcity->production.value.building)) {
+    /* Coinage-like improvements that convert production */
+    fc_assert(pcity->before_change_shields >= 0);
+
     /* pcity->before_change_shields already contains the surplus from
      * this turn. */
-    pplayer->economic.gold += pcity->before_change_shields;
+    if (city_production_has_flag(pcity, IF_GOLD)) {
+      pplayer->economic.gold += pcity->before_change_shields;
+    } else if (city_production_has_flag(pcity, IF_INFRA)) {
+      pplayer->economic.infra_points += pcity->before_change_shields;
+    }
+
     pcity->before_change_shields = 0;
     pcity->shield_stock = 0;
     choose_build_target(pplayer, pcity);
+
     return TRUE;
   }
+
   upgrade_building_prod(pcity);
+
+  /* The final (after upgrade) build target */
+  pimprove = pcity->production.value.building;
 
   if (!can_city_build_improvement_now(pcity, pimprove)) {
     notify_player(pplayer, city_tile(pcity), E_CITY_CANTBUILD, ftc_server,
                   _("%s is building %s, which is no longer available."),
                   city_link(pcity),
                   city_improvement_name_translation(pcity, pimprove));
-    script_server_signal_emit("building_cant_be_built", 3,
-                              API_TYPE_BUILDING_TYPE, pimprove,
-                              API_TYPE_CITY, pcity,
-                              API_TYPE_STRING, "unavailable");
+    script_server_signal_emit("building_cant_be_built", pimprove, pcity,
+                              "unavailable");
     return TRUE;
   }
-  if (pcity->shield_stock >= impr_build_shield_cost(pimprove)) {
+  if (pcity->shield_stock >= impr_build_shield_cost(pcity, pimprove)) {
+    int cost;
+
     if (is_small_wonder(pimprove)) {
       city_list_iterate(pplayer->cities, wcity) {
 	if (city_has_building(wcity, pimprove)) {
@@ -2344,10 +2690,12 @@ static bool city_build_building(struct player *pplayer, struct city *pcity)
       pplayer->spaceship.modules++;
     } else {
       space_part = FALSE;
-      city_add_improvement(pcity, pimprove);
+      city_add_improvement_with_gov_notice(pcity, pimprove,
+                                           _("Completion of %s"));
     }
-    pcity->before_change_shields -= impr_build_shield_cost(pimprove);
-    pcity->shield_stock -= impr_build_shield_cost(pimprove);
+    cost = impr_build_shield_cost(pcity, pimprove);
+    pcity->before_change_shields -= cost;
+    pcity->shield_stock -= cost;
     pcity->turn_last_built = game.info.turn;
     /* to eliminate micromanagement */
     if (is_great_wonder(pimprove)) {
@@ -2361,9 +2709,7 @@ static bool city_build_building(struct player *pplayer, struct city *pcity)
     notify_player(pplayer, city_tile(pcity), E_IMP_BUILD, ftc_server,
                   _("%s has finished building %s."),
                   city_link(pcity), improvement_name_translation(pimprove));
-    script_server_signal_emit("building_built", 2,
-                              API_TYPE_BUILDING_TYPE, pimprove,
-                              API_TYPE_CITY, pcity);
+    script_server_signal_emit("building_built", pimprove, pcity);
 
     if (!city_exist(saved_id)) {
       /* Script removed city */
@@ -2390,9 +2736,10 @@ static bool city_build_building(struct player *pplayer, struct city *pcity)
 
       research_pretty_name(presearch, research_name, sizeof(research_name));
       for (i = 0; i < mod; i++) {
-        Tech_type_id tech = give_immediate_free_tech(presearch);
+        Tech_type_id tech = pick_free_tech(presearch);
         const char *adv_name = research_advance_name_translation(presearch, tech);
 
+        give_immediate_free_tech(presearch, tech);
         notify_research(presearch, NULL, E_TECH_GAIN, ftc_server,
                         /* TRANS: Tech from building (Darwin's Voyage) */
                         Q_("?frombldg:Acquired %s from %s."), adv_name,
@@ -2430,14 +2777,82 @@ static bool city_build_building(struct player *pplayer, struct city *pcity)
 }
 
 /**********************************************************************//**
+  Helper function to create one unit in a city.
+  Doesn't make any announcements.
+  This might destroy the city due to scripts (but not otherwise; in
+  particular, pop_cost is the caller's problem).
+  If the unit has positive pop_cost and red is not NULL, sets up
+  an array of nationalities to be spent on the unit (must have enough size)
+  Returns the new unit (if it survived scripts).
+**************************************************************************/
+static struct unit *city_create_unit(struct city *pcity,
+                                     const struct unit_type *utype,
+                                     struct citizens_reduction *red)
+{
+  struct player *pplayer = city_owner(pcity);
+  struct unit *punit;
+  int saved_unit_id;
+  int pop_cost = utype_pop_value(utype, pcity);
+
+  punit = unit_virtual_prepare(pplayer, pcity->tile, utype,
+                               city_production_unit_veteran_level(pcity, utype),
+                               pcity->id, -1, -1);
+  pplayer->score.units_built++;
+
+  if (pop_cost > 0 && pcity->nationality != NULL) {
+    /* We don't reduce city size in-place to keep it correct and
+     * existing at all while we call the following callback.
+     * We want citizens_unit_nationality() to adjust 'red' even when
+     * we are not setting unit nationality based on the return */
+    struct player *nat = citizens_unit_nationality(pcity, pop_cost, red);
+
+    if (!game.info.unit_builders_nationality) {
+      punit->nationality = nat;
+    }
+  } else if (red) {
+    red->change = 0;
+  }
+
+  (void) place_unit(punit, pplayer, pcity, NULL, FALSE);
+  saved_unit_id = punit->id;
+
+  /* If city has a rally point set, give the unit a move order. */
+  if (pcity->rally_point.length) {
+    punit->has_orders = TRUE;
+    punit->orders.length = pcity->rally_point.length;
+    punit->orders.vigilant = pcity->rally_point.vigilant;
+    punit->orders.list = fc_malloc(pcity->rally_point.length
+                                   * sizeof(struct unit_order));
+    memcpy(punit->orders.list, pcity->rally_point.orders,
+           pcity->rally_point.length * sizeof(struct unit_order));
+  }
+
+  /* This might destroy pcity and/or punit: */
+  script_server_signal_emit("unit_built", punit, pcity);
+
+  if (unit_is_alive(saved_unit_id)) {
+    return punit;
+  } else {
+    return NULL;
+  }
+}
+
+/**********************************************************************//**
   Build city units. Several units can be built in one turn if the effect
-  City_Build_Slots is used.
+  City_Build_Slots is used (on certain conditions).
+  If the unit consumes population, builds it with a dominant nationality
+  of the citizens (that is always foreign if a foreign nation
+  equals in number of consumed citizens to city owner). Otherwise,
+  the unit will be native.
+  Returns FALSE when the city is removed, TRUE otherwise.
 **************************************************************************/
 static bool city_build_unit(struct player *pplayer, struct city *pcity)
 {
-  struct unit_type *utype;
-  struct worklist *pwl = &pcity->worklist;;
+  const struct unit_type *utype;
+  struct worklist *pwl = &pcity->worklist;
   int unit_shield_cost, num_units, i;
+  int saved_city_id = pcity->id;
+  const struct civ_map *nmap = &(wld.map);
 
   fc_assert_ret_val(pcity->production.kind == VUT_UTYPE, FALSE);
 
@@ -2451,12 +2866,12 @@ static bool city_build_unit(struct player *pplayer, struct city *pcity)
   }
 
   utype = pcity->production.value.utype;
-  unit_shield_cost = utype_build_shield_cost(utype);
+  unit_shield_cost = utype_build_shield_cost(pcity, NULL, utype);
 
   /* We must make a special case for barbarians here, because they are
      so dumb. Really. They don't know the prerequisite techs for units
      they build!! - Per */
-  if (!can_city_build_unit_direct(pcity, utype)
+  if (!can_city_build_unit_direct(nmap, pcity, utype)
       && !is_barbarian(pplayer)) {
     notify_player(pplayer, city_tile(pcity), E_CITY_CANTBUILD, ftc_server,
                   _("%s is building %s, which is no longer available."),
@@ -2466,21 +2881,18 @@ static bool city_build_unit(struct player *pplayer, struct city *pcity)
     log_verbose("%s %s tried to build %s, which is not available.",
                 nation_rule_name(nation_of_city(pcity)),
                 city_name_get(pcity), utype_rule_name(utype));
-    script_server_signal_emit("unit_cant_be_built", 3,
-                              API_TYPE_UNIT_TYPE, utype,
-                              API_TYPE_CITY, pcity,
-                              API_TYPE_STRING, "unavailable");
-    return TRUE;
+    script_server_signal_emit("unit_cant_be_built", utype, pcity,
+                              "unavailable");
+    return city_exist(saved_city_id);
   }
 
   if (pcity->shield_stock >= unit_shield_cost) {
-    int pop_cost = utype_pop_value(utype);
+    int pop_cost = utype_pop_value(utype, pcity);
     struct unit *punit;
-    int saved_city_id = pcity->id;
 
     /* Should we disband the city? -- Massimo */
     if (city_size_get(pcity) == pop_cost
-	&& is_city_option_set(pcity, CITYO_DISBAND)) {
+        && is_city_option_set(pcity, CITYO_DISBAND)) {
       return !disband_city(pcity);
     }
 
@@ -2491,11 +2903,9 @@ static bool city_build_unit(struct player *pplayer, struct city *pcity)
                       "(city size: %d, unit population cost: %d)"),
                     city_link(pcity), utype_name_translation(utype),
                     city_size_get(pcity), pop_cost);
-      script_server_signal_emit("unit_cant_be_built", 3,
-                                API_TYPE_UNIT_TYPE, utype,
-                                API_TYPE_CITY, pcity,
-                                API_TYPE_STRING, "pop_cost");
-      return TRUE;
+      script_server_signal_emit("unit_cant_be_built", utype, pcity,
+                                "pop_cost");
+      return city_exist(saved_city_id);
     }
 
     fc_assert(pop_cost == 0 || city_size_get(pcity) >= pop_cost);
@@ -2510,26 +2920,50 @@ static bool city_build_unit(struct player *pplayer, struct city *pcity)
     fc_assert(num_units >= 1);
 
     for (i = 0; i < num_units; i++) {
-      punit = create_unit(pplayer, pcity->tile, utype,
-                          do_make_unit_veteran(pcity, utype),
-                          pcity->id, 0);
-      pplayer->score.units_built++;
+      struct citizens_reduction natred[MAX_CITY_NATIONALITIES + 1];
+
+      punit = city_create_unit(pcity, utype, natred);
+
+      /* Check if the city still exists (script might have removed it).
+       * If not, we assume any effects / announcements done below were
+       * already replaced by the script if necessary. */
+      if (!city_exist(saved_city_id)) {
+        break;
+      }
+
+      if (punit) {
+        notify_player(pplayer, city_tile(pcity), E_UNIT_BUILT, ftc_server,
+                      /* TRANS: <city> is finished building <unit/building>. */
+                      _("%s is finished building %s."),
+                      city_link(pcity), utype_name_translation(utype));
+      }
 
       /* After we created the unit remove the citizen. This will also
        * rearrange the worker to take into account the extra resources
        * (food) needed. */
       if (pop_cost > 0) {
-        city_reduce_size(pcity, pop_cost, NULL, "unit_built");
+        /* This won't disband city due to pop_cost, but script might
+         * still destroy city. */
+        citizens_reduction_apply(pcity, natred);
+        /* If the city has changed its nationalities during
+         * "unit_built" signal, we take some other citizens instead */
+        if (!city_reduce_size(pcity, pop_cost, NULL, "unit_built")) {
+          break;
+        }
       }
 
       /* to eliminate micromanagement, we only subtract the unit's cost */
-      pcity->before_change_shields -= unit_shield_cost;
-      pcity->shield_stock -= unit_shield_cost;
-
-      notify_player(pplayer, city_tile(pcity), E_UNIT_BUILT, ftc_server,
-                    /* TRANS: <city> is finished building <unit/building>. */
-                    _("%s is finished building %s."),
-                    city_link(pcity), utype_name_translation(utype));
+      /* signals could change the prod stock! */
+      if ((pcity->before_change_shields -= unit_shield_cost) < 0) {
+        pcity->before_change_shields = 0;
+      }
+      if ((pcity->shield_stock -= unit_shield_cost) < 0) {
+        log_normal("City %s (%s) has built %s but has no %d shields "
+                   "for it, nullifying shield stock", city_name_get(pcity),
+                   player_name(pplayer), utype_rule_name(utype),
+                   unit_shield_cost);
+        pcity->shield_stock = 0;
+      }
 
       if (pop_cost > 0) {
         /* Additional message if the unit has population cost. */
@@ -2544,30 +2978,25 @@ static bool city_build_unit(struct player *pplayer, struct city *pcity)
                       city_link(pcity), city_size_get(pcity));
       }
 
-      script_server_signal_emit("unit_built", 2,
-                                API_TYPE_UNIT, punit,
-                                API_TYPE_CITY, pcity);
-
-      /* check if the city still exists */
-      if (!city_exist(saved_city_id)) {
-        break;
-      }
-
       if (i != 0 && worklist_length(pwl) > 0) {
         /* remove the build unit from the worklist; it has to be one less
          * than units build to preserve the next build target from the
          * worklist */
         worklist_remove(pwl, 0);
       }
-    }
+    } /* for */
 
     if (city_exist(saved_city_id)) {
+      if (pcity->rally_point.length && !pcity->rally_point.persistent) {
+        city_rally_point_clear(pcity);
+      }
+
       /* Done building this unit; time to move on to the next. */
       choose_build_target(pplayer, pcity);
     }
-  }
+  } /* if */
 
-  return TRUE;
+  return city_exist(saved_city_id);
 }
 
 /**********************************************************************//**
@@ -2628,7 +3057,7 @@ static bool sell_random_building(struct player *pplayer,
   log_debug("%s: sold building (%s)", player_name(pplayer),
             improvement_name_translation(pcityimpr->pimprove));
 
-  do_sell_building(pplayer, pcityimpr->pcity, pcityimpr->pimprove);
+  do_sell_building(pplayer, pcityimpr->pcity, pcityimpr->pimprove, "cant_maintain");
 
   cityimpr_list_remove(imprs, pcityimpr);
 
@@ -2658,7 +3087,7 @@ static void uk_rem_gold_callback(struct unit *punit)
   /* Remove the unit from uk_rem_gold. */
   unit_list_remove(uk_rem_gold, punit);
 
-  gold_upkeep = punit->server.upkeep_payed[O_GOLD];
+  gold_upkeep = punit->server.upkeep_paid[O_GOLD];
 
   /* All units in uk_rem_gold should have gold upkeep! */
   fc_assert_ret_msg(gold_upkeep > 0, "%s has %d gold upkeep",
@@ -2698,7 +3127,9 @@ static void unit_list_referred_destroy(struct unit_list *punitlist)
 
 /**********************************************************************//**
   Randomly "sell" a unit from the given list. Returns pointer to sold unit.
-  This pointer is not valid any more, but can be removed from the lists.
+  This pointer is not valid any more, but is used to remove the unit
+  from the main list in case of recursive call. The unit is already removed
+  from the list given as a parameter within the function.
 
   NB: It is assumed that gold upkeep for the units has already been paid
   this turn, hence when a unit is "sold" its upkeep is given back to the
@@ -2713,10 +3144,10 @@ static struct unit *sell_random_unit(struct player *pplayer,
   int r;
   struct unit_list *cargo;
 
-  fc_assert_ret_val(pplayer != NULL, FALSE);
+  fc_assert_ret_val(pplayer != NULL, NULL);
 
   if (!punitlist || unit_list_size(punitlist) == 0) {
-    return FALSE;
+    return NULL;
   }
 
   r = fc_rand(unit_list_size(punitlist));
@@ -2725,23 +3156,31 @@ static struct unit *sell_random_unit(struct player *pplayer,
   cargo = unit_list_new();
 
   /* Check if unit is transporting other units from punitlist,
-   * and sell one of those (recursively) instead. */
-  unit_list_iterate(unit_transport_cargo(punit), pcargo) {
+   * and sell one of those (recursively) instead.
+   * Note that in case of recursive transports we have to iterate
+   * also through those middle transports that themselves are not in
+   * punitlist. */
+  unit_cargo_iterate(punit, pcargo) {
     /* Optimization, do not iterate over punitlist
      * if we are sure that pcargo is not in it. */
-    if (pcargo->server.upkeep_payed[O_GOLD] > 0) {
+    if (pcargo->server.upkeep_paid[O_GOLD] > 0) {
       unit_list_iterate(punitlist, p2) {
         if (pcargo == p2) {
           unit_list_append(cargo, pcargo);
         }
       } unit_list_iterate_end;
     }
-  } unit_list_iterate_end;
+  } unit_cargo_iterate_end;
 
   if (unit_list_size(cargo) > 0) {
+    /* Recursively sell. Note that cargo list has both
+     * leaf units and middle transports in case of
+     * recursive transports. */
     struct unit *ret = sell_random_unit(pplayer, cargo);
 
     unit_list_destroy(cargo);
+
+    unit_list_remove(punitlist, ret);
 
     return ret;
   }
@@ -2751,7 +3190,7 @@ static struct unit *sell_random_unit(struct player *pplayer,
   {
     const char *punit_link = unit_tile_link(punit);
 #ifdef FREECIV_DEBUG
-    const char *punit_logname = unit_name_translation(punit);
+    const char *punit_logname = unit_rule_name(punit);
 #endif /* FREECIV_DEBUG */
     struct tile *utile = unit_tile(punit);
 
@@ -2759,7 +3198,7 @@ static struct unit *sell_random_unit(struct player *pplayer,
                          game.info.muuk_gold_wipe)) {
       unit_list_remove(punitlist, punit);
 
-      /* The gold was payed back when the unit removal made
+      /* The gold was paid back when the unit removal made
        * uk_rem_gold_callback() run as the unit's removal call back. */
 
       notify_player(pplayer, utile, E_UNIT_LOST_MISC, ftc_server,
@@ -2773,14 +3212,15 @@ static struct unit *sell_random_unit(struct player *pplayer,
     }
   }
 
+  unit_list_remove(punitlist, punit);
+
   return punit;
 }
 
 /**********************************************************************//**
   Balance the gold of a nation by selling some random units and buildings.
 **************************************************************************/
-static bool player_balance_treasury_units_and_buildings
-            (struct player *pplayer)
+bool player_balance_treasury_units_and_buildings(struct player *pplayer)
 {
   struct cityimpr_list *pimprlist;
   bool sell_unit = TRUE;
@@ -2802,13 +3242,13 @@ static bool player_balance_treasury_units_and_buildings
         cityimpr_list_append(pimprlist, ci);
       }
     } city_built_iterate_end;
-
-    unit_list_iterate(pcity->units_supported, punit) {
-      if (punit->server.upkeep_payed[O_GOLD] > 0) {
-        uk_rem_gold_append(punit);
-      }
-    } unit_list_iterate_end;
   } city_list_iterate_end;
+
+  unit_list_iterate(pplayer->units, punit) {
+    if (punit->server.upkeep_paid[O_GOLD] > 0) {
+      uk_rem_gold_append(punit);
+    }
+  } unit_list_iterate_end;
 
   while (pplayer->economic.gold < 0
          && (cityimpr_list_size(pimprlist) > 0
@@ -2843,7 +3283,7 @@ static bool player_balance_treasury_units_and_buildings
 /**********************************************************************//**
   Balance the gold of a nation by selling some units which need gold upkeep.
 **************************************************************************/
-static bool player_balance_treasury_units(struct player *pplayer)
+bool player_balance_treasury_units(struct player *pplayer)
 {
   if (!pplayer) {
     return FALSE;
@@ -2851,17 +3291,15 @@ static bool player_balance_treasury_units(struct player *pplayer)
 
   uk_rem_gold = unit_list_new();
 
-  city_list_iterate(pplayer->cities, pcity) {
-    unit_list_iterate(pcity->units_supported, punit) {
-      if (punit->server.upkeep_payed[O_GOLD] > 0) {
-        uk_rem_gold_append(punit);
-      }
-    } unit_list_iterate_end;
-  } city_list_iterate_end;
+  unit_list_iterate(pplayer->units, punit) {
+    if (punit->server.upkeep_paid[O_GOLD] > 0) {
+      uk_rem_gold_append(punit);
+    }
+  } unit_list_iterate_end;
 
   while (pplayer->economic.gold < 0
          && sell_random_unit(pplayer, uk_rem_gold)) {
-    /* all done in sell_random_unit() */
+    /* All done in sell_random_unit() */
   }
 
   if (pplayer->economic.gold < 0) {
@@ -2939,15 +3377,15 @@ static bool city_balance_treasury_units(struct city *pcity)
 
   /* Create a vector of all supported units with gold upkeep. */
   unit_list_iterate(pcity->units_supported, punit) {
-    if (punit->server.upkeep_payed[O_GOLD] > 0) {
-       uk_rem_gold_append(punit);
-     }
+    if (punit->server.upkeep_paid[O_GOLD] > 0) {
+      uk_rem_gold_append(punit);
+    }
   } unit_list_iterate_end;
 
   /* Still not enough gold, so try "selling" some units. */
   while (pplayer->economic.gold < 0
          && sell_random_unit(pplayer, uk_rem_gold)) {
-    /* all done in sell_random_unit() */
+    /* All done in sell_random_unit() */
   }
 
   /* If we get here the player has negative gold, but hopefully
@@ -2967,21 +3405,22 @@ static bool place_pollution(struct city *pcity, enum extra_cause cause)
   struct tile *pcenter = city_tile(pcity);
   int city_radius_sq = city_map_radius_sq_get(pcity);
   int k = 100;
+  const struct civ_map *nmap = &(wld.map);
 
   while (k > 0) {
-    /* place pollution on a random city tile */
+    /* Place pollution on a random city tile */
     int cx, cy;
     int tile_id = fc_rand(city_map_tiles(city_radius_sq));
     struct extra_type *pextra;
 
     city_tile_index_to_xy(&cx, &cy, tile_id, city_radius_sq);
 
-    /* check for a a real map position */
-    if (!(ptile = city_map_to_tile(pcenter, city_radius_sq, cx, cy))) {
+    /* Check for a real map position */
+    if (!(ptile = city_map_to_tile(nmap, pcenter, city_radius_sq, cx, cy))) {
       continue;
     }
 
-    pextra = rand_extra_for_tile(ptile, cause);
+    pextra = rand_extra_for_tile(ptile, cause, FALSE);
 
     if (pextra != NULL && !tile_has_extra(ptile, pextra)) {
       tile_add_extra(ptile, pextra);
@@ -3001,7 +3440,7 @@ static bool place_pollution(struct city *pcity, enum extra_cause cause)
 **************************************************************************/
 static void check_pollution(struct city *pcity)
 {
-  if (pcity->pollution != 0 && fc_rand(100) <= pcity->pollution) {
+  if (fc_rand(100) < pcity->pollution) {
     if (place_pollution(pcity, EC_POLLUTION)) {
       notify_player(city_owner(pcity), city_tile(pcity), E_POLLUTION, ftc_server,
                     _("Pollution near %s."), city_link(pcity));
@@ -3012,13 +3451,12 @@ static void check_pollution(struct city *pcity)
 /**********************************************************************//**
   Returns the cost to incite a city. This depends on the size of the city,
   the number of happy, unhappy and angry citizens, whether it is
-  celebrating, how close it is to the capital, how many units it has and
+  celebrating, how close it is to a capital, how many units it has and
   upkeeps, presence of courthouse, its buildings and wonders, and who
   originally built it.
 **************************************************************************/
 int city_incite_cost(struct player *pplayer, struct city *pcity)
 {
-  struct city *capital;
   int dist, size;
   double cost; /* Intermediate values can get very large */
 
@@ -3026,13 +3464,13 @@ int city_incite_cost(struct player *pplayer, struct city *pcity)
   cost = city_owner(pcity)->economic.gold + game.server.base_incite_cost;
 
   unit_list_iterate(pcity->tile->units, punit) {
-    cost += (unit_build_shield_cost(punit)
+    cost += (unit_build_shield_cost(pcity, punit)
 	     * game.server.incite_unit_factor);
   } unit_list_iterate_end;
 
   /* Buildings */
   city_built_iterate(pcity, pimprove) {
-    cost += impr_build_shield_cost(pimprove)
+    cost += impr_build_shield_cost(pcity, pimprove)
             * game.server.incite_improvement_factor;
   } city_built_iterate_end;
 
@@ -3048,22 +3486,25 @@ int city_incite_cost(struct player *pplayer, struct city *pcity)
   if (!game.info.citizen_nationality) {
     if (city_owner(pcity) != pcity->original) {
       if (pplayer == pcity->original) {
-        cost /= 2;            /* buy back: 50% price reduction */
+        cost /= 2;            /* Buy back: 50% price reduction */
       } else {
-        cost = cost * 2 / 3;  /* buy conquered: 33% price reduction */
+        cost = cost * 2 / 3;  /* Buy conquered: 33% price reduction */
       }
     }
   }
 
   /* Distance from capital */
-  capital = player_capital(city_owner(pcity));
-  if (capital) {
-    int tmp = map_distance(capital->tile, pcity->tile);
-    dist = MIN(32, tmp);
-  } else {
-    /* No capital? Take max penalty! */
-    dist = 32;
-  }
+  /* Max penalty. Applied if there is no capital, or it's even further away. */
+  dist = 32;
+  city_list_iterate(city_owner(pcity)->cities, capital) {
+    if (is_capital(capital)) {
+      int tmp = map_distance(capital->tile, pcity->tile);
+
+      if (tmp < dist) {
+        dist = tmp;
+      }
+    }
+  } city_list_iterate_end;
 
   size = MAX(1, city_size_get(pcity)
                 + pcity->feel[CITIZEN_HAPPY][FEELING_FINAL]
@@ -3118,8 +3559,8 @@ static void define_orig_production_values(struct city *pcity)
 **************************************************************************/
 static void nullify_caravan_and_disband_plus(struct city *pcity)
 {
-  pcity->disbanded_shields=0;
-  pcity->caravan_shields=0;
+  pcity->disbanded_shields = 0;
+  pcity->caravan_shields = 0;
 }
 
 /**********************************************************************//**
@@ -3129,7 +3570,7 @@ static void nullify_caravan_and_disband_plus(struct city *pcity)
 void nullify_prechange_production(struct city *pcity)
 {
   nullify_caravan_and_disband_plus(pcity);
-  pcity->before_change_shields=0;
+  pcity->before_change_shields = 0;
 }
 
 /**********************************************************************//**
@@ -3139,6 +3580,8 @@ static void update_city_activity(struct city *pcity)
 {
   struct player *pplayer;
   struct government *gov;
+  bool is_happy;
+  bool is_celebrating;
 
   if (!pcity) {
     return;
@@ -3146,6 +3589,8 @@ static void update_city_activity(struct city *pcity)
 
   pplayer = city_owner(pcity);
   gov = government_of_city(pcity);
+  is_happy = city_happy(pcity);
+  is_celebrating = city_celebrating(pcity);
 
   if (city_refresh(pcity)) {
     auto_arrange_workers(pcity);
@@ -3162,8 +3607,22 @@ static void update_city_activity(struct city *pcity)
     /* History can decrease, but never go below zero */
     pcity->history = MAX(pcity->history, 0);
 
-    if (city_celebrating(pcity)) {
+    /* Keep old behaviour when building new improvement could keep
+       city celebrating */
+    if (!is_happy) {
+      is_happy = city_happy(pcity);
+    }
+
+    if (city_celebrating(pcity) || is_celebrating) {
       pcity->rapture++;
+
+      /* Update city's celebrating counters */
+      city_counters_iterate(pcount) {
+        if (pcount->type == CB_CITY_CELEBRATION_TURNS) {
+          pcity->counter_values[pcount->index]++;
+        }
+      } city_counters_iterate_end;
+
       if (pcity->rapture == 1) {
         notify_player(pplayer, city_tile(pcity), E_CITY_LOVE, ftc_server,
                       _("Celebrations in your honor in %s."),
@@ -3175,34 +3634,36 @@ static void update_city_activity(struct city *pcity)
                       _("Celebrations canceled in %s."),
                       city_link(pcity));
       }
+
+      /* Update city's celebrating counters */
+      city_counters_iterate(pcount) {
+        if (pcount->type == CB_CITY_CELEBRATION_TURNS) {
+          pcity->counter_values[pcount->index] = 0;
+        }
+      } city_counters_iterate_end;
       pcity->rapture = 0;
     }
-    pcity->was_happy = city_happy(pcity);
+    pcity->was_happy = is_happy;
 
     /* Handle the illness. */
     if (game.info.illness_on) {
-      /* recalculate city illness; illness due to trade has to be saved
-       * within the city struct as the client has not all data to
-       * calculate it */
+      /* Recalculate city illness; illness due to trade has to be saved
+       * within the city struct, as the client does not have all
+       * the data to calculate it */
       pcity->server.illness
         = city_illness_calc(pcity, NULL, NULL, &(pcity->illness_trade), NULL);
 
       if (city_illness_check(pcity)) {
-        notify_player(pplayer, city_tile(pcity), E_CITY_PLAGUE, ftc_server,
-                      _("%s has been struck by a plague! Population lost!"), 
-                      city_link(pcity));
-        city_reduce_size(pcity, 1, NULL, "plague");
-        pcity->turn_plague = game.info.turn;
-
-        /* recalculate illness */
-        pcity->server.illness
-          = city_illness_calc(pcity, NULL, NULL, &(pcity->illness_trade),
-                              NULL);
+        if (!city_illness_strike(pcity)) {
+          /* Illness destroyed the city */
+          return;
+        }
       }
     }
 
     /* City population updated here, after the rapture stuff above. --Jing */
     saved_id = pcity->id;
+    pcity->had_famine = FALSE;
     city_populate(pcity, pplayer);
     if (NULL == player_city_by_number(pplayer, saved_id)) {
       return;
@@ -3211,16 +3672,30 @@ static void update_city_activity(struct city *pcity)
     pcity->did_sell = FALSE;
     pcity->did_buy = FALSE;
     pcity->airlift = city_airlift_max(pcity);
-    update_bulbs(pplayer, pcity->prod[O_SCIENCE], FALSE);
+    update_bulbs(pplayer, pcity->prod[O_SCIENCE], FALSE, FALSE);
+
+    pplayer->economic.infra_points += get_city_bonus(pcity, EFT_INFRA_POINTS);
 
     /* Update the treasury. */
-    pplayer->economic.gold += pcity->prod[O_GOLD];
-    pplayer->economic.gold -= city_total_impr_gold_upkeep(pcity);
-    pplayer->economic.gold -= city_total_unit_gold_upkeep(pcity);
+    pplayer->economic.gold += pcity->surplus[O_GOLD];
 
-    /* Remember how much gold upkeep each unit was payed. */
+    /* FIXME: Nation level upkeep should be paid after ALL cities
+     *        have been processed, not after each individual city. */
+    if (game.info.gold_upkeep_style != GOLD_UPKEEP_CITY) {
+      /* Unit upkeep was not included in city balance ->
+       * not reduced from the city surplus. */
+      pplayer->economic.gold -= city_total_unit_gold_upkeep(pcity);
+
+      if (game.info.gold_upkeep_style == GOLD_UPKEEP_NATION) {
+        /* Building upkeep was not included in city balance ->
+         * not reduced from the city surplus. */
+        pplayer->economic.gold -= city_total_impr_gold_upkeep(pcity);
+      }
+    }
+
+    /* Remember how much gold upkeep each unit was paid. */
     unit_list_iterate(pcity->units_supported, punit) {
-      punit->server.upkeep_payed[O_GOLD] = punit->upkeep[O_GOLD];
+      punit->server.upkeep_paid[O_GOLD] = punit->upkeep[O_GOLD];
     } unit_list_iterate_end;
 
     if (pplayer->economic.gold < 0) {
@@ -3249,6 +3724,13 @@ static void update_city_activity(struct city *pcity)
       const char *revomsg;
 
       pcity->anarchy++;
+
+      city_counters_iterate(pcount) {
+        if (pcount->type == CB_CITY_DISORDER_TURNS) {
+          pcity->counter_values[pcount->index]++;
+        }
+      } city_counters_iterate_end;
+
       if (pcity->anarchy == revolution_turns) {
         /* Revolution next turn if not dealt with */
         /* TRANS: preserve leading space; this string will be appended to
@@ -3275,6 +3757,12 @@ static void update_city_activity(struct city *pcity)
                       city_link(pcity));
       }
       pcity->anarchy = 0;
+
+      city_counters_iterate(pcount) {
+        if (pcount->type == CB_CITY_DISORDER_TURNS) {
+          pcity->counter_values[pcount->index] = 0;
+        }
+      } city_counters_iterate_end;
     }
     check_pollution(pcity);
 
@@ -3309,13 +3797,15 @@ static bool city_illness_check(const struct city * pcity)
 
 /**********************************************************************//**
   Disband a city into the built unit, supported by the closest city.
+  Returns TRUE if the city was disbanded.
 **************************************************************************/
 static bool disband_city(struct city *pcity)
 {
   struct player *pplayer = city_owner(pcity);
   struct tile *ptile = pcity->tile;
-  struct city *rcity=NULL;
-  struct unit_type *utype = pcity->production.value.utype;
+  struct city *rcity = NULL;
+  const struct unit_type *utype = pcity->production.value.utype;
+  struct unit *punit;
   int saved_id = pcity->id;
 
   /* find closest city other than pcity */
@@ -3326,12 +3816,10 @@ static bool disband_city(struct city *pcity)
     /* What should we do when we try to disband our only city? */
     notify_player(pplayer, ptile, E_CITY_CANTBUILD, ftc_server,
                   _("%s can't build %s yet, "
-                    "and we can't disband our only city."),
+                    "as we can't disband our only city."),
                   city_link(pcity), utype_name_translation(utype));
-    script_server_signal_emit("unit_cant_be_built", 3,
-                              API_TYPE_UNIT_TYPE, utype,
-                              API_TYPE_CITY, pcity,
-                              API_TYPE_STRING, "pop_cost");
+    script_server_signal_emit("unit_cant_be_built", utype, pcity,
+                              "pop_cost");
     if (!city_exist(saved_id)) {
       /* Script decided to remove even the last city */
       return TRUE;
@@ -3340,29 +3828,38 @@ static bool disband_city(struct city *pcity)
     }
   }
 
-  (void) create_unit(pplayer, ptile, utype,
-		     do_make_unit_veteran(pcity, utype),
-		     pcity->id, 0);
-  pplayer->score.units_built++;
+  punit = city_create_unit(pcity, utype, NULL);
 
-  /* Shift all the units supported by pcity (including the new unit)
-   * to rcity.  transfer_city_units does not make sure no units are
-   * left floating without a transport, but since all units are
-   * transferred this is not a problem. */
-  transfer_city_units(pplayer, pplayer, pcity->units_supported, rcity, 
-                      pcity, -1, TRUE);
+  /* "unit_built" script handler may have destroyed city. If so, we
+   * assume something sensible happened to its units, and that the
+   * script took care of announcing unit creation if required. */
+  if (city_exist(saved_id)) {
+    /* Shift all the units supported by pcity (including the new unit)
+     * to rcity.  transfer_city_units does not make sure no units are
+     * left floating without a transport, but since all units are
+     * transferred this is not a problem. */
+    transfer_city_units(pplayer, pplayer, pcity->units_supported, rcity, 
+                        pcity, -1, TRUE);
 
-  notify_player(pplayer, ptile, E_UNIT_BUILT, ftc_server,
-                /* TRANS: "<city> is disbanded into Settler." */
-                _("%s is disbanded into %s."), 
-                city_tile_link(pcity), utype_name_translation(utype));
+    if (punit) {
+      notify_player(pplayer, ptile, E_UNIT_BUILT, ftc_server,
+                    /* TRANS: "<city> is disbanded into Settler." */
+                    _("%s is disbanded into %s."), 
+                    city_tile_link(pcity), utype_name_translation(utype));
+    }
 
-  script_server_signal_emit("city_destroyed", 3,
-                            API_TYPE_CITY, pcity,
-                            API_TYPE_PLAYER, pcity->owner,
-                            API_TYPE_PLAYER, NULL);
+    script_server_signal_emit("city_destroyed", pcity, pcity->owner, NULL);
 
-  remove_city(pcity);
+    if (!city_exist(saved_id)) {
+      /* Already removed during the script */
+      return TRUE;
+    }
+    remove_city(pcity);
+
+    /* Since we've removed the city, we don't need to worry about
+     * charging for production, disabling rally points, etc. */
+  }
+
   return TRUE;
 }
 
@@ -3438,7 +3935,7 @@ static float city_migration_score(struct city *pcity)
 
   /* calculate shield build cost for all buildings */
   city_built_iterate(pcity, pimprove) {
-    build_shield_cost += impr_build_shield_cost(pimprove);
+    build_shield_cost += impr_build_shield_cost(pcity, pimprove);
     if (is_wonder(pimprove)) {
       /* this city has a wonder */
       has_wonder = TRUE;
@@ -3506,8 +4003,8 @@ static bool do_city_migration(struct city *pcity_from,
   char name_from[MAX_LEN_LINK], name_to[MAX_LEN_LINK];
   const char *nation_from, *nation_to;
   struct city *rcity = NULL;
-  bool incr_success;
   int to_id = pcity_to->id;
+  const struct civ_map *nmap = &(wld.map);
 
   if (!pcity_from || !pcity_to) {
     return FALSE;
@@ -3524,17 +4021,18 @@ static bool do_city_migration(struct city *pcity_from,
   ptile_from = city_tile(pcity_from);
   ptile_to = city_tile(pcity_to);
 
-  /* check food supply in the receiver city */
+  /* Check food supply in the receiver city */
   if (game.server.mgr_foodneeded) {
     bool migration = FALSE;
 
     if (pcity_to->surplus[O_FOOD] >= game.info.food_cost) {
       migration = TRUE;
     } else {
-      /* check if there is a free tile for the new citizen which, when worked,
+      /* Check if there is a free tile for the new citizen which, when worked,
        * leads to zero or positive food surplus for the enlarged city */
       int max_food_tile = -1;  /* no free tile */
-      city_tile_iterate(city_map_radius_sq_get(pcity_to),
+
+      city_tile_iterate(nmap, city_map_radius_sq_get(pcity_to),
                         city_tile(pcity_to), ptile) {
         if (city_can_work_tile(pcity_to, ptile)
             && tile_worked(ptile) != pcity_to) {
@@ -3631,16 +4129,12 @@ static bool do_city_migration(struct city *pcity_from,
                           -1, TRUE);
       sz_strlcpy(name_from, city_tile_link(pcity_from));
 
-      script_server_signal_emit("city_size_change", 3,
-                            API_TYPE_CITY, pcity_from,
-                            API_TYPE_INT, -1,
-                            API_TYPE_STRING, "migration_from");
+      script_server_signal_emit("city_size_change", pcity_from,
+                                (lua_Integer)(-1), "migration_from");
 
       if (city_exist(id)) {
-        script_server_signal_emit("city_destroyed", 3,
-                                  API_TYPE_CITY, pcity_from,
-                                  API_TYPE_PLAYER, pcity_from->owner,
-                                  API_TYPE_PLAYER, NULL);
+        script_server_signal_emit("city_destroyed", pcity_from,
+                                  pcity_from->owner, NULL);
 
         if (city_exist(id)) {
           remove_city(pcity_from);
@@ -3702,19 +4196,19 @@ static bool do_city_migration(struct city *pcity_from,
                   name_from, nation_from, name_to);
   }
 
-  /* raise size of receiver city */
+  /* Increase size of receiver city */
   if (city_exist(to_id)) {
-    incr_success = city_increase_size(pcity_to, pplayer_citizen);
+    bool incr_success = city_increase_size(pcity_to);
+
     if (city_exist(to_id)) {
+      city_refresh_after_city_size_increase(pcity_to, pplayer_citizen);
       city_refresh_vision(pcity_to);
       if (city_refresh(pcity_to)) {
         auto_arrange_workers(pcity_to);
       }
       if (incr_success) {
-        script_server_signal_emit("city_size_change", 3,
-                                  API_TYPE_CITY, pcity_to,
-                                  API_TYPE_INT, 1,
-                                  API_TYPE_STRING, "migration_to");
+        script_server_signal_emit("city_size_change", pcity_to,
+                                  (lua_Integer)1, "migration_to");
       }
     }
   }
@@ -3814,6 +4308,20 @@ static void apply_disaster(struct city *pcity, struct disaster_type *pdis)
                 _("%s was hit by %s."), city_name_get(pcity),
                 disaster_name_translation(pdis));
 
+  if (disaster_has_effect(pdis, DE_ROBBERY)) {
+    if (pplayer->economic.gold > 0 && pcity->prod[O_TRADE] > 0) {
+      int amount = pcity->prod[O_TRADE] * 5;
+
+      amount = MIN(pplayer->economic.gold, amount);
+      pplayer->economic.gold -= amount;
+      notify_player(pplayer, ptile, E_DISASTER, ftc_server,
+                    PL_("Robbery in %s. %d gold stolen.",
+                        "Robbery in %s. %d gold stolen.", amount),
+                    city_link(pcity), amount);
+      had_internal_effect = TRUE;
+    }
+  }
+
   if (disaster_has_effect(pdis, DE_POLLUTION)) {
     if (place_pollution(pcity, EC_POLLUTION)) {
       notify_player(pplayer, ptile, E_DISASTER, ftc_server,
@@ -3863,7 +4371,7 @@ static void apply_disaster(struct city *pcity, struct disaster_type *pdis)
     if (total > 0) {
       int num = fc_rand(total);
 
-      building_lost(pcity, imprs[num]);
+      building_lost(pcity, imprs[num], "disaster", NULL);
 
       notify_player(pplayer, ptile, E_DISASTER, ftc_server,
                     /* TRANS: second %s is the name of a city improvement */
@@ -3899,13 +4407,9 @@ static void apply_disaster(struct city *pcity, struct disaster_type *pdis)
     }
   }
 
-  script_server_signal_emit("disaster_occurred", 3,
-                            API_TYPE_DISASTER, pdis,
-                            API_TYPE_CITY, pcity,
-                            API_TYPE_BOOL, had_internal_effect);
-  script_server_signal_emit("disaster", 2,
-                            API_TYPE_DISASTER, pdis,
-                            API_TYPE_CITY, pcity);
+  script_server_signal_emit("disaster_occurred", pdis, pcity,
+                            had_internal_effect);
+  script_server_signal_emit("disaster", pdis, pcity);
 }
 
 /**********************************************************************//**
@@ -4059,10 +4563,10 @@ static bool check_city_migrations_player(const struct player *pplayer)
       }
     } iterate_outward_end;
 
-    if (best_city_player_score > 0) {
-      /* first, do the migration within one nation */
+    if (best_city_player != NULL) {
+      /* First, do the migration within one nation */
       if (fc_rand(100) >= game.server.mgr_nationchance) {
-        /* no migration */
+        /* No migration */
         /* N.B.: city_link always returns the same pointer. */
         sz_strlcpy(city_link_text, city_link(pcity));
         notify_player(pplayer, city_tile(pcity), E_CITY_TRANSFER, ftc_server,
@@ -4073,17 +4577,17 @@ static bool check_city_migrations_player(const struct player *pplayer)
         do_city_migration(pcity, best_city_player);
       }
 
-      /* stop here */
+      /* Stop here */
       continue;
     }
 
-    if (best_city_world_score > 0) {
-      /* second, do the migration between all nations */
+    if (best_city_world != NULL) {
+      /* Second, do the migration between all nations */
       if (fc_rand(100) >= game.server.mgr_worldchance) {
         const char *nname;
 
         nname = nation_adjective_for_player(city_owner(best_city_world));
-        /* no migration */
+        /* No migration */
         /* N.B.: city_link always returns the same pointer. */
         sz_strlcpy(city_link_text, city_link(pcity));
         notify_player(pplayer, city_tile(pcity), E_CITY_TRANSFER, ftc_server,
@@ -4096,7 +4600,7 @@ static bool check_city_migrations_player(const struct player *pplayer)
         internat = TRUE;
       }
 
-      /* stop here */
+      /* Stop here */
       continue;
     }
   } city_list_iterate_safe_end;
@@ -4110,4 +4614,53 @@ static bool check_city_migrations_player(const struct player *pplayer)
 void city_style_refresh(struct city *pcity)
 {
   pcity->style = city_style(pcity);
+}
+
+/**********************************************************************//**
+  Send updated (by server) counter information of
+  a given city.
+**************************************************************************/
+void city_counters_refresh(struct city *pcity)
+{
+  uint8_t i, counter_count;
+  struct packet_city_update_counters packet;
+
+  packet.city = pcity->id;
+
+  counter_count = counters_get_city_counters_count();
+
+  packet.count = counter_count;
+  for (i = 0; i < counter_count; i++) {
+    packet.counters[i] = pcity->counter_values[i];
+  }
+
+  lsend_packet_city_update_counters(pcity->owner->connections, &packet);
+  lsend_packet_city_update_counters(game.glob_observers, &packet);
+}
+
+/**********************************************************************//**
+  Recalculate some city related effects on turn change
+**************************************************************************/
+void city_tc_effect_refresh(struct player *pplayer)
+{
+  const struct civ_map *nmap = &(wld.map);
+
+  city_list_iterate(pplayer->cities, pcity) {
+    bool changed = FALSE;
+
+    city_tile_iterate_skip_free_worked(nmap, city_map_radius_sq_get(pcity),
+                                       city_tile(pcity), ptile, idx, x, y) {
+      if (ptile->worked == pcity
+          && get_city_tile_output_bonus(pcity, ptile, NULL, EFT_TILE_WORKABLE) <= 0) {
+        city_map_update_empty(pcity, ptile);
+        pcity->specialists[DEFAULT_SPECIALIST]++;
+        changed = TRUE;
+      }
+    } city_tile_iterate_skip_free_worked_end;
+
+    if (changed) {
+      auto_arrange_workers(pcity);
+      send_city_info(NULL, pcity);
+    }
+  } city_list_iterate_end;
 }

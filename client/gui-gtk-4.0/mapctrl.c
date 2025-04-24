@@ -38,6 +38,7 @@
 #include "editor.h"
 #include "tilespec.h"
 #include "text.h"
+#include "zoom.h"
 
 /* client/agents */
 #include "cma_core.h"
@@ -50,87 +51,41 @@
 #include "editgui.h"
 #include "graphics.h"
 #include "gui_main.h"
+#include "infradlg.h"
 #include "inputdlg.h"
 #include "mapview.h"
 #include "menu.h"
+#include "rallypointdlg.h"
 
 #include "mapctrl.h"
 
-struct tmousepos { int x, y; };
 extern gint cur_x, cur_y;
-
-/**********************************************************************//**
-  Button released when showing info label
-**************************************************************************/
-static gboolean popit_button_release(GtkWidget *w, GdkEvent *ev)
-{
-  gtk_grab_remove(w);
-  gdk_seat_ungrab(gdk_device_get_seat(gdk_event_get_device(ev)));
-  gtk_widget_destroy(w);
-
-  return FALSE;
-}
-
-/**********************************************************************//**
-  Put the popup on a smart position, after the real size of the widget is
-  known: left of the cursor if within the right half of the map, and vice
-  versa; displace the popup so as not to obscure it by the mouse cursor;
-  stay always within the map if possible. 
-**************************************************************************/
-static void popupinfo_positioning_callback(GtkWidget *w, GtkAllocation *alloc, 
-					   gpointer data)
-{
-  struct tmousepos *mousepos = data;
-  float x, y;
-  struct tile *ptile;
-
-  ptile = canvas_pos_to_tile(mousepos->x, mousepos->y);
-  if (tile_to_canvas_pos(&x, &y, ptile)) {
-    gint minx, miny, maxy;
-
-    gdk_window_get_origin(gtk_widget_get_window(map_canvas), &minx, &miny);
-    maxy = miny + gtk_widget_get_allocated_height(map_canvas);
-
-    if (x > mapview.width/2) {
-      /* right part of the map */
-      x += minx;
-      y += miny + (tileset_tile_height(tileset) - alloc->height)/2;
-
-      y = CLIP(miny, y, maxy - alloc->height);
-
-      gtk_window_move(GTK_WINDOW(w), x - alloc->width, y);
-    } else {
-      /* left part of the map */
-      x += minx + tileset_tile_width(tileset);
-      y += miny + (tileset_tile_height(tileset) - alloc->height)/2;
-
-      y = CLIP(miny, y, maxy - alloc->height);
-
-      gtk_window_move(GTK_WINDOW(w), x, y);
-    }
-  }
-}
 
 /**********************************************************************//**
   Popup a label with information about the tile, unit, city, when the user
   used the middle mouse button on the map.
 **************************************************************************/
-static void popit(GdkEvent *ev, struct tile *ptile)
+static void popit(struct tile *ptile)
 {
-  GtkWidget *p;
-  static struct tmousepos mousepos;
-  struct unit *punit;
-
   if (TILE_UNKNOWN != client_tile_get_known(ptile)) {
-    gdouble e_x, e_y;
+    GtkWidget *p;
+    struct unit *punit;
+    GdkRectangle rect;
+    GtkAllocation alloc;
+    float canvas_x, canvas_y;
 
-    p = gtk_window_new(GTK_WINDOW_POPUP);
-    gtk_widget_set_margin_start(p, 4);
-    gtk_widget_set_margin_end(p, 4);
-    gtk_widget_set_margin_top(p, 4);
-    gtk_widget_set_margin_bottom(p, 4);
-    gtk_window_set_transient_for(GTK_WINDOW(p), GTK_WINDOW(toplevel));
-    gtk_container_add(GTK_CONTAINER(p), gtk_label_new(popup_info_text(ptile)));
+    tile_to_canvas_pos(&canvas_x, &canvas_y, map_zoom, ptile);
+    gtk_widget_get_allocation(map_canvas, &alloc);
+    rect.x = (canvas_x * mouse_zoom / map_zoom) - alloc.x;
+    rect.y = (canvas_y * mouse_zoom / map_zoom) - alloc.y;
+    rect.width = tileset_full_tile_width(tileset);
+    rect.height = tileset_tile_height(tileset);
+
+    p = gtk_popover_new();
+
+    gtk_widget_set_parent(p, map_canvas);
+    gtk_popover_set_pointing_to(GTK_POPOVER(p), &rect);
+    gtk_popover_set_child(GTK_POPOVER(p), gtk_label_new(popup_info_text(ptile)));
 
     punit = find_visible_unit(ptile);
 
@@ -142,27 +97,10 @@ static void popit(GdkEvent *ev, struct tile *ptile)
     }
     mapdeco_set_crosshair(ptile, TRUE);
 
-    g_signal_connect(p, "destroy",
+    g_signal_connect(p, "closed",
                      G_CALLBACK(popupinfo_popdown_callback), NULL);
 
-
-    gdk_event_get_coords(ev, &e_x, &e_y);
-    mousepos.x = e_x;
-    mousepos.y = e_y;
-
-    g_signal_connect(p, "size-allocate",
-                     G_CALLBACK(popupinfo_positioning_callback),
-                     &mousepos);
-
-    gtk_widget_show(p);
-    gdk_seat_grab(gdk_device_get_seat(gdk_event_get_device(ev)),
-                  gtk_widget_get_window(p),
-                  GDK_SEAT_CAPABILITY_ALL_POINTING,
-                  TRUE, NULL, (GdkEvent *)ev, NULL, NULL);
-    gtk_grab_add(p);
-
-    g_signal_connect_after(p, "button_release_event",
-                           G_CALLBACK(popit_button_release), NULL);
+    gtk_popover_popup(GTK_POPOVER(p));
   }
 }
 
@@ -197,7 +135,7 @@ static void name_new_city_popup_callback(gpointer data, gint response,
 /**********************************************************************//**
   Popup dialog where the user choose the name of the new city
   punit = (settler) unit which builds the city
-  suggestname = suggetion of the new city's name
+  suggestname = suggestion of the new city's name
 **************************************************************************/
 void popup_newcity_dialog(struct unit *punit, const char *suggestname)
 {
@@ -215,31 +153,46 @@ void popup_newcity_dialog(struct unit *punit, const char *suggestname)
 void set_turn_done_button_state(bool state)
 {
   gtk_widget_set_sensitive(turn_done_button, state);
+
+  update_turn_done_tooltip();
 }
 
 /**********************************************************************//**
-  Handle 'Mouse button released'. Because of the quickselect feature,
+  Handle 'Left mouse button released'. Because of the quickselect feature,
   the release of both left and right mousebutton can launch the goto.
 **************************************************************************/
-gboolean butt_release_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
+gboolean left_butt_up_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                double x, double y, gpointer data)
 {
-  guint button;
-  gdouble e_x, e_y;
-  
   if (editor_is_active()) {
-    return handle_edit_mouse_button_release(ev);
+    return handle_edit_mouse_button_release(gesture, MOUSE_BUTTON_LEFT,
+                                            x, y);
   }
 
-  gdk_event_get_button(ev, &button);
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  if (button == 1 || button == 3) {
-    release_goto_button(e_x, e_y);
+  release_goto_button(x, y);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Handle 'Right mouse button released'. Because of the quickselect feature,
+  the release of both left and right mousebutton can launch the goto.
+**************************************************************************/
+gboolean right_butt_up_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                 double x, double y, gpointer data)
+{
+  if (editor_is_active()) {
+    return handle_edit_mouse_button_release(gesture, MOUSE_BUTTON_RIGHT,
+                                            x, y);
   }
-  if (button == 3 && (rbutton_down || hover_state != HOVER_NONE))  {
+
+  release_goto_button(x, y);
+
+  if (rbutton_down || hover_state != HOVER_NONE)  {
     GdkModifierType state;
 
-    gdk_event_get_state(ev, &state);
-    release_right_button(e_x, e_y,
+    state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+    release_right_button(x, y,
                          (state & GDK_SHIFT_MASK) != 0);
   }
 
@@ -247,19 +200,18 @@ gboolean butt_release_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
 }
 
 /**********************************************************************//**
-  Handle all mouse button press on canvas.
+  Handle all left mouse button presses on canvas.
   Future feature: User-configurable mouse clicks.
 **************************************************************************/
-gboolean butt_down_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
+gboolean left_butt_down_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                  double x, double y, gpointer data)
 {
-  struct city *pcity = NULL;
   struct tile *ptile = NULL;
-  gdouble e_x, e_y;
-  guint button;
   GdkModifierType state;
 
   if (editor_is_active()) {
-    return handle_edit_mouse_button_press(ev);
+    return handle_edit_mouse_button_press(gesture, MOUSE_BUTTON_LEFT,
+                                          x, y);
   }
 
   if (!can_client_change_view()) {
@@ -267,97 +219,140 @@ gboolean butt_down_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
   }
 
   gtk_widget_grab_focus(map_canvas);
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  ptile = canvas_pos_to_tile(e_x, e_y);
+  ptile = canvas_pos_to_tile(x, y, mouse_zoom);
+
+  state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+
+  /* <SHIFT> + <CONTROL> + LMB : Adjust workers. */
+  if ((state & GDK_SHIFT_MASK) && (state & GDK_CONTROL_MASK)) {
+    adjust_workers_button_pressed(x, y);
+  } else if (state & GDK_CONTROL_MASK) {
+    /* <CONTROL> + LMB : Quickselect a sea unit. */
+    action_button_pressed(x, y, SELECT_SEA);
+  } else if (ptile && (state & GDK_SHIFT_MASK)) {
+    /* <SHIFT> + LMB: Append focus unit. */
+    action_button_pressed(x, y, SELECT_APPEND);
+  } else if (ptile && (state & GDK_ALT_MASK)) {
+    /* <ALT> + LMB: popit (same as middle-click) */
+    /* FIXME: we need a general mechanism for letting freeciv work with
+     * 1- or 2-button mice. */
+    popit(ptile);
+  } else if (tiles_hilited_cities) {
+    /* LMB in Area Selection mode. */
+    if (ptile) {
+      toggle_tile_hilite(ptile);
+    }
+  } else if (rally_set_tile(ptile)) {
+    /* Nothing here, rally_set_tile() already did what we wanted */
+  } else if (infra_placement_mode()) {
+    infra_placement_set_tile(ptile);
+  } else {
+    /* Plain LMB click. */
+    action_button_pressed(x, y, SELECT_POPUP);
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Handle all right mouse button presses on canvas.
+  Future feature: User-configurable mouse clicks.
+**************************************************************************/
+gboolean right_butt_down_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                   double x, double y, gpointer data)
+{
+  struct city *pcity = NULL;
+  struct tile *ptile = NULL;
+  GdkModifierType state;
+
+  if (editor_is_active()) {
+    return handle_edit_mouse_button_press(gesture, MOUSE_BUTTON_RIGHT,
+                                          x, y);
+  }
+
+  if (!can_client_change_view()) {
+    return TRUE;
+  }
+
+  gtk_widget_grab_focus(map_canvas);
+  ptile = canvas_pos_to_tile(x, y, mouse_zoom);
   pcity = ptile ? tile_city(ptile) : NULL;
 
-  gdk_event_get_button(ev, &button);
-  gdk_event_get_state(ev, &state);
+  state = gtk_event_controller_get_current_event_state(
+                                    GTK_EVENT_CONTROLLER(gesture));
 
-  switch (button) {
+  /* <CONTROL> + <ALT> + RMB : insert city or tile chat link. */
+  /* <CONTROL> + <ALT> + <SHIFT> + RMB : insert unit chat link. */
+  if (ptile && (state & GDK_ALT_MASK)
+      && (state & GDK_CONTROL_MASK)) {
+    inputline_make_chat_link(ptile, (state & GDK_SHIFT_MASK) != 0);
+  } else if ((state & GDK_SHIFT_MASK) && (state & GDK_ALT_MASK)) {
+    /* <SHIFT> + <ALT> + RMB : Show/hide workers. */
+    key_city_overlay(x, y);
+  } else if ((state & GDK_SHIFT_MASK) && (state & GDK_CONTROL_MASK)
+             && pcity != NULL) {
+    /* <SHIFT + CONTROL> + RMB: Paste Production. */
+    clipboard_paste_production(pcity);
+    cancel_tile_hiliting();
+  } else if (state & GDK_SHIFT_MASK
+             && clipboard_copy_production(ptile)) {
+    /* <SHIFT> + RMB on city/unit: Copy Production. */
+    /* If nothing to copy, fall through to rectangle selection. */
 
-  case 1: /* LEFT mouse button */
-
-    /* <SHIFT> + <CONTROL> + LMB : Adjust workers. */
-    if ((state & GDK_SHIFT_MASK) && (state & GDK_CONTROL_MASK)) {
-      adjust_workers_button_pressed(e_x, e_y);
-    } else if (state & GDK_CONTROL_MASK) {
-      /* <CONTROL> + LMB : Quickselect a sea unit. */
-      action_button_pressed(e_x, e_y, SELECT_SEA);
-    } else if (ptile && (state & GDK_SHIFT_MASK)) {
-      /* <SHIFT> + LMB: Append focus unit. */
-      action_button_pressed(e_x, e_y, SELECT_APPEND);
-    } else if (ptile && (state & GDK_MOD1_MASK)) {
-      /* <ALT> + LMB: popit (same as middle-click) */
-      /* FIXME: we need a general mechanism for letting freeciv work with
-       * 1- or 2-button mice. */
-      popit(ev, ptile);
-    } else if (tiles_hilited_cities) {
-      /* LMB in Area Selection mode. */
-      if (ptile) {
-        toggle_tile_hilite(ptile);
-      }
-    } else {
-      /* Plain LMB click. */
-      action_button_pressed(e_x, e_y, SELECT_POPUP);
+    /* Already done the copy */
+  } else if (state & GDK_CONTROL_MASK) {
+    /* <CONTROL> + RMB : Quickselect a land unit. */
+    action_button_pressed(x, y, SELECT_LAND);
+  } else {
+    /* Plain RMB click. Area selection. */
+    /*  A foolproof user will depress button on canvas,
+     *  release it on another widget, and return to canvas
+     *  to find rectangle still active.
+     */
+    if (rectangle_active) {
+      release_right_button(x, y,
+                           (state & GDK_SHIFT_MASK) != 0);
+      return TRUE;
     }
-    break;
-
-  case 2: /* MIDDLE mouse button */
-
-    /* <CONTROL> + MMB: Wake up sentries. */
-    if (state & GDK_CONTROL_MASK) {
-      wakeup_button_pressed(e_x, e_y);
-    } else if (ptile) {
-      /* Plain Middle click. */
-      popit(ev, ptile);
+    if (hover_state == HOVER_NONE) {
+      anchor_selection_rectangle(x, y);
+      rbutton_down = TRUE; /* Causes rectangle updates */
     }
-    break;
+  }
 
-  case 3: /* RIGHT mouse button */
+  return TRUE;
+}
 
-    /* <CONTROL> + <ALT> + RMB : insert city or tile chat link. */
-    /* <CONTROL> + <ALT> + <SHIFT> + RMB : insert unit chat link. */
-    if (ptile && (state & GDK_MOD1_MASK)
-        && (state & GDK_CONTROL_MASK)) {
-      inputline_make_chat_link(ptile, (state & GDK_SHIFT_MASK) != 0);
-    } else if ((state & GDK_SHIFT_MASK) && (state & GDK_MOD1_MASK)) {
-      /* <SHIFT> + <ALT> + RMB : Show/hide workers. */
-      key_city_overlay(e_x, e_y);
-    } else if ((state & GDK_SHIFT_MASK) && (state & GDK_CONTROL_MASK)
-               && pcity != NULL) {
-      /* <SHIFT + CONTROL> + RMB: Paste Production. */
-      clipboard_paste_production(pcity);
-      cancel_tile_hiliting();
-    } else if (state & GDK_SHIFT_MASK
-               && clipboard_copy_production(ptile)) {
-      /* <SHIFT> + RMB on city/unit: Copy Production. */
-      /* If nothing to copy, fall through to rectangle selection. */
-      
-      /* Already done the copy */
-    } else if (state & GDK_CONTROL_MASK) {
-      /* <CONTROL> + RMB : Quickselect a land unit. */
-      action_button_pressed(e_x, e_y, SELECT_LAND);
-    } else {
-      /* Plain RMB click. Area selection. */
-      /*  A foolproof user will depress button on canvas,
-       *  release it on another widget, and return to canvas
-       *  to find rectangle still active.
-       */
-      if (rectangle_active) {
-        release_right_button(e_x, e_y,
-                             (state & GDK_SHIFT_MASK) != 0);
-        return TRUE;
-      }
-      if (hover_state == HOVER_NONE) {
-        anchor_selection_rectangle(e_x, e_y);
-        rbutton_down = TRUE; /* causes rectangle updates */
-      }
-    }
-    break;
+/**********************************************************************//**
+  Handle all middle mouse button presses on canvas.
+  Future feature: User-configurable mouse clicks.
+**************************************************************************/
+gboolean middle_butt_down_mapcanvas(GtkGestureClick *gesture, int n_press,
+                                    double x, double y, gpointer data)
+{
+  struct tile *ptile = NULL;
+  GdkModifierType state;
 
-  default:
-    break;
+  if (editor_is_active()) {
+    return handle_edit_mouse_button_press(gesture, MOUSE_BUTTON_MIDDLE,
+                                          x, y);
+  }
+
+  if (!can_client_change_view()) {
+    return TRUE;
+  }
+
+  gtk_widget_grab_focus(map_canvas);
+  ptile = canvas_pos_to_tile(x, y, mouse_zoom);
+
+  state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+
+  /* <CONTROL> + MMB: Wake up sentries. */
+  if (state & GDK_CONTROL_MASK) {
+    wakeup_button_pressed(x, y);
+  } else if (ptile) {
+    /* Plain Middle click. */
+    popit(ptile);
   }
 
   return TRUE;
@@ -368,20 +363,20 @@ gboolean butt_down_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
 **************************************************************************/
 void create_line_at_mouse_pos(void)
 {
-  int x, y;
+  double x, y;
   GdkSeat *seat = gdk_display_get_default_seat(gtk_widget_get_display(toplevel));
   GdkDevice *pointer = gdk_seat_get_pointer(seat);
-  GdkWindow *window;
+  GdkSurface *window;
 
   if (!pointer) {
     return;
   }
 
-  window = gdk_device_get_window_at_position(pointer, &x, &y);
+  window = gdk_device_get_surface_at_position(pointer, &x, &y);
   if (window) {
-    if (window == gtk_widget_get_window(map_canvas)) {
+    if (window == gtk_native_get_surface(gtk_widget_get_native(map_canvas))) {
       update_line(x, y);
-    } else if (window == gtk_widget_get_window(overview_canvas)) {
+    } else if (window == gtk_native_get_surface(gtk_widget_get_native(overview_canvas))) {
       overview_update_line(x, y);
     }
   }
@@ -393,9 +388,10 @@ void create_line_at_mouse_pos(void)
 **************************************************************************/
 void update_rect_at_mouse_pos(void)
 {
-  int x, y;
-  GdkWindow *window;
+  double x, y;
+  GdkSurface *window;
   GdkDevice *pointer;
+  GdkDevice *keyboard;
   GdkModifierType mask;
   GdkSeat *seat = gdk_display_get_default_seat(gtk_widget_get_display(toplevel));
 
@@ -404,9 +400,11 @@ void update_rect_at_mouse_pos(void)
     return;
   }
 
-  window = gdk_device_get_window_at_position(pointer, &x, &y);
-  if (window && window == gtk_widget_get_window(map_canvas)) {
-    gdk_device_get_state(pointer, window, NULL, &mask);
+  window = gdk_device_get_surface_at_position(pointer, &x, &y);
+  if (window
+      && window == gtk_native_get_surface(gtk_widget_get_native(map_canvas))) {
+    keyboard = gdk_seat_get_keyboard(seat);
+    mask = gdk_device_get_modifier_state(keyboard);
     if (mask & GDK_BUTTON3_MASK) {
       update_selection_rectangle(x, y);
     }
@@ -417,10 +415,10 @@ void update_rect_at_mouse_pos(void)
   Triggered by the mouse moving on the mapcanvas, this function will
   update the mouse cursor and goto lines.
 **************************************************************************/
-gboolean move_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
+gboolean move_mapcanvas(GtkEventControllerMotion *controller,
+                        gdouble x, gdouble y, gpointer data)
 {
   GdkModifierType state;
-  gdouble e_x, e_y;
 
   if (GUI_GTK_OPTION(mouse_over_map_focus)
       && !gtk_widget_has_focus(map_canvas)) {
@@ -428,22 +426,21 @@ gboolean move_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
   }
 
   if (editor_is_active()) {
-    return handle_edit_mouse_move(ev);
+    return handle_edit_mouse_move(controller, x, y);
   }
 
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  cur_x = e_x;
-  cur_y = e_y;
-  update_line(e_x, e_y);
-  gdk_event_get_state(ev, &state);
+  cur_x = x;
+  cur_y = y;
+  update_line(x, y);
+  state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
   if (rbutton_down && (state & GDK_BUTTON3_MASK)) {
-    update_selection_rectangle(e_x, e_y);
+    update_selection_rectangle(x, y);
   }
 
   if (keyboardless_goto_button_down && hover_state == HOVER_NONE) {
-    maybe_activate_keyboardless_goto(e_x, e_y);
+    maybe_activate_keyboardless_goto(x, y);
   }
-  control_mouse_cursor(canvas_pos_to_tile(e_x, e_y));
+  control_mouse_cursor(canvas_pos_to_tile(x, y, mouse_zoom));
 
   return TRUE;
 }
@@ -451,71 +448,67 @@ gboolean move_mapcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
 /**********************************************************************//**
   This function will reset the mouse cursor if it leaves the map.
 **************************************************************************/
-gboolean leave_mapcanvas(GtkWidget *widget, GdkEvent *ev)
+gboolean leave_mapcanvas(GtkEventControllerMotion *controller,
+                         gpointer data)
 {
-  gdouble e_x, e_y;
-
-  if (gtk_notebook_get_current_page(GTK_NOTEBOOK(top_notebook))
-      != gtk_notebook_page_num(GTK_NOTEBOOK(top_notebook), map_widget)) {
-    /* Map is not currently topmost tab. Do not use tile specific cursors. */
-    update_mouse_cursor(CURSOR_DEFAULT);
-    return TRUE;
-  }
-
-  /* Bizarrely, this function can be called even when we don't "leave"
-   * the map canvas, for instance, it gets called any time the mouse is
-   * clicked. */
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  if (!map_is_empty()
-      && e_x >= 0 && e_y >= 0
-      && e_x < mapview.width && e_y < mapview.height) {
-    control_mouse_cursor(canvas_pos_to_tile(e_x, e_y));
-  } else {
-    update_mouse_cursor(CURSOR_DEFAULT);
-  }
-
+  update_mouse_cursor(CURSOR_DEFAULT);
   update_unit_info_label(get_units_in_focus());
+
   return TRUE;
 }
 
 /**********************************************************************//**
   Overview canvas moved
 **************************************************************************/
-gboolean move_overviewcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
+gboolean move_overviewcanvas(GtkEventControllerMotion *controller,
+                             gdouble x, gdouble y, gpointer data)
 {
-  gdouble e_x, e_y;
-
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  overview_update_line(e_x, e_y);
+  overview_update_line(x, y);
 
   return TRUE;
 }
 
 /**********************************************************************//**
-  Button pressed at overview
+  Left button pressed at overview
 **************************************************************************/
-gboolean butt_down_overviewcanvas(GtkWidget *w, GdkEvent *ev, gpointer data)
+gboolean left_butt_down_overviewcanvas(GtkGestureClick *gesture, int n_press,
+                                       double x, double y, gpointer data)
 {
   int xtile, ytile;
-  gdouble e_x, e_y;
-  guint button;
 
-  if (gdk_event_get_event_type(ev) != GDK_BUTTON_PRESS) {
+  if (n_press != 1) {
     return TRUE; /* Double-clicks? Triple-clicks? No thanks! */
   }
 
-  gdk_event_get_coords(ev, &e_x, &e_y);
-  overview_to_map_pos(&xtile, &ytile, e_x, e_y);
+  overview_to_map_pos(&xtile, &ytile, x, y);
 
-  gdk_event_get_button(ev, &button);
-  if (can_client_change_view() && (button == 3)) {
-    center_tile_mapcanvas(map_pos_to_tile(&(wld.map), xtile, ytile));
-  } else if (can_client_issue_orders() && (button == 1)) {
+  if (can_client_issue_orders()) {
     GdkModifierType state;
 
-    gdk_event_get_state(ev, &state);
+    state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
     do_map_click(map_pos_to_tile(&(wld.map), xtile, ytile),
                  (state & GDK_SHIFT_MASK) ? SELECT_APPEND : SELECT_POPUP);
+  }
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Right button pressed at overview
+**************************************************************************/
+gboolean right_butt_down_overviewcanvas(GtkGestureClick *gesture, int n_press,
+                                        double x, double y, gpointer data)
+{
+  int xtile, ytile;
+
+  if (n_press != 1) {
+    return TRUE; /* Double-clicks? Triple-clicks? No thanks! */
+  }
+
+  overview_to_map_pos(&xtile, &ytile, x, y);
+
+  if (can_client_change_view()) {
+    center_tile_mapcanvas(map_pos_to_tile(&(wld.map), xtile, ytile));
   }
 
   return TRUE;

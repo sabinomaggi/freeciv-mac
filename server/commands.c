@@ -85,26 +85,31 @@ static struct command commands[] = {
   },
 
   {"list",	ALLOW_INFO,
-   /* no translatable parameters */
+   /* No translatable parameters */
    SYN_ORIG_("list\n"
+             "list ais\n"
              "list colors\n"
              "list connections\n"
              "list delegations\n"
              "list ignored users\n"
              "list map image definitions\n"
              "list players\n"
+             "list rulesets\n"
              "list scenarios\n"
              "list nationsets\n"
              "list teams\n"
              "list votes\n"),
    N_("Show a list of various things."),
+   /* TRANS: Don't translate text in '' */
    N_("Show a list of:\n"
+      " - AI types,\n"
       " - the player colors,\n"
       " - connections to the server,\n"
       " - all player delegations,\n"
       " - your ignore list,\n"
       " - the list of defined map images,\n"
       " - the list of the players in the game,\n"
+      " - the available rulesets (for 'read' command),\n"
       " - the available scenarios,\n"
       " - the available nation sets in this ruleset,\n"
       " - the teams of players or\n"
@@ -245,26 +250,17 @@ static struct command commands[] = {
    NULL, NULL,
    CMD_ECHO_ALL, VCF_NONE, 50
   },
-  {"metamessage", ALLOW_CTRL,
-   /* TRANS: translate text between <> only */
-   N_("metamessage <meta-line>"),
-   N_("Set metaserver info line."),
-   N_("Set user defined metaserver info line. If parameter is omitted, "
-      "previously set metamessage will be removed. For most of the time "
-      "user defined metamessage will be used instead of automatically "
-      "generated messages, if it is available."), NULL,
-   CMD_ECHO_ADMINS, VCF_NONE, 50
-  },
   {"metapatches", ALLOW_HACK,
    /* TRANS: translate text between <> only */
    N_("metapatches <meta-line>"),
    N_("Set metaserver patches line."), NULL, NULL,
    CMD_ECHO_ADMINS, VCF_NONE, 0
   },
-  {"metaconnection",	ALLOW_ADMIN,
-   /* no translatable parameters */
+  {"metaconnection", ALLOW_ADMIN,
+   /* No translatable parameters */
    SYN_ORIG_("metaconnection u|up\n"
              "metaconnection d|down\n"
+             "metaconnection p|persistent\n"
              "metaconnection ?"),
    N_("Control metaserver connection."),
    N_("'metaconnection ?' reports on the status of the connection to metaserver. "
@@ -347,12 +343,12 @@ static struct command commands[] = {
    NULL, ai_level_help,
    CMD_ECHO_NONE, VCF_NONE, 50
   },
-  {"handicapped",	ALLOW_CTRL,
+  {"restricted",	ALLOW_CTRL,
    /* TRANS: translate text between <> only */
-   N_("handicapped\n"
-      "handicapped <player-name>"),
-   /* TRANS: translate 'Handicapped' as AI skill level */
-   N_("Set one or all AI players to 'Handicapped'."), NULL, ai_level_help,
+   N_("restricted\n"
+      "restricted <player-name>"),
+   /* TRANS: translate 'Restricted' as AI skill level */
+   N_("Set one or all AI players to 'Restricted'."), NULL, ai_level_help,
    CMD_ECHO_ALL, VCF_NONE, 50
   },
   {"novice",	ALLOW_CTRL,
@@ -513,6 +509,17 @@ static struct command commands[] = {
       "To list the player colors, use 'list colors'."), NULL,
    CMD_ECHO_NONE, VCF_NONE, 0
   },
+  {"playernation", ALLOW_ADMIN,
+   /* TRANS: translate text between <> and [] only */
+   N_("playernation <player-name> [nation] [is-male] [leader] [style]"),
+   N_("Define the nation of a player."),
+   N_("This command sets the nation, leader name, style, and gender of a "
+      "specific player.\nThe gender parameter should be 1 if male, "
+      "otherwise 0. Omitting any of the player settings will reset the "
+      "player to defaults.\n"
+      "This command may not be used once the game has started."), NULL,
+   CMD_ECHO_NONE, VCF_NONE, 0
+  },
   {"endgame",	ALLOW_ADMIN,
    /* no translatable parameters */
    SYN_ORIG_("endgame"),
@@ -596,8 +603,8 @@ static struct command commands[] = {
    CMD_ECHO_ALL, VCF_NONE, 50
   },
   {"default",	ALLOW_CTRL,
-   /* no translatable parameters */
-   SYN_ORIG_("default <option name>"),
+   /* TRANS: translate text between <> only */
+   N_("default <option name>"),
    N_("Set option to its default value"),
    N_("Reset the option to its default value. If the default ever changes "
       "in a future version, the option's value will follow that change."),
@@ -613,11 +620,12 @@ static struct command commands[] = {
       "lua <script line> (deprecated)"),
    N_("Evaluate a line of Freeciv script or a Freeciv script file in the "
       "current game."),
-   N_("The unsafe prefix runs the script in an instance separate from the "
-      "ruleset. This instance doesn't restrict access to Lua functions "
-      "that can be used to hack the computer running the Freeciv server. "
-      "Access to it is therefore limited to the console and connections "
-      "with cmdlevel 'hack'"), NULL,
+   /* TRANS: Do not translate 'unsafe' or 'hack' */
+   N_("Subcommands with the 'unsafe' prefix run the script in an instance "
+      "separate from the ruleset. This instance doesn't restrict access "
+      "to Lua functions that can be used to hack the computer running "
+      "the Freeciv server. Access to it is therefore limited to the console "
+      "and connections with cmdlevel 'hack'"), NULL,
    CMD_ECHO_ADMINS, VCF_NONE, 0
   },
   {"kick", ALLOW_CTRL,
@@ -684,6 +692,20 @@ static struct command commands[] = {
    NULL, mapimg_help,
    CMD_ECHO_ADMINS, VCF_NONE, 50
   },
+  {"lock",   ALLOW_HACK,
+   /* TRANS: translate text between <> only */
+   N_("lock <setting>"),
+   N_("Lock setting so that non-admins can't change it."),
+   NULL, NULL,
+   CMD_ECHO_ADMINS, VCF_NONE, 50
+  },
+  {"unlock",   ALLOW_HACK,
+   /* TRANS: translate text between <> only */
+   N_("unlock <setting>"),
+   N_("Unlock setting so that non-admins can change it."),
+   NULL, NULL,
+   CMD_ECHO_ADMINS, VCF_NONE, 50
+  },
   {"rfcstyle",	ALLOW_HACK,
    /* no translatable parameters */
    SYN_ORIG_("rfcstyle"),
@@ -697,7 +719,6 @@ static struct command commands[] = {
    CMD_ECHO_NONE, VCF_NONE, 0
   }
 };
-
 
 /**********************************************************************//**
   Return command by its number.

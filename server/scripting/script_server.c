@@ -47,7 +47,7 @@
 #include "stdinhand.h"
 
 /* server/scripting */
-#include "tolua_server_gen.h"
+#include <tolua_server_gen.h> /* <> so looked from the build directory first. */
 
 #include "script_server.h"
 
@@ -151,7 +151,7 @@ bool script_server_load_file(const char *filename, char **buf)
   }
 
   return 1;
-}  
+}
 
 /***********************************************************************//**
   Parse and execute the script at filename in the context of the specified
@@ -306,10 +306,19 @@ bool script_server_init(void)
   }
 
   tolua_common_a_open(fcl_main->state);
-  api_specenum_open(fcl_main->state);
+  api_game_specenum_open(fcl_main->state);
   tolua_game_open(fcl_main->state);
   tolua_signal_open(fcl_main->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_server_open(fcl_main->state);
+#else  /* MESON_BUILD */
   tolua_server_open(fcl_main->state);
+#endif /* MESON_BUILD */
+
   tolua_common_z_open(fcl_main->state);
 
   script_server_code_init();
@@ -331,9 +340,18 @@ bool script_server_init(void)
   }
 
   tolua_common_a_open(fcl_unsafe->state);
-  api_specenum_open(fcl_unsafe->state);
+  api_game_specenum_open(fcl_unsafe->state);
   tolua_game_open(fcl_unsafe->state);
+
+#ifdef MESON_BUILD
+  /* Tolua adds 'tolua_' prefix to _open() function names,
+   * and we can't pass it a basename where the original
+   * 'tolua_' has been stripped when generating from meson. */
+  tolua_tolua_server_open(fcl_unsafe->state);
+#else  /* MESON_BUILD */
   tolua_server_open(fcl_unsafe->state);
+#endif /* MESON_BUILD */
+
   tolua_common_z_open(fcl_unsafe->state);
 
   luascript_signal_init(fcl_unsafe);
@@ -387,12 +405,12 @@ void script_server_state_save(struct section_file *file)
 /***********************************************************************//**
   Invoke all the callback functions attached to a given signal.
 ***************************************************************************/
-void script_server_signal_emit(const char *signal_name, int nargs, ...)
+void script_server_signal_emit(const char *signal_name, ...)
 {
   va_list args;
 
-  va_start(args, nargs);
-  luascript_signal_emit_valist(fcl_main, signal_name, nargs, args);
+  va_start(args, signal_name);
+  luascript_signal_emit_valist(fcl_main, signal_name, args);
   va_end(args);
 }
 
@@ -401,7 +419,7 @@ void script_server_signal_emit(const char *signal_name, int nargs, ...)
 ***************************************************************************/
 static void script_server_signals_create(void)
 {
-  signal_deprecator *depr;
+  struct signal_deprecator *depr;
 
   luascript_signal_create(fcl_main, "turn_begin", 2,
                           API_TYPE_INT, API_TYPE_INT);
@@ -410,7 +428,14 @@ static void script_server_signals_create(void)
    * starting from 0. */
   depr = luascript_signal_create(fcl_main, "turn_started", 2,
                                  API_TYPE_INT, API_TYPE_INT);
-  deprecate_signal(depr, "turn_started", "turn_begin", "3.0");
+  deprecate_signal(depr, "turn_started", "turn_begin", "3.0", NULL);
+
+  luascript_signal_create(fcl_main, "player_phase_begin", 2,
+                          API_TYPE_PLAYER, API_TYPE_BOOL);
+  luascript_signal_create(fcl_main, "player_alive_phase_end", 1,
+                          API_TYPE_PLAYER);
+  luascript_signal_create(fcl_main, "player_phase_end", 1,
+                          API_TYPE_PLAYER);
 
   luascript_signal_create(fcl_main, "unit_moved", 3,
                           API_TYPE_UNIT, API_TYPE_TILE, API_TYPE_TILE);
@@ -425,7 +450,7 @@ static void script_server_signals_create(void)
   /* Deprecated form of the 'city_size_change' signal for the case of growth. */
   depr = luascript_signal_create(fcl_main, "city_growth", 2,
                                  API_TYPE_CITY, API_TYPE_INT);
-  deprecate_signal(depr, "city_growth", "city_size_change", "2.6");
+  deprecate_signal(depr, "city_growth", "city_size_change", "2.6", NULL);
 
   /* Only includes units built in cities, for now. */
   luascript_signal_create(fcl_main, "unit_built", 2,
@@ -443,6 +468,15 @@ static void script_server_signals_create(void)
   luascript_signal_create(fcl_main, "building_cant_be_built", 3,
                           API_TYPE_BUILDING_TYPE, API_TYPE_CITY,
                           API_TYPE_STRING);
+
+  /* Third argument gives a reason; "landlocked", "cant_maintain", "obsolete",
+   * "sold", "disaster", "sabotaged", "razed", "city_destroyed",
+   * "conquered" (applicable for small wonders only)
+   * Fourth argument gives unit that caused that, applicable for "sabotaged"
+   */
+  luascript_signal_create(fcl_main, "building_lost", 4,
+                          API_TYPE_CITY, API_TYPE_BUILDING_TYPE,
+                          API_TYPE_STRING, API_TYPE_UNIT);
 
   /* The third argument contains the source: "researched", "traded",
    * "stolen", "hut". */
@@ -463,10 +497,12 @@ static void script_server_signals_create(void)
    * conquest. */
   depr = luascript_signal_create(fcl_main, "city_lost", 3,
                                  API_TYPE_CITY, API_TYPE_PLAYER, API_TYPE_PLAYER);
-  deprecate_signal(depr, "city_lost", "city_transferred", "2.6");
+  deprecate_signal(depr, "city_lost", "city_transferred", "2.6", NULL);
 
-  luascript_signal_create(fcl_main, "hut_enter", 1,
-                          API_TYPE_UNIT);
+  luascript_signal_create(fcl_main, "hut_enter", 2,
+                          API_TYPE_UNIT, API_TYPE_STRING);
+  luascript_signal_create(fcl_main, "hut_frighten", 2,
+                          API_TYPE_UNIT, API_TYPE_STRING);
 
   luascript_signal_create(fcl_main, "unit_lost", 3,
                           API_TYPE_UNIT, API_TYPE_PLAYER, API_TYPE_STRING);
@@ -474,11 +510,14 @@ static void script_server_signals_create(void)
   luascript_signal_create(fcl_main, "disaster_occurred", 3,
                           API_TYPE_DISASTER, API_TYPE_CITY, API_TYPE_BOOL);
 
-  /* Deprecated form of the 'disaster_occurred' signal without 'had_internal_effct'
+  luascript_signal_create(fcl_main, "nuke_exploded", 2, API_TYPE_TILE,
+                          API_TYPE_PLAYER);
+
+  /* Deprecated form of the 'disaster_occurred' signal without 'had_internal_effect'
    * support. */
   depr = luascript_signal_create(fcl_main, "disaster", 2,
                           API_TYPE_DISASTER, API_TYPE_CITY);
-  deprecate_signal(depr, "disaster", "disaster_occurred", "2.6");
+  deprecate_signal(depr, "disaster", "disaster_occurred", "2.6", NULL);
 
   luascript_signal_create(fcl_main, "achievement_gained", 3,
                           API_TYPE_ACHIEVEMENT, API_TYPE_PLAYER,
@@ -488,62 +527,96 @@ static void script_server_signals_create(void)
 
   luascript_signal_create(fcl_main, "pulse", 0);
 
+  luascript_signal_create(fcl_main, "unit_transferred", 2,
+                          API_TYPE_UNIT, API_TYPE_PLAYER);
+
   luascript_signal_create(fcl_main, "action_started_unit_unit", 3,
                           API_TYPE_ACTION,
                           API_TYPE_UNIT, API_TYPE_UNIT);
 
-  luascript_signal_create(fcl_main, "action_started_unit_units", 3,
+  luascript_signal_create(fcl_main, "action_finished_unit_unit", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_UNIT);
+
+  luascript_signal_create(fcl_main, "action_started_unit_stack", 3,
                           API_TYPE_ACTION,
                           API_TYPE_UNIT, API_TYPE_TILE);
 
+  luascript_signal_create(fcl_main, "action_finished_unit_stack", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_started_unit_units", 3,
+                          API_TYPE_ACTION,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+  deprecate_signal(depr, "action_started_unit_units",
+                   "action_started_unit_stack", "3.3", NULL);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_units", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+  deprecate_signal(depr, "action_finished_unit_units",
+                   "action_finished_unit_stack", "3.3", NULL);
+
   luascript_signal_create(fcl_main, "action_started_unit_city", 3,
                           API_TYPE_ACTION,
+                          API_TYPE_UNIT, API_TYPE_CITY);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_city", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
                           API_TYPE_UNIT, API_TYPE_CITY);
 
   luascript_signal_create(fcl_main, "action_started_unit_tile", 3,
                           API_TYPE_ACTION,
                           API_TYPE_UNIT, API_TYPE_TILE);
 
+  luascript_signal_create(fcl_main, "action_finished_unit_tile", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_started_unit_extras", 3,
+                          API_TYPE_ACTION,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_extras", 4,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
+                          API_TYPE_UNIT, API_TYPE_TILE);
+
   luascript_signal_create(fcl_main, "action_started_unit_self", 2,
                           API_TYPE_ACTION,
+                          API_TYPE_UNIT);
+
+  luascript_signal_create(fcl_main, "action_finished_unit_self", 3,
+                          API_TYPE_ACTION, API_TYPE_BOOL,
                           API_TYPE_UNIT);
 }
 
 /***********************************************************************//**
   Add server callback functions; these must be defined in the lua script
-  '<rulesetdir>/script.lua':
+  '[rulesetdir]/script.lua':
 
   respawn_callback (optional):
     - callback lua function for the respawn command
 ***************************************************************************/
 static void script_server_functions_define(void)
 {
-  luascript_func_add(fcl_main, "respawn_callback", FALSE, 1,
+  luascript_func_add(fcl_main, "respawn_callback", FALSE, 1, 0,
                      API_TYPE_PLAYER);
 }
 
 /***********************************************************************//**
   Call a lua function.
 ***************************************************************************/
-bool script_server_call(const char *func_name, int nargs, ...)
+bool script_server_call(const char *func_name, ...)
 {
   bool success;
-  int ret;
 
   va_list args;
-  va_start(args, nargs);
-  success = luascript_func_call_valist(fcl_main, func_name, &ret, nargs, args);
+  va_start(args, func_name);
+  success = luascript_func_call_valist(fcl_main, func_name, args);
   va_end(args);
 
-  if (!success) {
-    log_error("Lua function '%s' not defined.", func_name);
-    return FALSE;
-  } else if (!ret) {
-    log_error("Error executing lua function '%s'.", func_name);
-    return FALSE;
-  }
-
-  return TRUE;
+  return success;
 }
 
 /***********************************************************************//**

@@ -210,7 +210,8 @@ static void rates_command_callback(GtkWidget *w, gint response_id)
     dsend_packet_player_rates(&client.conn, rates_tax_value, rates_lux_value,
                               rates_sci_value);
   }
-  gtk_widget_destroy(rates_dialog_shell);
+
+  gtk_window_destroy(GTK_WINDOW(rates_dialog_shell));
 }
 
 /**********************************************************************//**
@@ -230,17 +231,6 @@ static int scale_to_mult(const struct multiplier *pmul, int scale)
 }
 
 /**********************************************************************//**
-  Format value for multiplier scales
-**************************************************************************/
-static gchar *multiplier_value_callback(GtkScale *scale, gdouble value,
-                                        void *udata)
-{
-  const struct multiplier *pmul = udata;
-
-  return g_strdup_printf("%d", scale_to_mult(pmul, value));
-}
-
-/**********************************************************************//**
   User has responded to multipliers dialog
 **************************************************************************/
 static void multipliers_command_callback(GtkWidget *w, gint response_id)
@@ -257,7 +247,8 @@ static void multipliers_command_callback(GtkWidget *w, gint response_id)
     mul.count = multiplier_count();
     send_packet_player_multiplier(&client.conn, &mul);
   }
-  gtk_widget_destroy(multiplier_dialog_shell);
+
+  gtk_window_destroy(GTK_WINDOW(multiplier_dialog_shell));
 }
 
 /**********************************************************************//**
@@ -278,7 +269,7 @@ static void multiplier_dialog_update_values(bool set_positions)
     gtk_scale_add_mark(GTK_SCALE(multipliers_scale[multiplier]),
                        mult_to_scale(pmul, val), GTK_POS_BOTTOM,
                        /* TRANS: current value of policy in force */
-                       Q_("?multiplier:Cur"));
+                       Q_("?multiplier:Now"));
 
     if (set_positions) {
       gtk_range_set_value(GTK_RANGE(multipliers_scale[multiplier]),
@@ -290,7 +281,7 @@ static void multiplier_dialog_update_values(bool set_positions)
 /**********************************************************************//**
   Callback when server indicates multiplier values have changed
 **************************************************************************/
-void real_multipliers_dialog_update(void)
+void real_multipliers_dialog_update(void *unused)
 {
   if (!multiplier_dialog_shell) {
     return;
@@ -307,38 +298,38 @@ void real_multipliers_dialog_update(void)
 **************************************************************************/
 static GtkWidget *create_multiplier_dialog(void)
 {
-  GtkWidget     *shell, *content;
-  GtkWidget     *label, *scale;
+  GtkWidget *shell, *content;
+  GtkWidget *label, *scale;
 
   if (can_client_issue_orders()) {
     shell = gtk_dialog_new_with_buttons(_("Change policies"),
                                         NULL,
                                         0,
-                                        _("Cancel"),
+                                        _("_Cancel"),
                                         GTK_RESPONSE_CANCEL,
-                                        _("OK"),
+                                        _("_OK"),
                                         GTK_RESPONSE_OK,
                                         NULL);
   } else {
     shell = gtk_dialog_new_with_buttons(_("Policies"),
                                         NULL,
                                         0,
-                                        _("Close"),
+                                        _("_Close"),
                                         GTK_RESPONSE_CLOSE,
                                         NULL);
   }
   setup_dialog(shell, toplevel);
 
-  gtk_window_set_position(GTK_WINDOW(shell), GTK_WIN_POS_MOUSE);
   content = gtk_dialog_get_content_area(GTK_DIALOG(shell));
 
   if (can_client_issue_orders()) {
     label = gtk_label_new(_("Changes will not take effect until next turn."));
-    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE);
+    gtk_box_insert_child_after(GTK_BOX(content), label, NULL);
   }
 
   multipliers_iterate(pmul) {
     Multiplier_type_id multiplier = multiplier_index(pmul);
+    int mscale;
 
     fc_assert(multiplier < ARRAY_SIZE(multipliers_scale));
     label = gtk_label_new(multiplier_name_translation(pmul));
@@ -348,15 +339,14 @@ static GtkWidget *create_multiplier_dialog(void)
                                      mult_to_scale(pmul, pmul->start),
                                      mult_to_scale(pmul, pmul->stop), 1);
     multipliers_scale[multiplier] = scale;
+    mscale = mult_to_scale(pmul, pmul->stop) / 10;
     gtk_range_set_increments(GTK_RANGE(multipliers_scale[multiplier]),
-                             1, MAX(2, mult_to_scale(pmul, pmul->stop) / 10));
-    g_signal_connect(multipliers_scale[multiplier], "format-value",
-                     G_CALLBACK(multiplier_value_callback), pmul);
+                             1, MAX(2, mscale));
     g_signal_connect(multipliers_scale[multiplier], "destroy",
-                     G_CALLBACK(gtk_widget_destroyed),
+                     G_CALLBACK(widget_destroyed),
                      &multipliers_scale[multiplier]);
-    gtk_box_pack_start(GTK_BOX(content), label, TRUE, TRUE);
-    gtk_box_pack_start(GTK_BOX(content), scale, TRUE, TRUE);
+    gtk_box_insert_child_after(GTK_BOX(content), label, NULL);
+    gtk_box_insert_child_after(GTK_BOX(content), scale, NULL);
     gtk_widget_set_sensitive(multipliers_scale[multiplier],
                              can_client_issue_orders()
                              && multiplier_can_be_changed(pmul, client_player()));
@@ -365,12 +355,12 @@ static GtkWidget *create_multiplier_dialog(void)
   multiplier_dialog_update_values(TRUE);
 
   g_signal_connect(shell, "destroy",
-                   G_CALLBACK(gtk_widget_destroyed), &multiplier_dialog_shell);
+                   G_CALLBACK(widget_destroyed), &multiplier_dialog_shell);
 
   g_signal_connect(shell, "response",
-                   G_CALLBACK(multipliers_command_callback), NULL);
+                   G_CALLBACK(multipliers_command_callback), nullptr);
 
-  gtk_widget_show(content);
+  gtk_widget_set_visible(content, TRUE);
 
   return shell;
 }
@@ -396,8 +386,8 @@ void popup_multiplier_dialog(void)
 **************************************************************************/
 static GtkWidget *create_rates_dialog(void)
 {
-  GtkWidget     *shell, *content;
-  GtkWidget	*frame, *hgrid;
+  GtkWidget *shell, *content;
+  GtkWidget *frame, *hbox;
   int i;
 
   if (!can_client_issue_orders()) {
@@ -407,25 +397,23 @@ static GtkWidget *create_rates_dialog(void)
   shell = gtk_dialog_new_with_buttons(_("Select tax, luxury and science rates"),
                                       NULL,
                                       0,
-                                      _("Cancel"),
+                                      _("_Cancel"),
                                       GTK_RESPONSE_CANCEL,
-                                      _("OK"),
+                                      _("_OK"),
                                       GTK_RESPONSE_OK,
                                       NULL);
   setup_dialog(shell, toplevel);
   gtk_dialog_set_default_response(GTK_DIALOG(shell), GTK_RESPONSE_OK);
-  gtk_window_set_position(GTK_WINDOW(shell), GTK_WIN_POS_MOUSE);
   content = gtk_dialog_get_content_area(GTK_DIALOG(shell));
 
   rates_gov_label = gtk_label_new("");
-  gtk_box_pack_start(GTK_BOX(content), rates_gov_label, TRUE, TRUE);
+  gtk_box_insert_child_after(GTK_BOX(content), rates_gov_label, NULL);
 
   frame = gtk_frame_new( _("Tax") );
-  gtk_box_pack_start(GTK_BOX(content), frame, TRUE, TRUE);
+  gtk_box_insert_child_after(GTK_BOX(content), frame, NULL);
 
-  hgrid = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hgrid), 10);
-  gtk_container_add(GTK_CONTAINER(frame), hgrid);
+  hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_frame_set_child(GTK_FRAME(frame), hbox);
 
   rates_tax_scale =
     gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 10, 1);
@@ -436,21 +424,20 @@ static GtkWidget *create_rates_dialog(void)
   gtk_widget_set_size_request(rates_tax_scale, 300, 40);
   gtk_scale_set_digits(GTK_SCALE(rates_tax_scale), 0);
   gtk_scale_set_draw_value(GTK_SCALE(rates_tax_scale), FALSE);
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_tax_scale);
+  gtk_box_append(GTK_BOX(hbox), rates_tax_scale);
 
   rates_tax_label = gtk_label_new("  0%");
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_tax_label);
+  gtk_box_append(GTK_BOX(hbox), rates_tax_label);
   gtk_widget_set_size_request(rates_tax_label, 40, -1);
 
-  rates_tax_toggle = gtk_check_button_new_with_label( _("Lock") );
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_tax_toggle);
+  rates_tax_toggle = gtk_toggle_button_new_with_label( _("Lock") );
+  gtk_box_append(GTK_BOX(hbox), rates_tax_toggle);
 
   frame = gtk_frame_new( _("Luxury") );
-  gtk_box_pack_start(GTK_BOX(content), frame, TRUE, TRUE);
+  gtk_box_insert_child_after(GTK_BOX(content), frame, NULL);
 
-  hgrid = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hgrid), 10);
-  gtk_container_add(GTK_CONTAINER(frame), hgrid);
+  hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_frame_set_child(GTK_FRAME(frame), hbox);
 
   rates_lux_scale =
     gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 10, 1);
@@ -461,21 +448,20 @@ static GtkWidget *create_rates_dialog(void)
   gtk_widget_set_size_request(rates_lux_scale, 300, 40);
   gtk_scale_set_digits(GTK_SCALE(rates_lux_scale), 0);
   gtk_scale_set_draw_value(GTK_SCALE(rates_lux_scale), FALSE);
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_lux_scale);
+  gtk_box_append(GTK_BOX(hbox), rates_lux_scale);
 
   rates_lux_label = gtk_label_new("  0%");
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_lux_label);
+  gtk_box_append(GTK_BOX(hbox), rates_lux_label);
   gtk_widget_set_size_request(rates_lux_label, 40, -1);
 
-  rates_lux_toggle = gtk_check_button_new_with_label( _("Lock") );
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_lux_toggle);
+  rates_lux_toggle = gtk_toggle_button_new_with_label( _("Lock") );
+  gtk_box_append(GTK_BOX(hbox), rates_lux_toggle);
 
   frame = gtk_frame_new( _("Science") );
-  gtk_box_pack_start(GTK_BOX(content), frame, TRUE, TRUE);
+  gtk_box_insert_child_after(GTK_BOX(content), frame, NULL);
 
-  hgrid = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hgrid), 10);
-  gtk_container_add(GTK_CONTAINER(frame), hgrid);
+  hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_frame_set_child(GTK_FRAME(frame), hbox);
 
   rates_sci_scale =
     gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 10, 1);
@@ -486,22 +472,21 @@ static GtkWidget *create_rates_dialog(void)
   gtk_widget_set_size_request(rates_sci_scale, 300, 40);
   gtk_scale_set_digits(GTK_SCALE(rates_sci_scale), 0);
   gtk_scale_set_draw_value(GTK_SCALE(rates_sci_scale), FALSE);
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_sci_scale);
+  gtk_box_append(GTK_BOX(hbox), rates_sci_scale);
 
   rates_sci_label = gtk_label_new("  0%");
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_sci_label);
+  gtk_box_append(GTK_BOX(hbox), rates_sci_label);
   gtk_widget_set_size_request(rates_sci_label, 40, -1);
 
-  rates_sci_toggle = gtk_check_button_new_with_label( _("Lock") );
-  gtk_container_add(GTK_CONTAINER(hgrid), rates_sci_toggle);
-
+  rates_sci_toggle = gtk_toggle_button_new_with_label( _("Lock") );
+  gtk_box_append(GTK_BOX(hbox), rates_sci_toggle);
 
   g_signal_connect(shell, "response",
-                   G_CALLBACK(rates_command_callback), NULL);
+                   G_CALLBACK(rates_command_callback), nullptr);
   g_signal_connect(shell, "destroy",
-                   G_CALLBACK(gtk_widget_destroyed), &rates_dialog_shell);
+                   G_CALLBACK(widget_destroyed), &rates_dialog_shell);
 
-  gtk_widget_show(shell);
+  gtk_widget_set_visible(shell, TRUE);
 
   rates_tax_value = -1;
   rates_lux_value = -1;

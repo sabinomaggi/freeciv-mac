@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -14,6 +14,7 @@ artists = "
     Michael Johnson <justaguest> (nuke explosion)
     The Square Cow (inaccessible terrain)
     GriffonSpade
+    Elefant (Nets)
 "
 
 [file]
@@ -28,7 +29,7 @@ dy = 30
 
 tiles = { "row", "column", "tag"
 
-; Grassland, and whether terrain to north, south, east, west 
+; Grassland, and whether terrain to north, south, east, west
 ; is more grassland:
 
   0,  2, "t.l0.grassland1"
@@ -57,70 +58,70 @@ tiles = { "row", "column", "tag"
 
 
 ; For hills, forest and mountains don't currently have a full set,
-; re-use values but provide for future expansion; current sets
+; reuse values but provide for future expansion; current sets
 ; effectively ignore N/S terrain.
 
-; Hills, and whether terrain to north, south, east, west 
+; Hills, and whether terrain to north, south, east, west
 ; is more hills.
 
   0,  4, "t.l0.hills_n0e0s0w0",  ; not-hills E and W
-         "t.l0.hills_n0e0s1w0", 
-         "t.l0.hills_n1e0s0w0", 
-         "t.l0.hills_n1e0s1w0" 
+         "t.l0.hills_n0e0s1w0",
+         "t.l0.hills_n1e0s0w0",
+         "t.l0.hills_n1e0s1w0"
   0,  5, "t.l0.hills_n0e1s0w0",  ; hills E
-         "t.l0.hills_n0e1s1w0", 
-         "t.l0.hills_n1e1s0w0", 
-         "t.l0.hills_n1e1s1w0" 
+         "t.l0.hills_n0e1s1w0",
+         "t.l0.hills_n1e1s0w0",
+         "t.l0.hills_n1e1s1w0"
   0,  6, "t.l0.hills_n0e1s0w1",  ; hills E and W
-         "t.l0.hills_n0e1s1w1", 
-         "t.l0.hills_n1e1s0w1", 
-         "t.l0.hills_n1e1s1w1" 
+         "t.l0.hills_n0e1s1w1",
+         "t.l0.hills_n1e1s0w1",
+         "t.l0.hills_n1e1s1w1"
   0,  7, "t.l0.hills_n0e0s0w1",  ; hills W
-         "t.l0.hills_n0e0s1w1", 
-         "t.l0.hills_n1e0s0w1", 
-         "t.l0.hills_n1e0s1w1" 
+         "t.l0.hills_n0e0s1w1",
+         "t.l0.hills_n1e0s0w1",
+         "t.l0.hills_n1e0s1w1"
 
-; Forest, and whether terrain to north, south, east, west 
+; Forest, and whether terrain to north, south, east, west
 ; is more forest.
 
   0,  8, "t.l0.forest_n0e0s0w0",  ; not-forest E and W
-         "t.l0.forest_n0e0s1w0", 
-         "t.l0.forest_n1e0s0w0", 
-         "t.l0.forest_n1e0s1w0" 
+         "t.l0.forest_n0e0s1w0",
+         "t.l0.forest_n1e0s0w0",
+         "t.l0.forest_n1e0s1w0"
   0,  9, "t.l0.forest_n0e1s0w0",  ; forest E
-         "t.l0.forest_n0e1s1w0", 
-         "t.l0.forest_n1e1s0w0", 
-         "t.l0.forest_n1e1s1w0" 
+         "t.l0.forest_n0e1s1w0",
+         "t.l0.forest_n1e1s0w0",
+         "t.l0.forest_n1e1s1w0"
   0, 10, "t.l0.forest_n0e1s0w1",  ; forest E and W
-         "t.l0.forest_n0e1s1w1", 
-         "t.l0.forest_n1e1s0w1", 
-         "t.l0.forest_n1e1s1w1" 
+         "t.l0.forest_n0e1s1w1",
+         "t.l0.forest_n1e1s0w1",
+         "t.l0.forest_n1e1s1w1"
   0, 11, "t.l0.forest_n0e0s0w1",  ; forest W
-         "t.l0.forest_n0e0s1w1", 
-         "t.l0.forest_n1e0s0w1", 
-         "t.l0.forest_n1e0s1w1" 
+         "t.l0.forest_n0e0s1w1",
+         "t.l0.forest_n1e0s0w1",
+         "t.l0.forest_n1e0s1w1"
 
-; Mountains, and whether terrain to north, south, east, west 
+; Mountains, and whether terrain to north, south, east, west
 ; is more mountains.
 
   0, 12, "t.l0.mountains_n0e0s0w0",  ; not-mountains E and W
-         "t.l0.mountains_n0e0s1w0", 
-         "t.l0.mountains_n1e0s0w0", 
-         "t.l0.mountains_n1e0s1w0" 
+         "t.l0.mountains_n0e0s1w0",
+         "t.l0.mountains_n1e0s0w0",
+         "t.l0.mountains_n1e0s1w0"
   0, 13, "t.l0.mountains_n0e1s0w0",  ; mountains E
-         "t.l0.mountains_n0e1s1w0", 
-         "t.l0.mountains_n1e1s0w0", 
-         "t.l0.mountains_n1e1s1w0" 
+         "t.l0.mountains_n0e1s1w0",
+         "t.l0.mountains_n1e1s0w0",
+         "t.l0.mountains_n1e1s1w0"
   0, 14, "t.l0.mountains_n0e1s0w1",  ; mountains E and W
-         "t.l0.mountains_n0e1s1w1", 
-         "t.l0.mountains_n1e1s0w1", 
-         "t.l0.mountains_n1e1s1w1" 
+         "t.l0.mountains_n0e1s1w1",
+         "t.l0.mountains_n1e1s0w1",
+         "t.l0.mountains_n1e1s1w1"
   0, 15, "t.l0.mountains_n0e0s0w1",  ; mountains W
-         "t.l0.mountains_n0e0s1w1", 
-         "t.l0.mountains_n1e0s0w1", 
-         "t.l0.mountains_n1e0s1w1" 
+         "t.l0.mountains_n0e0s1w1",
+         "t.l0.mountains_n1e0s0w1",
+         "t.l0.mountains_n1e0s1w1"
 
-; Desert, and whether terrain to north, south, east, west 
+; Desert, and whether terrain to north, south, east, west
 ; is more desert:
 
   1,  0, "t.l0.desert_n1e1s1w1"
@@ -140,7 +141,7 @@ tiles = { "row", "column", "tag"
   1, 14, "t.l0.desert_n1e0s0w0"
   1, 15, "t.l0.desert_n0e0s0w0"
 
-; Arctic, and whether terrain to north, south, east, west 
+; Arctic, and whether terrain to north, south, east, west
 ; is more arctic:
 
   6,  0, "t.l0.arctic_n1e1s1w1"
@@ -177,7 +178,7 @@ tiles = { "row", "column", "tag"
   2, 14, "t.l1.arctic_n1e0s0w0"
   2, 15, "t.l1.arctic_n0e0s0w0"
 
-; Jungle, and whether terrain to north, south, east, west 
+; Jungle, and whether terrain to north, south, east, west
 ; is more jungle:
 
   3,  0, "t.l0.jungle_n1e1s1w1"
@@ -197,7 +198,7 @@ tiles = { "row", "column", "tag"
   3, 14, "t.l0.jungle_n1e0s0w0"
   3, 15, "t.l0.jungle_n0e0s0w0"
 
-; Plains, and whether terrain to north, south, east, west 
+; Plains, and whether terrain to north, south, east, west
 ; is more plains:
 
   4,  0, "t.l0.plains_n1e1s1w1"
@@ -217,7 +218,7 @@ tiles = { "row", "column", "tag"
   4, 14, "t.l0.plains_n1e0s0w0"
   4, 15, "t.l0.plains_n0e0s0w0"
 
-; Swamp, and whether terrain to north, south, east, west 
+; Swamp, and whether terrain to north, south, east, west
 ; is more swamp:
 
   5,  0, "t.l0.swamp_n1e1s1w1"
@@ -237,7 +238,7 @@ tiles = { "row", "column", "tag"
   5, 14, "t.l0.swamp_n1e0s0w0"
   5, 15, "t.l0.swamp_n0e0s0w0"
 
-; Tundra, and whether terrain to north, south, east, west 
+; Tundra, and whether terrain to north, south, east, west
 ; is more tundra:
 
   6,  0, "t.l0.tundra_n1e1s1w1"
@@ -257,7 +258,7 @@ tiles = { "row", "column", "tag"
   6, 14, "t.l0.tundra_n1e0s0w0"
   6, 15, "t.l0.tundra_n0e0s0w0"
 
-; Ocean, and whether terrain to north, south, east, west 
+; Ocean, and whether terrain to north, south, east, west
 ; is more ocean (else shoreline)
 
   10,  0, "t.l1.coast_n1e1s1w1"
@@ -401,7 +402,7 @@ tiles = { "row", "column", "tag"
   11, 14, "t.l2.inaccessible_n1e0s0w0"
   11, 15, "t.l2.inaccessible_n0e0s0w0"
 
-; Darkness (unexplored) to north, south, east, west 
+; Darkness (unexplored) to north, south, east, west
 
  12,  0, "mask.tile"
  12,  1, "tx.darkness_n1e0s0w0"
@@ -423,7 +424,7 @@ tiles = { "row", "column", "tag"
 
 
 
-; Rivers (as special type), and whether north, south, east, west 
+; Rivers (as special type), and whether north, south, east, west
 ; also has river or is ocean:
 
  13,  0, "road.river_s_n0e0s0w0"
@@ -443,7 +444,7 @@ tiles = { "row", "column", "tag"
  13, 14, "road.river_s_n0e1s1w1"
  13, 15, "road.river_s_n1e1s1w1"
 
-; River outlets, river to north, south, east, west 
+; River outlets, river to north, south, east, west
 
   14, 12, "road.river_outlet_n"
   14, 13, "road.river_outlet_w"
@@ -452,57 +453,58 @@ tiles = { "row", "column", "tag"
 
 ; Terrain special resources:
 
- 14,  0, "ts.spice"
- 14,  1, "ts.furs"
- 14,  2, "ts.peat"
- 14,  3, "ts.arctic_ivory"
- 14,  4, "ts.fruit"
- 14,  5, "ts.iron"
- 14,  6, "ts.whales"
- 14,  7, "ts.wheat"
- 14,  8, "ts.pheasant"
- 14,  9, "ts.buffalo"
- 14, 10, "ts.silk"
- 14, 11, "ts.wine"
+ 14,  0, "ts.spice:0"
+ 14,  1, "ts.furs:0"
+ 14,  2, "ts.peat:0"
+ 14,  3, "ts.arctic_ivory:0"
+ 14,  4, "ts.fruit:0"
+ 14,  5, "ts.iron:0"
+ 14,  6, "ts.whales:0"
+ 14,  7, "ts.wheat:0"
+ 14,  8, "ts.pheasant:0"
+ 14,  9, "ts.buffalo:0"
+ 14, 10, "ts.silk:0"
+ 14, 11, "ts.wine:0"
 
- 15,  0, "ts.seals"
- 15,  1, "ts.oasis"
- 15,  2, "ts.forest_game"
- 15,  3, "ts.grassland_resources"
- 15,  4, "ts.coal"
- 15,  5, "ts.gems"
- 15,  6, "ts.gold"
- 15,  7, "ts.fish"
- 15,  8, "ts.horses"
- 15,  9, "ts.river_resources"
- 15, 10, "ts.oil", "ts.arctic_oil"
- 15, 11, "ts.tundra_game"
+ 15,  0, "ts.seals:0"
+ 15,  1, "ts.oasis:0"
+ 15,  2, "ts.forest_game:0"
+ 15,  3, "ts.grassland_resources:0"
+ 15,  4, "ts.coal:0"
+ 15,  5, "ts.gems:0"
+ 15,  6, "ts.gold:0"
+ 15,  7, "ts.fish:0"
+ 15,  8, "ts.horses:0"
+ 15,  9, "ts.river_resources:0"
+ 15, 10, "ts.oil:0", "ts.arctic_oil:0"
+ 15, 11, "ts.tundra_game:0"
 
 ; Terrain Strategic Resources
 
- 15, 12, "ts.aluminum"
- 15, 13, "ts.uranium"
- 15, 14, "ts.saltpeter"
- 15, 15, "ts.elephant"
+ 15, 12, "ts.aluminum:0"
+ 15, 13, "ts.uranium:0"
+ 15, 14, "ts.saltpeter:0"
+ 15, 15, "ts.elephant:0"
 
 ; Terrain improvements and similar:
 
  16,  0, "tx.farmland"
  16,  1, "tx.irrigation"
- 16,  2, "tx.mine"
- 16,  3, "tx.oil_mine"
- 16,  4, "tx.pollution"
- 16,  5, "tx.fallout"
- 16, 13, "tx.oil_rig"
+ 16,  2, "tx.mine:0"
+ 16,  3, "tx.oil_mine:0"
+ 16,  4, "tx.pollution:0"
+ 16,  5, "tx.fallout:0"
+ 16, 13, "tx.oil_rig:0"
+ 16, 14, "tx.nets:0"
 
 ; Bases
- 16,  6, "base.buoy_mg"
- 16,  7, "extra.ruins_mg"
- 16,  8, "tx.village"
- 16,  9, "base.airstrip_mg"
- 16, 10, "base.airbase_mg"
- 16, 11, "base.outpost_mg"
- 16, 12, "base.fortress_bg"
+ 16,  6, "base.buoy_mg:0"
+ 16,  7, "extra.ruins_mg:0"
+ 16,  8, "tx.village:0"
+ 16,  9, "base.airstrip_mg:0"
+ 16, 10, "base.airbase_mg:0"
+ 16, 11, "base.outpost_mg:0"
+ 16, 12, "base.fortress_bg:0"
 
 ; Numbers: city size: (also used for goto)
 
@@ -576,7 +578,7 @@ tiles = { "row", "column", "tag"
   5, 16, "unit.tired"
   5, 16, "unit.lowfuel"
   5, 17, "unit.loaded"
-  5, 18, "user.attention"	; Variously crosshair/red-square/arrows
+  5, 18, "user.attention", "user.infratile" ; Variously crosshair/red-square/arrows
   5, 19, "unit.stack"
 
 ; Goto path:
@@ -589,7 +591,7 @@ tiles = { "row", "column", "tag"
 ; Unit activity letters:  (note unit icons have just "u.")
 
   6, 17, "unit.auto_attack",
-         "unit.auto_settler"
+         "unit.auto_worker"
   6, 18, "unit.connect"
   6, 19, "unit.auto_explore"
 
@@ -599,7 +601,8 @@ tiles = { "row", "column", "tag"
   7, 19, "unit.patrol"
 
   8, 16, "unit.plant"
-  8, 17, "unit.irrigate"
+  8, 17, "unit.cultivate",
+         "unit.irrigate" ; For rulesets still using this tag
   8, 18, "unit.transform"
   8, 19, "unit.pillage"
 

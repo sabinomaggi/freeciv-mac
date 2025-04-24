@@ -40,6 +40,7 @@
 #include "climap.h"
 #include "control.h"
 #include "mapview_common.h"
+#include "update_queue.h"
 
 /* client/gui-gtk-3.22 */
 #include "colors.h"
@@ -114,7 +115,7 @@ static bool is_plain_public_message(const char *s)
   }
 
   /* Now we just need to check that it is not a private
-   * message. If we encounter a space then the preceeding
+   * message. If we encounter a space then the preceding
    * text could not have been a user/player name (the
    * quote check above eliminated names with spaces) so
    * it must be a public message. Otherwise if we encounter
@@ -163,7 +164,7 @@ static void inputline_return(GtkEntry *w, gpointer data)
     }
 
     genlist_prepend(history_list, fc_strdup(theinput));
-    history_pos=-1;
+    history_pos = -1;
   }
 
   gtk_entry_set_text(w, "");
@@ -193,12 +194,11 @@ static const char *get_player_or_user_name(int id)
 /**********************************************************************//**
   Find a player or a user by prefix.
 
-  prefix - The prefix.
-  matches - A string array to set the matches result.
-  max_matches - The maximum of matches.
-  match_len - The length of the string used to returns matches.
+  @param prefix       The prefix.
+  @param matches      A string array to set the matches result.
+  @param max_matches  The maximum of matches.
 
-  Returns the number of the matches names.
+  @return the number of the matches names.
 **************************************************************************/
 static int check_player_or_user_name(const char *prefix,
                                      const char **matches,
@@ -401,6 +401,7 @@ static gboolean inputline_handler(GtkWidget *w, GdkEventKey *ev)
       if (GUI_GTK_OPTION(chatline_autocompletion)) {
         return chatline_autocomplete(GTK_EDITABLE(w));
       }
+      return FALSE;
 
     default:
       break;
@@ -755,10 +756,10 @@ void set_message_buffer_view_link_handlers(GtkWidget *view)
 void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
                     ft_offset_t text_start_offset, const char *text)
 {
-  static bool initalized = FALSE;
+  static bool initialized = FALSE;
   GtkTextIter start, stop;
 
-  if (!initalized) {
+  if (!initialized) {
     gtk_text_buffer_create_tag(buf, "bold",
                                "weight", PANGO_WEIGHT_BOLD, NULL);
     gtk_text_buffer_create_tag(buf, "italic",
@@ -767,7 +768,7 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
                                "strikethrough", TRUE, NULL);
     gtk_text_buffer_create_tag(buf, "underline",
                                "underline", PANGO_UNDERLINE_SINGLE, NULL);
-    initalized = TRUE;
+    initialized = TRUE;
   }
 
   /* Get the position. */
@@ -827,7 +828,6 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
         break; /* No color. */
       }
       gtk_text_buffer_apply_tag(buf, tag, &start, &stop);
-      g_object_unref(G_OBJECT(tag));
     }
     break;
   case TTT_LINK:
@@ -863,7 +863,6 @@ void apply_text_tag(const struct text_tag *ptag, GtkTextBuffer *buf,
       g_object_set_data(G_OBJECT(tag), "id",
                         GINT_TO_POINTER(text_tag_link_id(ptag)));
       gtk_text_buffer_apply_tag(buf, tag, &start, &stop);
-      g_object_unref(G_OBJECT(tag));
       break;
     }
   }
@@ -897,11 +896,11 @@ void real_output_window_append(const char *astring,
   if (GUI_GTK_OPTION(show_chat_message_time)) {
     char timebuf[64];
     time_t now;
-    struct tm *now_tm;
+    struct tm now_tm;
 
     now = time(NULL);
-    now_tm = localtime(&now);
-    strftime(timebuf, sizeof(timebuf), "[%H:%M:%S] ", now_tm);
+    fc_localtime(&now, &now_tm);
+    strftime(timebuf, sizeof(timebuf), "[%H:%M:%S] ", &now_tm);
     gtk_text_buffer_insert(buf, &iter, timebuf, -1);
   }
 
@@ -1132,9 +1131,9 @@ static void select_color_callback(GtkToolButton *button, gpointer data)
               (const char *) g_object_get_data(G_OBJECT(button),
                                                "color_info"));
   dialog = gtk_dialog_new_with_buttons(buf, NULL, GTK_DIALOG_MODAL,
-                                       _("Cancel"), GTK_RESPONSE_CANCEL,
-                                       _("Clear"), GTK_RESPONSE_REJECT,
-                                       _("OK"), GTK_RESPONSE_OK, NULL);
+                                       _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                       _("C_lear"), GTK_RESPONSE_REJECT,
+                                       _("_OK"), GTK_RESPONSE_OK, NULL);
   setup_dialog(dialog, toplevel);
   g_object_set_data(G_OBJECT(dialog), "button", button);
   g_signal_connect(dialog, "response", G_CALLBACK(color_selected), data);
@@ -1226,15 +1225,15 @@ static gboolean set_toolbar_visibility(GtkWidget *w,
       /* button_toggled() will be called and the toolbar shown. */
       gtk_toggle_button_set_active(button, TRUE);
     } else {
-      /* Unsure the widget is visible. */
+      /* Ensure the widget is visible. */
       gtk_widget_show(ptoolkit->toolbar);
     }
   } else {
     if (gtk_toggle_button_get_active(button)) {
-      /* button_toggled() will be called and the toolbar hiden. */
+      /* button_toggled() will be called and the toolbar hidden. */
       gtk_toggle_button_set_active(button, FALSE);
     } else {
-      /* Unsure the widget is visible. */
+      /* Ensure the widget is not visible. */
       gtk_widget_hide(ptoolkit->toolbar);
     }
   }

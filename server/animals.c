@@ -10,6 +10,7 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
 ***********************************************************************/
+
 #ifdef HAVE_CONFIG_H
 #include <fc_config.h>
 #endif
@@ -23,10 +24,11 @@
 #include "research.h"
 #include "tech.h"
 #include "tile.h"
-#include "unittype.h"
 
 /* server */
 #include "aiiface.h"
+#include "barbarian.h"
+#include "nation.h"
 #include "plrhand.h"
 #include "srv_main.h"
 #include "stdinhand.h"
@@ -41,7 +43,7 @@
 /************************************************************************//**
   Return suitable animal type for the terrain
 ****************************************************************************/
-static struct unit_type *animal_for_terrain(struct terrain *pterr)
+static const struct unit_type *animal_for_terrain(struct terrain *pterr)
 {
   return pterr->animal;
 }
@@ -49,31 +51,35 @@ static struct unit_type *animal_for_terrain(struct terrain *pterr)
 /************************************************************************//**
   Try to add one animal to the map.
 ****************************************************************************/
-static void place_animal(struct player *plr)
+static void place_animal(struct player *plr, int sqrdist)
 {
   struct tile *ptile = rand_map_pos(&(wld.map));
-  struct unit_type *ptype;
+  const struct unit_type *ptype;
 
-  extra_type_by_cause_iterate(EC_HUT, pextra) {
+  extra_type_by_rmcause_iterate(ERM_ENTER, pextra) {
     if (tile_has_extra(ptile, pextra)) {
       /* Animals should not displace huts */
+      /* FIXME: could animals not entering nor frightening huts appear here? */
       return;
     }
-  } extra_type_by_cause_iterate_end;
+  } extra_type_by_rmcause_iterate_end;
 
-  if (unit_list_size(ptile->units) > 0 || tile_city(ptile)) {
+  if (unit_list_size(ptile->units) > 0) {
+    /* Below we check against enemy units nearby. Here we make sure
+     * there's no multiple animals in the very same tile. */
     return;
   }
-  adjc_iterate(&(wld.map), ptile, padj) {
-    if (unit_list_size(padj->units) > 0 || tile_city(padj)) {
-      /* No animals next to start units or start city */
+
+  circle_iterate(&(wld.map), ptile, sqrdist, check) {
+    if (tile_city(check) != NULL
+        || is_non_allied_unit_tile(check, plr, TRUE)) {
       return;
     }
-  } adjc_iterate_end;
+  } circle_iterate_end;
 
   ptype = animal_for_terrain(tile_terrain(ptile));
 
-  if (ptype != NULL) {
+  if (ptype != NULL && !utype_player_already_has_this_unique(plr, ptype)) {
     struct unit *punit;
 
     fc_assert_ret(can_exist_at_tile(&(wld.map), ptype, ptile));
@@ -85,7 +91,7 @@ static void place_animal(struct player *plr)
 }
 
 /************************************************************************//**
-  Create animal kingdom player and his units.
+  Create animal kingdom player and their units.
 ****************************************************************************/
 void create_animals(void)
 {
@@ -108,6 +114,8 @@ void create_animals(void)
   if (plr == NULL) {
     return;
   }
+  /* Freeciv-web depends on AI-status being set already before server_player_init() */
+  set_as_ai(plr);
   server_player_init(plr, TRUE, TRUE);
 
   player_set_nation(plr, anination);
@@ -125,7 +133,6 @@ void create_animals(void)
 
   plr->phase_done = TRUE;
 
-  set_as_ai(plr);
   plr->ai_common.barbarian_type = ANIMAL_BARBARIAN;
   set_ai_level_directer(plr, game.info.skill_level);
 
@@ -134,12 +141,7 @@ void create_animals(void)
   give_initial_techs(presearch, 0);
 
   /* Ensure that we are at war with everyone else */
-  players_iterate(pplayer) {
-    if (pplayer != plr) {
-      player_diplstate_get(pplayer, plr)->type = DS_WAR;
-      player_diplstate_get(plr, pplayer)->type = DS_WAR;
-    }
-  } players_iterate_end;
+  barbarian_initial_wars(plr);
 
   CALL_PLR_AI_FUNC(gained_control, plr, plr);
 
@@ -148,7 +150,9 @@ void create_animals(void)
    * about invalid team. */
   send_research_info(presearch, NULL);
 
-  for (i = 0; i < wld.map.xsize * wld.map.ysize * wld.map.server.animals / 1000; i++) {
-    place_animal(plr);
+  for (i = 0;
+       i < MAP_NATIVE_WIDTH * MAP_NATIVE_HEIGHT * wld.map.server.animals / 1000;
+       i++) {
+    place_animal(plr, 2 * 2 + 1 * 1);
   }
 }

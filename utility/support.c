@@ -13,17 +13,17 @@
 
 /***********************************************************************
   This module contains replacements for functions which are not
-  available on all platforms.  Where the functions are available
+  available on all platforms. Where the functions are available
   natively, these are (mostly) just wrappers.
 
-  Notice the function names here are prefixed by, eg, "fc".  An
-  alternative would be to use the "standard" function name, and
-  provide the implementation only if required.  However the method
+  Notice the function names here are prefixed by, eg, "fc_".
+  An alternative would be to use the "standard" function name, and
+  provide the implementation only if required. However the method
   here has some advantages:
 
    - We can provide definite prototypes in support.h, rather than
    worrying about whether a system prototype exists, and if so where,
-   and whether it is correct.  (Note that whether or not configure
+   and whether it is correct. (Note that whether or not configure
    finds a function and defines HAVE_FOO does not necessarily say
    whether or not there is a _prototype_ for the function available.)
 
@@ -32,8 +32,8 @@
 
    - We can add some extra stuff to these functions if we want.
 
-  The main disadvantage is remembering to use these "fc" functions on
-  systems which have the functions natively.
+  The main disadvantage is need to remember to use these
+  "fc_" functions on systems which have the functions natively.
 
 ***********************************************************************/
 
@@ -52,9 +52,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#ifdef GENERATING_MAC
-#include <events.h>		/* for WaitNextEvent() */
-#endif
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
@@ -71,7 +68,10 @@
 #include <sys/types.h>
 #endif
 #ifdef HAVE_UNISTD_H
-#include <unistd.h>		/* usleep, fcntl, gethostname */
+#include <unistd.h>             /* usleep, fcntl, gethostname */
+#endif
+#ifdef HAVE_TIME_H
+#include <time.h>               /* nanosleep */
 #endif
 #ifdef HAVE_SYS_UTSNAME_H
 #include <sys/utsname.h>
@@ -101,23 +101,35 @@
 /* utility */
 #include "fciconv.h"
 #include "fcintl.h"
+#include "fcthread.h"
 #include "log.h"
 #include "mem.h"
 #include "netintf.h"
 
 #include "support.h"
 
+static bool support_initialized = FALSE;
+
 static int icu_buffer_uchars = 0;
-static UChar *icu_buffer1 = NULL;
-static UChar *icu_buffer2 = NULL;
+static UChar *icu_buffer1 = nullptr;
+static UChar *icu_buffer2 = nullptr;
 fc_mutex icu_buffer_mutex;
+
+#ifndef HAVE_WORKING_VSNPRINTF
+static char *vsnprintf_buf = nullptr;
+static fc_mutex vsnprintf_mutex;
+#endif /* HAVE_WORKING_VSNPRINTF */
+
+#ifndef HAVE_LOCALTIME_R
+static fc_mutex localtime_mutex;
+#endif /* HAVE_LOCALTIME_R */
 
 /************************************************************************//**
   Initial allocation of string comparison buffers.
 ****************************************************************************/
 static void icu_buffers_initial(void)
 {
-  if (icu_buffer1 == NULL) {
+  if (icu_buffer1 == nullptr) {
     icu_buffer_uchars = 1024;
     icu_buffer1 = fc_malloc((icu_buffer_uchars + 1) * sizeof(UChar));
     icu_buffer2 = fc_malloc((icu_buffer_uchars + 1) * sizeof(UChar));
@@ -145,10 +157,10 @@ static void icu_buffers_increase(void)
 /************************************************************************//**
   Initialize string handling API
 ****************************************************************************/
-void fc_strAPI_init(void)
+static void fc_strAPI_init(void)
 {
   if (icu_buffer_uchars == 0) {
-    fc_init_mutex(&icu_buffer_mutex);
+    fc_mutex_init(&icu_buffer_mutex);
     icu_buffers_initial();
   }
 }
@@ -156,20 +168,20 @@ void fc_strAPI_init(void)
 /************************************************************************//**
   Free string handling API resources
 ****************************************************************************/
-void fc_strAPI_free(void)
+static void fc_strAPI_free(void)
 {
-  if (icu_buffer1 != NULL) {
+  if (icu_buffer1 != nullptr) {
     free(icu_buffer1);
-    icu_buffer1 = NULL;
+    icu_buffer1 = nullptr;
     free(icu_buffer2);
-    icu_buffer2 = NULL;
+    icu_buffer2 = nullptr;
     icu_buffer_uchars = 0;
   }
-  fc_destroy_mutex(&icu_buffer_mutex);
+  fc_mutex_destroy(&icu_buffer_mutex);
 }
 
 /************************************************************************//**
-  Compare strings like strcmp(), but ignoring case.
+  Compare strings like strcmp(), but ignoring case. UTF8 aware.
 ****************************************************************************/
 int fc_strcasecmp(const char *str0, const char *str1)
 {
@@ -179,10 +191,10 @@ int fc_strcasecmp(const char *str0, const char *str1)
   bool enough_mem = FALSE;
   int ret;
 
-  if (str0 == NULL) {
+  if (str0 == nullptr) {
     return -1;
   }
-  if (str1 == NULL) {
+  if (str1 == nullptr) {
     return 1;
   }
 
@@ -190,7 +202,7 @@ int fc_strcasecmp(const char *str0, const char *str1)
     fc_strAPI_init();
   }
 
-  fc_allocate_mutex(&icu_buffer_mutex);
+  fc_mutex_allocate(&icu_buffer_mutex);
 
   while (!enough_mem) {
     UErrorCode err_code0 = U_ZERO_ERROR;
@@ -211,14 +223,14 @@ int fc_strcasecmp(const char *str0, const char *str1)
   ret = u_strCaseCompare(icu_buffer1, -1, icu_buffer2, -1,
                          0, &err_code);
 
-  fc_release_mutex(&icu_buffer_mutex);
+  fc_mutex_release(&icu_buffer_mutex);
 
   return ret;
 }
 
 /************************************************************************//**
   Compare strings like strncmp(), but ignoring case.
-  ie, only compares first n chars.
+  i.e. only compares first n chars. UTF8 aware.
 ****************************************************************************/
 int fc_strncasecmp(const char *str0, const char *str1, size_t n)
 {
@@ -228,10 +240,10 @@ int fc_strncasecmp(const char *str0, const char *str1, size_t n)
   bool enough_mem = FALSE;
   int ret;
 
-  if (str0 == NULL) {
+  if (str0 == nullptr) {
     return -1;
   }
-  if (str1 == NULL) {
+  if (str1 == nullptr) {
     return 1;
   }
 
@@ -239,7 +251,7 @@ int fc_strncasecmp(const char *str0, const char *str1, size_t n)
     fc_strAPI_init();
   }
 
-  fc_allocate_mutex(&icu_buffer_mutex);
+  fc_mutex_allocate(&icu_buffer_mutex);
 
   while (!enough_mem) {
     UErrorCode err_code0 = U_ZERO_ERROR;
@@ -267,7 +279,7 @@ int fc_strncasecmp(const char *str0, const char *str1, size_t n)
   ret = u_strCaseCompare(icu_buffer1, len0, icu_buffer2, len1,
                          0, &err_code);
 
-  fc_release_mutex(&icu_buffer_mutex);
+  fc_mutex_release(&icu_buffer_mutex);
 
   return ret;
 }
@@ -296,7 +308,8 @@ void make_escapes(const char *str, char *buf, size_t buf_len)
     case '\\':
     case '\"':
       *dest++ = '\\';
-      /* Fallthrough. */
+
+      fc__fallthrough;
     default:
       *dest++ = *str++;
       break;
@@ -310,7 +323,7 @@ void make_escapes(const char *str, char *buf, size_t buf_len)
   removes the newline.
   If full_escapes is TRUE:
     - '\n' -> newline translation.
-    - Other '\c' sequences (any character 'c') are just passed
+    - Other '\?' sequences (any character '?') are just passed
       through with the '\' removed (eg, includes '\\', '\"').
   See also make_escapes().
 ****************************************************************************/
@@ -343,6 +356,7 @@ void remove_escapes(const char *str, bool full_escapes,
 size_t effectivestrlenquote(const char *str)
 {
   int len;
+
   if (!str) {
     return 0;
   }
@@ -367,10 +381,10 @@ int fc_strncasequotecmp(const char *str0, const char *str1, size_t n)
   size_t len1;
   size_t cmplen;
 
-  if (str0 == NULL) {
+  if (str0 == nullptr) {
     return -1;
   }
-  if (str1 == NULL) {
+  if (str1 == nullptr) {
     return 1;
   }
 
@@ -417,7 +431,7 @@ int fc_strncasequotecmp(const char *str0, const char *str1, size_t n)
 }
 
 /************************************************************************//**
-  Return the needle in the haystack (or NULL).
+  Return the needle in the haystack (or nullptr).
   Naive implementation.
 ****************************************************************************/
 char *fc_strcasestr(const char *haystack, const char *needle)
@@ -429,16 +443,16 @@ char *fc_strcasestr(const char *haystack, const char *needle)
   size_t needles;
   const char *p;
 
-  if (NULL == needle || '\0' == *needle) {
+  if (needle == nullptr || '\0' == *needle) {
     return (char *)haystack;
   }
-  if (NULL == haystack || '\0' == *haystack) {
-    return NULL;
+  if (haystack == nullptr || '\0' == *haystack) {
+    return nullptr;
   }
   haystacks = strlen(haystack);
   needles = strlen(needle);
   if (haystacks < needles) {
-    return NULL;
+    return nullptr;
   }
 
   for (p = haystack; p <= &haystack[haystacks - needles]; p++) {
@@ -446,7 +460,8 @@ char *fc_strcasestr(const char *haystack, const char *needle)
       return (char *)p;
     }
   }
-  return NULL;
+
+  return nullptr;
 #endif /* HAVE_STRCASESTR */
 }
 
@@ -489,17 +504,27 @@ int fc_stricoll(const char *str0, const char *str1)
 ****************************************************************************/
 FILE *fc_fopen(const char *filename, const char *opentype)
 {
-#ifdef FREECIV_MSWINDOWS
   FILE *result;
-  char *filename_in_local_encoding =
-    internal_to_local_string_malloc(filename);
 
-  result = fopen(filename_in_local_encoding, opentype);
-  free(filename_in_local_encoding);
-  return result;
+#ifdef FREECIV_MSWINDOWS
+  char *real_filename = internal_to_local_string_malloc(filename);
 #else  /* FREECIV_MSWINDOWS */
-  return fopen(filename, opentype);
+  const char *real_filename = filename;
 #endif /* FREECIV_MSWINDOWS */
+
+#ifdef HAVE_FOPEN_S
+  if (fopen_s(&result, real_filename, opentype) != 0) {
+    result = nullptr;
+  }
+#else  /* HAVE_FOPEN_S */
+  result = fopen(real_filename, opentype);
+#endif /* HAVE_FOPEN_S */
+
+#ifdef FREECIV_MSWINDOWS
+  free(real_filename);
+#endif /* FREECIV_MSWINDOWS */
+
+  return result;
 }
 
 /************************************************************************//**
@@ -587,9 +612,9 @@ const char *fc_strerror(fc_errno err)
   static char buf[256];
 
   if (!FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		     NULL, err, 0, buf, sizeof(buf), NULL)) {
+                     nullptr, err, 0, buf, sizeof(buf), nullptr)) {
     fc_snprintf(buf, sizeof(buf),
-		_("error %ld (failed FormatMessage)"), err);
+                _("error %ld (failed FormatMessage)"), err);
   }
   return buf;
 #else  /* FREECIV_MSWINDOWS */
@@ -602,7 +627,7 @@ const char *fc_strerror(fc_errno err)
   static char buf[64];
 
   fc_snprintf(buf, sizeof(buf),
-	      _("error %d (compiled without strerror)"), err);
+              _("error %d (compiled without strerror)"), err);
   return buf;
 #endif /* HAVE_STRERROR */
 #endif /* FREECIV_MSWINDOWS */
@@ -613,22 +638,25 @@ const char *fc_strerror(fc_errno err)
 ****************************************************************************/
 void fc_usleep(unsigned long usec)
 {
+#ifdef HAVE_NANOSLEEP
+  struct timespec ts;
+
+  if (usec >= 1000000) {
+    ts.tv_sec = usec / 1000000;
+    ts.tv_nsec = (usec % 1000000) * 1000;
+  } else {
+    ts.tv_sec = 0;
+    ts.tv_nsec = usec * 1000;
+  }
+
+  nanosleep(&ts, nullptr);
+#else  /* HAVE_NANOSLEEP */
 #ifdef HAVE_USLEEP
   usleep(usec);
 #else  /* HAVE_USLEEP */
-#ifdef HAVE_SNOOZE		/* BeOS */
+#ifdef HAVE_SNOOZE              /* BeOS */
   snooze(usec);
 #else  /* HAVE_SNOOZE */
-#ifdef GENERATING_MAC
-  EventRecord the_event;	/* dummy - always be a null event */
-
-  usec /= 16666;		/* microseconds to 1/60th seconds */
-  if (usec < 1) {
-    usec = 1;
-  }
-  /* supposed to give other application processor time for the mac */
-  WaitNextEvent(0, &the_event, usec, 0L);
-#else  /* GENERATING_MAC */
 #ifdef FREECIV_MSWINDOWS
   Sleep(usec / 1000);
 #else  /* FREECIV_MSWINDOWS */
@@ -636,13 +664,13 @@ void fc_usleep(unsigned long usec)
 
   tv.tv_sec = 0;
   tv.tv_usec = usec;
-  /* FIXME: an interrupt can cause an EINTR return here.  In that case we
+  /* FIXME: an interrupt can cause an EINTR return here. In that case we
    * need to have another select call. */
-  fc_select(0, NULL, NULL, NULL, &tv);
+  fc_select(0, nullptr, nullptr, nullptr, &tv);
 #endif /* FREECIV_MSWINDOWS */
-#endif /* GENERATING_MAC */
 #endif /* HAVE_SNOOZE */
 #endif /* HAVE_USLEEP */
+#endif /* HAVE_NANOSLEEP */
 }
 
 /************************************************************************//**
@@ -654,28 +682,32 @@ char *fc_strrep_resize(char *str, size_t *len, const char *search,
                        const char *replace)
 {
   size_t len_max;
-  bool success;
 
-  fc_assert_ret_val(str != NULL, NULL);
-  fc_assert_ret_val(len != NULL, NULL);
-  if (search == NULL || replace == NULL) {
+  fc_assert_ret_val(str != nullptr, nullptr);
+  fc_assert_ret_val(len != nullptr, nullptr);
+
+  if (search == nullptr || replace == nullptr) {
     return str;
   }
 
   len_max = ceil((double)strlen(str) * strlen(replace) / strlen(search)) + 1;
   if ((*len) < len_max) {
-    /* replace string is longer than search string; allocated enough memory
+    /* Replace string is longer than search string; allocate enough memory
      * for the worst case */
     (*len) = len_max;
     str = fc_realloc(str, len_max);
   }
 
-  success = fc_strrep(str, (*len), search, replace);
-  /* should never happen */
-  fc_assert_ret_val_msg(success == TRUE, NULL,
-                        "Can't replace '%s' by '%s' in '%s'. To small "
-                        "size after reallocation: %lu.", search, replace,
-                        str, (long unsigned int)*len);
+#ifndef FREECIV_NDEBUG
+  bool success =
+#endif
+    fc_strrep(str, (*len), search, replace);
+
+  /* Should never happen */
+  fc_assert_ret_val_msg(success, nullptr,
+                        "Can't replace '%s' by '%s' in '%s'. Too small "
+                        "size after reallocation: " SIZE_T_PRINTF ".",
+                        search, replace, str, *len);
 
   return str;
 }
@@ -691,8 +723,9 @@ bool fc_strrep(char *str, size_t len, const char *search,
   size_t len_search, len_replace;
   char *s, *p;
 
-  fc_assert_ret_val(str != NULL, FALSE);
-  if (search == NULL || replace == NULL) {
+  fc_assert_ret_val(str != nullptr, FALSE);
+
+  if (search == nullptr || replace == nullptr) {
     return TRUE;
   }
 
@@ -700,10 +733,10 @@ bool fc_strrep(char *str, size_t len, const char *search,
   len_replace = strlen(replace);
 
   s = str;
-  while (s != NULL) {
+  while (s != nullptr) {
     p = strstr(s, search);
-    if (p == NULL) {
-      /* nothing found */
+    if (p == nullptr) {
+      /* Nothing found */
       break;
     }
 
@@ -748,15 +781,15 @@ size_t fc_strlcpy(char *dest, const char *src, size_t n)
   int dlen;
   UErrorCode err_code = U_ZERO_ERROR;
 
-  fc_assert_ret_val(NULL != dest, -1);
-  fc_assert_ret_val(NULL != src, -1);
+  fc_assert_ret_val(dest != nullptr, -1);
+  fc_assert_ret_val(src != nullptr, -1);
   fc_assert_ret_val(0 < n, -1);
 
   if (icu_buffer_uchars == 0) {
     fc_strAPI_init();
   }
 
-  fc_allocate_mutex(&icu_buffer_mutex);
+  fc_mutex_allocate(&icu_buffer_mutex);
 
   while (!enough_mem) {
     u_strFromUTF8(icu_buffer1, icu_buffer_uchars, &slen, src, -1, &err_code);
@@ -773,7 +806,7 @@ size_t fc_strlcpy(char *dest, const char *src, size_t n)
 
   u_strToUTF8(dest, n - 1, &dlen, icu_buffer1, slen, &err_code);
 
-  fc_release_mutex(&icu_buffer_mutex);
+  fc_mutex_release(&icu_buffer_mutex);
 
   dest[n - 1] = '\0';
 
@@ -813,7 +846,7 @@ size_t fc_strlcat(char *dest, const char *src, size_t n)
   does occur, returns the number of characters which would have been
   produced without truncation.
   (Linux man page says returns -1 on truncation, but glibc seems to
-  do as above nevertheless; check_native_vsnprintf() above tests this.)
+  do as above nevertheless; configure tests this.)
 
   [glibc is correct.  Viz.
 
@@ -848,8 +881,8 @@ size_t fc_strlcat(char *dest, const char *src, size_t n)
   See also fc_utf8_vsnprintf_trunc(), fc_utf8_vsnprintf_rep().
 ****************************************************************************/
 
-/* "64k should be big enough for anyone" ;-) */
-#define VSNP_BUF_SIZE (64*1024)
+/* This must be at least as big as PLAIN_FILE_BUF_SIZE in ioz.c */
+#define VSNP_BUF_SIZE (8096*1024)
 int fc_vsnprintf(char *str, size_t n, const char *format, va_list ap)
 {
 #ifdef HAVE_WORKING_VSNPRINTF
@@ -859,44 +892,48 @@ int fc_vsnprintf(char *str, size_t n, const char *format, va_list ap)
   /* This may be overzealous, but I suspect any triggering of these to
    * be bugs.  */
 
-  fc_assert_ret_val(NULL != str, -1);
   fc_assert_ret_val(0 < n, -1);
-  fc_assert_ret_val(NULL != format, -1);
 
 #ifdef HAVE_WORKING_VSNPRINTF
   r = vsnprintf(str, n, format, ap);
   str[n - 1] = 0;
-
-  /* Convert C99 return value to C89.  */
-  if (r >= n) {
-    return -1;
-  }
 
   return r;
 #else  /* HAVE_WORKING_VSNPRINTF */
   {
     /* Don't use fc_malloc() or log_*() here, since they may call
        fc_vsnprintf() if it fails.  */
- 
-    static char *buf;
     size_t len;
 
-    if (!buf) {
-      buf = malloc(VSNP_BUF_SIZE);
+    if (n > VSNP_BUF_SIZE) {
+      fprintf(stderr, "fc_vsnprintf() call with length " SIZE_T_PRINTF "."
+              "Maximum supported is %d", n, VSNP_BUF_SIZE);
+      exit(EXIT_FAILURE);
+    }
 
-      if (!buf) {
-	fprintf(stderr, "Could not allocate %i bytes for vsnprintf() "
-		"replacement.", VSNP_BUF_SIZE);
-	exit(EXIT_FAILURE);
+    fc_mutex_allocate(&vsnprintf_mutex);
+
+    if (vsnprintf_buf == nullptr) {
+      vsnprintf_buf = malloc(VSNP_BUF_SIZE);
+
+      if (vsnprintf_buf == nullptr) {
+        fprintf(stderr, "Could not allocate %i bytes for vsnprintf() "
+                "replacement.", VSNP_BUF_SIZE);
+        fc_mutex_release(&vsnprintf_mutex);
+
+        exit(EXIT_FAILURE);
       }
     }
+
+    vsnprintf_buf[VSNP_BUF_SIZE - 1] = '\0';
+
 #ifdef HAVE_VSNPRINTF
-    vsnprintf(buf, n, format, ap);
+    vsnprintf(vsnprintf_buf, VSNP_BUF_SIZE, format, ap);
 #else
-    vsprintf(buf, format, ap);
+    vsprintf(vsnprintf_buf, format, ap);
 #endif /* HAVE_VSNPRINTF */
-    buf[VSNP_BUF_SIZE - 1] = '\0';
-    len = strlen(buf);
+
+    len = strlen(vsnprintf_buf);
 
     if (len >= VSNP_BUF_SIZE - 1) {
       fprintf(stderr, "Overflow in vsnprintf replacement!"
@@ -904,13 +941,15 @@ int fc_vsnprintf(char *str, size_t n, const char *format, va_list ap)
       abort();
     }
     if (n >= len + 1) {
-      memcpy(str, buf, len+1);
-      return len;
+      memcpy(str, vsnprintf_buf, len + 1);
     } else {
-      memcpy(str, buf, n-1);
+      memcpy(str, vsnprintf_buf, n - 1);
       str[n - 1] = '\0';
-      return -1;
     }
+
+    fc_mutex_release(&vsnprintf_mutex);
+
+    return len;
   }
 #endif /* HAVE_WORKING_VSNPRINTF */
 }
@@ -923,23 +962,22 @@ int fc_snprintf(char *str, size_t n, const char *format, ...)
   int ret;
   va_list ap;
 
-  fc_assert_ret_val(NULL != format, -1);
-
   va_start(ap, format);
   ret = fc_vsnprintf(str, n, format, ap);
   va_end(ap);
+
   return ret;
 }
 
 /************************************************************************//**
-  cat_snprintf is like a combination of fc_snprintf and fc_strlcat;
-  it does snprintf to the end of an existing string.
+  cat_snprintf() is like a combination of fc_snprintf() and fc_strlcat();
+  it does snprintf() to the end of an existing string.
 
-  Like fc_strlcat, n is the total length available for str, including
-  existing contents and trailing nul.  If there is no extra room
+  Like fc_strlcat(), n is the total length available for str, including
+  existing contents and trailing nullptr. If there is no extra room
   available in str, does not change the string.
 
-  Also like fc_strlcat, returns the final length that str would have
+  Also like fc_strlcat(), returns the final length that str would have
   had without truncation, or -1 if the end of the buffer is reached.
   I.e., if return is >= n, truncation occurred.
 
@@ -951,8 +989,6 @@ int cat_snprintf(char *str, size_t n, const char *format, ...)
   int ret;
   va_list ap;
 
-  fc_assert_ret_val(NULL != format, -1);
-  fc_assert_ret_val(NULL != str, -1);
   fc_assert_ret_val(0 < n, -1);
 
   len = strlen(str);
@@ -961,6 +997,7 @@ int cat_snprintf(char *str, size_t n, const char *format, ...)
   va_start(ap, format);
   ret = fc_vsnprintf(str+len, n-len, format, ap);
   va_end(ap);
+
   return (-1 == ret ? -1 : ret + len);
 }
 
@@ -989,7 +1026,10 @@ static char console_buf[CONSOLE_BUF_SIZE + 1];
 #ifdef FREECIV_MSWINDOWS
 static HANDLE console_thread = INVALID_HANDLE_VALUE;
 
-static DWORD WINAPI thread_proc(LPVOID arg)
+/************************************************************************//**
+  Windows console reading thread entrypoint.
+****************************************************************************/
+static DWORD WINAPI windows_console_thread(LPVOID arg)
 {
   if (fgets(console_buf, CONSOLE_BUF_SIZE, stdin)) {
     char *s;
@@ -1009,14 +1049,13 @@ static DWORD WINAPI thread_proc(LPVOID arg)
 void fc_init_console(void)
 {
 #ifdef FREECIV_MSWINDOWS
-  DWORD threadid;
-
   if (console_thread != INVALID_HANDLE_VALUE) {
     return;
   }
 
   console_buf[0] = '\0';
-  console_thread = (HANDLE) CreateThread(NULL, 0, thread_proc, NULL, 0, &threadid);
+  console_thread = (HANDLE) CreateThread(nullptr, 0, windows_console_thread,
+                                         nullptr, 0, nullptr);
 #else  /* FREECIV_MSWINDOWS */
   static bool initialized = FALSE;
 
@@ -1046,7 +1085,7 @@ char *fc_read_console(void)
     return console_buf;
   }
 
-  return NULL;
+  return nullptr;
 #else  /* FREECIV_MSWINDOWS */
   if (!feof(stdin)) {    /* input from server operator */
     static char *bufptr = console_buf;
@@ -1058,9 +1097,9 @@ char *fc_read_console(void)
         *bufptr = '\0';
       }
       if (*bufptr == '\0') {
-	bufptr = console_buf;
+        bufptr = console_buf;
 
-	return console_buf;
+        return console_buf;
       }
       if ((bufptr - console_buf) <= CONSOLE_BUF_SIZE) {
         bufptr++; /* prevent overrun */
@@ -1068,7 +1107,7 @@ char *fc_read_console(void)
     }
   }
 
-  return NULL;
+  return nullptr;
 #endif /* FREECIV_MSWINDOWS */
 }
 
@@ -1090,7 +1129,7 @@ bool is_reg_file_for_access(const char *name, bool write_access)
 }
 
 /************************************************************************//**
-  Replace the spaces by line breaks when the line lenght is over the desired
+  Replace the spaces by line breaks when the line length is over the desired
   one. 'str' is modified. Returns number of lines in modified s.
 ****************************************************************************/
 int fc_break_lines(char *str, size_t desired_len)
@@ -1106,7 +1145,7 @@ int fc_break_lines(char *str, size_t desired_len)
 
     num_lines++;
 
-    /* check if there is already a newline: */
+    /* Check if there is already a newline: */
     for (c = str; c < str + desired_len; c++) {
       if (*c == '\n') {
         slen -= c + 1 - str;
@@ -1115,7 +1154,7 @@ int fc_break_lines(char *str, size_t desired_len)
       }
     }
 
-    /* find space and break: */
+    /* Find space and break: */
     for (c = str + desired_len; c > str; c--) {
       if (fc_isspace(*c)) {
         *c = '\n';
@@ -1125,7 +1164,7 @@ int fc_break_lines(char *str, size_t desired_len)
       }
     }
 
-    /* couldn't find a good break; settle for a bad one... */
+    /* Couldn't find a good break; settle for a bad one... */
     for (c = str + desired_len + 1; *c != '\0'; c++) {
       if (fc_isspace(*c)) {
         *c = '\n';
@@ -1257,6 +1296,22 @@ const char *fc_basename(const char *path)
 }
 
 /************************************************************************//**
+  Thread safe localtime() replacement
+****************************************************************************/
+struct tm *fc_localtime(const time_t *timep, struct tm *result)
+{
+#ifdef HAVE_LOCALTIME_R
+  return localtime_r(timep, result);
+#else  /* HAVE_LOCALTIME_R */
+  fc_mutex_allocate(&localtime_mutex);
+  memcpy(result, localtime(timep), sizeof(struct tm));
+  fc_mutex_release(&localtime_mutex);
+
+  return result;
+#endif /* HAVE_LOCALTIME_R */
+}
+
+/************************************************************************//**
   Set quick_exit() callback if possible.
 ****************************************************************************/
 int fc_at_quick_exit(void (*func)(void))
@@ -1266,4 +1321,52 @@ int fc_at_quick_exit(void (*func)(void))
 #else  /* HAVE_AT_QUICK_EXIT */
   return -1;
 #endif /* HAVE_AT_QUICK_EXIT */
+}
+
+/************************************************************************//**
+  Initialize support module.
+****************************************************************************/
+void fc_support_init(void)
+{
+  fc_strAPI_init();
+
+#ifndef HAVE_WORKING_VSNPRINTF
+  fc_mutex_init(&vsnprintf_mutex);
+#endif /* HAVE_WORKING_VSNPRINTF */
+
+#ifndef HAVE_LOCALTIME_R
+  fc_mutex_init(&localtime_mutex);
+#endif /* HAVE_LOCALTIME_R */
+
+  support_initialized = TRUE;
+}
+
+/************************************************************************//**
+  Free misc resources allocated by the support module.
+****************************************************************************/
+void fc_support_free(void)
+{
+  support_initialized = FALSE;
+
+#ifndef HAVE_WORKING_VSNPRINTF
+  if (vsnprintf_buf != nullptr) {
+    free(vsnprintf_buf);
+    vsnprintf_buf = nullptr;
+  }
+  fc_mutex_destroy(&vsnprintf_mutex);
+#endif /* HAVE_WORKING_VSNPRINTF */
+
+#ifndef HAVE_LOCALTIME_R
+  fc_mutex_destroy(&localtime_mutex);
+#endif /* HAVE_LOCALTIME_R */
+
+  fc_strAPI_free();
+}
+
+/************************************************************************//**
+  Is the support module currently in usable state?
+****************************************************************************/
+bool are_support_services_available(void)
+{
+  return support_initialized;
 }

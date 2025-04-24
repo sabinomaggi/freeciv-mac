@@ -70,8 +70,8 @@ void pregamevote::v_abstain()
 {
   struct voteinfo *vi;
 
-  vi = voteinfo_queue_get_current(NULL);
-  if (vi == NULL) {
+  vi = voteinfo_queue_get_current(nullptr);
+  if (vi == nullptr) {
     return;
   }
   voteinfo_do_vote(vi->vote_no, CVT_ABSTAIN);
@@ -84,8 +84,8 @@ void pregamevote::v_no()
 {
   struct voteinfo *vi;
 
-  vi = voteinfo_queue_get_current(NULL);
-  if (vi == NULL) {
+  vi = voteinfo_queue_get_current(nullptr);
+  if (vi == nullptr) {
     return;
   }
   voteinfo_do_vote(vi->vote_no, CVT_NO);
@@ -98,8 +98,8 @@ void pregamevote::v_yes()
 {
   struct voteinfo *vi;
 
-  vi = voteinfo_queue_get_current(NULL);
-  if (vi == NULL) {
+  vi = voteinfo_queue_get_current(nullptr);
+  if (vi == nullptr) {
     return;
   }
   voteinfo_do_vote(vi->vote_no, CVT_YES);
@@ -111,23 +111,23 @@ void pregamevote::v_yes()
 void pregamevote::update_vote()
 {
   int vote_count, index;
-  struct voteinfo *vi = NULL;
+  struct voteinfo *vi = nullptr;
   char buf[1024], status[1024], color[32];
   bool running;
 
   show();
   vote_count = voteinfo_queue_size();
   vi = voteinfo_queue_get_current(&index);
-  if (vi != NULL && vi->resolved && vi->passed) {
-    /* TRANS: Describing a vote that passed. */
+  if (vi != nullptr && vi->resolved && vi->passed) {
+    // TRANS: Describing a vote that passed.
     fc_snprintf(status, sizeof(status), _("[passed]"));
     sz_strlcpy(color, "green");
-  } else if (vi != NULL && vi->resolved && !vi->passed) {
-    /* TRANS: Describing a vote that failed. */
+  } else if (vi != nullptr && vi->resolved && !vi->passed) {
+    // TRANS: Describing a vote that failed.
     fc_snprintf(status, sizeof(status), _("[failed]"));
     sz_strlcpy(color, "red");
-  } else if (vi != NULL && vi->remove_time > 0) {
-    /* TRANS: Describing a vote that was removed. */
+  } else if (vi != nullptr && vi->remove_time > 0) {
+    // TRANS: Describing a vote that was removed.
     fc_snprintf(status, sizeof(status), _("[removed]"));
     sz_strlcpy(color, "grey");
   } else {
@@ -141,7 +141,7 @@ void pregamevote::update_vote()
   } else {
     buf[0] = '\0';
   }
-  if (vi != NULL)  {
+  if (vi != nullptr)  {
     lab_yes->setText(QString::number(vi->yes));
     lab_no->setText(QString::number(vi->no));
     lab_abstain->setText(QString::number(vi->abstain));
@@ -149,10 +149,11 @@ void pregamevote::update_vote()
       label_text->setText(buf);
     } else {
       label_text->setText(QString(_("<b>%1 called a vote for:</b>")).
-                          arg(vi->user));
+                          arg(QString(vi->user).toHtmlEscaped()));
     }
     label_vote_text->setText(QString("</b><p style=\"color:"
-                                     " red\"> %1</p></b>").arg(vi->desc));
+                                     " red\"> %1</p></b>")
+        .arg(QString(vi->desc).toHtmlEscaped()));
     voters->setText(QString(" /%1").arg(vi->num_voters));
   } else {
     label_text->setText("");
@@ -160,7 +161,7 @@ void pregamevote::update_vote()
     lab_no->setText("-");
     lab_abstain->setText("-");
   }
-  running = vi != NULL && !vi->resolved && vi->remove_time == 0;
+  running = vi != nullptr && !vi->resolved && vi->remove_time == 0;
   vote_yes->setEnabled(running);
   vote_no->setEnabled(running);
   vote_abstain->setEnabled(running);
@@ -230,7 +231,7 @@ void voteinfo_gui_update(void)
   }
   if (gui()->current_page() == PAGE_GAME) {
 
-    if (gui()->x_vote != NULL) {
+    if (gui()->x_vote != nullptr) {
       gui()->x_vote->show();
       gui()->x_vote->update_vote();
     }

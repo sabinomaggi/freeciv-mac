@@ -15,7 +15,7 @@
 #include <fc_config.h>
 #endif
 
-//Qt
+// Qt
 #include <QApplication>
 #include <QCheckBox>
 #include <QCompleter>
@@ -34,7 +34,7 @@
 // client
 #include "audio.h"
 #include "climap.h"
-#include "climisc.h"      /* for write_chatline_content */
+#include "climisc.h"      // For write_chatline_content()
 #include "connectdlg_common.h"
 #include "control.h"
 #include "game.h"
@@ -46,7 +46,6 @@
 #include "gui_main.h"
 #include "qtg_cxxside.h"
 
-extern QApplication *qapp;
 static bool is_plain_public_message(QString s);
 
 FC_CPP_DECLARE_LISTENER(chat_listener)
@@ -69,9 +68,9 @@ void chat_listener::update_word_list()
     }
   } conn_list_iterate_end;
 
-  players_iterate (pplayer){
+  players_iterate(pplayer) {
     str = pplayer->name;
-    if (!word_list.contains(str)){
+    if (!word_list.contains(str)) {
       word_list << str;
     }
   } players_iterate_end
@@ -122,7 +121,7 @@ void chat_listener::send_chat_message(const QString &message)
 
   if (index != -1) {
     s = s.remove("PICK:");
-    /* now should be playername left in string */
+    // Now should be playername left in string
     players_iterate(pplayer) {
       splayer = QString(pplayer->name);
 
@@ -136,9 +135,7 @@ void chat_listener::send_chat_message(const QString &message)
   history << message;
   reset_history_position();
 
-  /*
-   * If client send commands to take ai, set /away to disable AI
-   */
+  // If client send commands to take ai, set /away to disable AI
   if (message.startsWith("/take ")) {
     s = s.remove("/take ");
     players_iterate(pplayer) {
@@ -147,7 +144,7 @@ void chat_listener::send_chat_message(const QString &message)
 
       if (!splayer.compare(s)) {
         if (is_ai(pplayer)) {
-          send_chat(message.toLocal8Bit());
+          send_chat(message.toUtf8());
           send_chat("/away");
           return;
         }
@@ -155,16 +152,14 @@ void chat_listener::send_chat_message(const QString &message)
     } players_iterate_end;
   }
 
-  /*
-   * Option to send to allies by default
-   */
+  // Option to send to allies by default
   if (!message.isEmpty()) {
     if (client_state() >= C_S_RUNNING && gui_options.gui_qt_allied_chat_only
         && is_plain_public_message(message)) {
       send_chat((QString(CHAT_ALLIES_PREFIX)
-                 + " " + message).toLocal8Bit());
+                 + " " + message).toUtf8());
     } else {
-      send_chat(message.toLocal8Bit());
+      send_chat(message.toUtf8());
     }
   }
   // Empty messages aren't sent
@@ -234,14 +229,15 @@ void chat_input::send()
 /***********************************************************************//**
   Called whenever the completion word list changes.
 ***************************************************************************/
-void chat_input::chat_word_list_changed(const QStringList &word_list)
+void chat_input::chat_word_list_changed(const QStringList &cmplt_word_list)
 {
   QCompleter *cmplt = completer();
 
   if (cmplt != nullptr) {
     delete cmplt;
   }
-  cmplt = new QCompleter(word_list);
+
+  cmplt = new QCompleter(cmplt_word_list);
   cmplt->setCaseSensitivity(Qt::CaseInsensitive);
   cmplt->setCompletionMode(QCompleter::InlineCompletion);
   setCompleter(cmplt);
@@ -304,16 +300,33 @@ chatwdg::chatwdg(QWidget *parent)
   connect(chat_output, &text_browser_dblclck::dbl_clicked,
           this, &chatwdg::toggle_size);
   connect(remove_links, &QAbstractButton::clicked, this, &chatwdg::rm_links);
-  connect(cb, &QCheckBox::stateChanged, this, &chatwdg::state_changed);
+#ifdef FC_QT6X_MODE
+  connect(cb, &QCheckBox::checkStateChanged, this, &chatwdg::state_changed);
+#else  // FC_QT6X_MODE
+  connect(cb, &QCheckBox::stateChanged, this, &chatwdg::state_changed_depr);
+#endif // FC_QT6X_MODE
   setMouseTracking(true);
 
   chat_listener::listen();
 }
 
 /***********************************************************************//**
-  Manages "To allies" chat button state
+  Manages "To allies" chat button state.
 ***************************************************************************/
-void chatwdg::state_changed(int state)
+void chatwdg::state_changed(Qt::CheckState state)
+{
+  if (state != Qt::Unchecked) {
+    gui_options.gui_qt_allied_chat_only = true;
+  } else {
+    gui_options.gui_qt_allied_chat_only = false;
+  }
+}
+
+/***********************************************************************//**
+  Manages "To allies" chat button state.
+  This deprecated slot is used in Qt < 6.7
+***************************************************************************/
+void chatwdg::state_changed_depr(int state)
 {
   if (state > 0) {
     gui_options.gui_qt_allied_chat_only = true;
@@ -327,11 +340,10 @@ void chatwdg::state_changed(int state)
 ***************************************************************************/
 void chatwdg::toggle_size()
 {
-  if (gui()->infotab->chat_maximized == true) {
+  if (gui()->infotab->chat_maximized) {
     gui()->infotab->restore_chat();
     return;
-  }
-  if (gui()->infotab->chat_maximized == false) {
+  } else {
     gui()->infotab->maximize_chat();
     chat_line->setFocus();
   }
@@ -374,12 +386,14 @@ void chatwdg::anchor_clicked(const QUrl &link)
   QStringList sl;
   int id;
   enum text_link_type type;
+  struct tile *ptile = nullptr;
+
   sl = link.toString().split(",");
   n = sl.at(0).toInt();
   id = sl.at(1).toInt();
 
   type = static_cast<text_link_type>(n);
-  struct tile *ptile = NULL;
+
   switch (type) {
   case TLT_CITY: {
     struct city *pcity = game_city_by_number(id);
@@ -410,7 +424,7 @@ void chatwdg::anchor_clicked(const QUrl &link)
   }
   break;
   }
-  if (ptile) {
+  if (ptile != nullptr) {
     center_tile_mapcanvas(ptile);
     link_mark_restore(type, id);
   }
@@ -419,10 +433,11 @@ void chatwdg::anchor_clicked(const QUrl &link)
 /***********************************************************************//**
   Adds news string to chatwdg (from chat_listener interface)
 ***************************************************************************/
-void chatwdg::chat_message_received(const QString& message,
+void chatwdg::chat_message_received(const QString &message,
                                     const struct text_tag_list *tags)
 {
   QColor col = chat_output->palette().color(QPalette::Text);
+
   append(apply_tags(message, tags, col));
 }
 
@@ -460,13 +475,14 @@ void chatwdg::paintEvent(QPaintEvent *event)
 }
 
 /***********************************************************************//**
-  Processess history for chat
+  Processes history for chat
 ***************************************************************************/
 bool chatwdg::eventFilter(QObject *obj, QEvent *event)
 {
   if (obj == chat_line) {
     if (event->type() == QEvent::KeyPress) {
       QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+
       if (keyEvent->key() == Qt::Key_Escape) {
         gui()->infotab->restore_chat();
         gui()->mapview_wdg->setFocus();
@@ -477,6 +493,7 @@ bool chatwdg::eventFilter(QObject *obj, QEvent *event)
       event->setAccepted(true);
     }
   }
+
   return QObject::eventFilter(obj, event);
 }
 
@@ -495,7 +512,8 @@ void chatwdg::update_widgets()
 }
 
 /***********************************************************************//**
-  Sets chat to show only X(lines) lines
+  Returns how much space chatline of given number of lines would require,
+  or zero if it can't be determined.
 ***************************************************************************/
 int chatwdg::default_size(int lines)
 {
@@ -506,12 +524,17 @@ int chatwdg::default_size(int lines)
 
   qtb = chat_output->document()->firstBlock();
   /* Count all lines in all text blocks layouts
-   * document()->lineCount returns numer of lines without wordwrap */
+   * document()->lineCount returns number of lines without wordwrap */
 
   while (qtb.isValid()) {
     line_count = line_count + qtb.layout()->lineCount();
     qtb = qtb.next();
   }
+
+  if (line_count == 0) {
+    return 0;
+  }
+
   line_height = (chat_output->document()->size().height()
                  - 2 * chat_output->document()->documentMargin())
                 / line_count;
@@ -519,9 +542,9 @@ int chatwdg::default_size(int lines)
   size = lines * line_height
          + chat_line->size().height() + chat_output->document()->documentMargin();
   size = qMax(0, size);
+
   return size;
 }
-
 
 /***********************************************************************//**
   Makes link to tile/unit or city
@@ -543,7 +566,6 @@ void chatwdg::make_link(struct tile *ptile)
   chat_line->setFocus();
 }
 
-
 /***********************************************************************//**
   Applies tags to text
 ***************************************************************************/
@@ -557,13 +579,17 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
   QByteArray qba;
   QColor qc;
   QMultiMap <int, QString> mm;
-  if (tags == NULL) {
+  QByteArray str_bytes;
+
+  if (tags == nullptr) {
     return str;
   }
-  qba = str.toLocal8Bit().data();
+  str_bytes = str.toUtf8();
+  qba = str_bytes.data();
+
   text_tag_list_iterate(tags, ptag) {
     if ((text_tag_stop_offset(ptag) == FT_OFFSET_UNSET)) {
-      stop = qba.count();
+      stop = qba.length();
     } else {
       stop = text_tag_stop_offset(ptag);
     }
@@ -596,7 +622,11 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
           if (color == "#00008B") {
             color = bg_color.name();
           } else {
+#ifdef FC_QT6X_MODE
+            qc = QColor::fromString(color);
+#else  // FC_QT6X_MODE
             qc.setNamedColor(color);
+#endif // FC_QT6X_MODE
             qc = qc.lighter(200);
             color = qc.name();
           }
@@ -606,7 +636,13 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
       }
       if (text_tag_color_background(ptag)) {
         color = text_tag_color_background(ptag);
-        if (QColor::isValidColor(color)) {
+        if (
+#ifdef FC_QT6X_MODE
+            QColor::isValidColorName(color)
+#else  // FC_QT6X_MODE
+            QColor::isValidColor(color)
+#endif // FC_QT6X_MODE
+            ) {
           str_col = QString("<span style= background-color:%1;>").arg(color);
           mm.insert(stop, "</span>");
           mm.insert(start, str_col);
@@ -614,7 +650,7 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
       }
       break;
     case TTT_LINK: {
-      struct color *pcolor = NULL;
+      struct color *pcolor = nullptr;
 
       switch (text_tag_link_type(ptag)) {
       case TLT_CITY:
@@ -628,8 +664,8 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
         break;
       }
 
-      if (!pcolor) {
-        break; /* Not a valid link type case. */
+      if (pcolor == nullptr) {
+        break; // Not a valid link type case.
       }
       color = pcolor->qcolor.name(QColor::HexRgb);
       str_col = QString("<font color=\"%1\">").arg(color);
@@ -643,12 +679,13 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
     }
   } text_tag_list_iterate_end;
 
-  /* insert html starting from last items */
-  last_i = str.count();
+  // Insert html starting from last items
+  last_i = str.length();
   QMultiMap<int, QString>::const_iterator i = mm.constEnd();
   QMultiMap<int, QString>::const_iterator j = mm.constEnd();
+
   while (i != mm.constBegin()) {
-    --i;
+    i--;
     if (i.key() < last_i) {
       final_string = final_string.prepend(QString(qba.mid(i.key(),
                                                           last_i - i.key()))
@@ -667,7 +704,8 @@ QString apply_tags(QString str, const struct text_tag_list *tags,
       final_string = final_string.prepend(i.value());
     }
   }
-  if (last_i == str.count()) {
+
+  if (last_i == str.length()) {
     return str;
   }
 
@@ -690,14 +728,14 @@ static bool is_plain_public_message(QString s)
     return false;
   }
 
-  /* Search for private message */
+  // Search for private message
   if (!str.contains(CHAT_DIRECT_PREFIX)) {
     return true;
   }
   i = str.indexOf(CHAT_DIRECT_PREFIX);
   str = str.left(i);
 
-  /* Compare all players and connections looking for match */
+  // Compare all players and connections looking for match
   conn_list_iterate(game.all_connections, pconn) {
     s1 = pconn->username;
     if (s1.length() < i) {
@@ -721,7 +759,7 @@ static bool is_plain_public_message(QString s)
 }
 
 /***********************************************************************//**
-  Appends the string to the chat output window.  The string should be
+  Appends the string to the chat output window. The string should be
   inserted on its own line, although it will have no newline.
 ***************************************************************************/
 void qtg_real_output_window_append(const char *astring,
@@ -730,26 +768,29 @@ void qtg_real_output_window_append(const char *astring,
 {
   QString str;
   QString wakeup;
+  QApplication *qapp;
 
   str = QString::fromUtf8(astring);
   gui()->set_status_bar(str);
 
   wakeup = gui_options.gui_qt_wakeup_text;
 
-  /* Format wakeup string if needed */
+  // Format wakeup string if needed
   if (wakeup.contains("%1")) {
     wakeup = wakeup.arg(client.conn.username);
   }
+
+  qapp = current_app();
 
   if (str.contains(client.conn.username)) {
     qapp->alert(gui()->central_wdg);
   }
 
-  /* Play sound if we encountered wakeup string */
+  // Play sound if we encountered wakeup string
   if (str.contains(wakeup) && client_state() < C_S_RUNNING
       && !wakeup.isEmpty()) {
     qapp->alert(gui()->central_wdg);
-    audio_play_sound("e_player_wake", NULL);
+    audio_play_sound("e_player_wake", nullptr, nullptr);
   }
 
   chat_listener::update_word_list();
@@ -763,8 +804,8 @@ void qtg_real_output_window_append(const char *astring,
 ***************************************************************************/
 void log_output_window(void)
 {
-  /* PORTME */
-  write_chatline_content(NULL);
+  // PORTME
+  write_chatline_content(nullptr);
 }
 
 /***********************************************************************//**
@@ -772,7 +813,7 @@ void log_output_window(void)
 ***************************************************************************/
 void clear_output_window(void)
 {
-  /* PORTME */
+  // PORTME
 #if 0
   set_output_window_text(_("Cleared output window."));
 #endif

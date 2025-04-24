@@ -40,6 +40,8 @@ The improvement_types array is now setup in:
 **************************************************************************/
 static struct impr_type improvement_types[B_LAST];
 
+static struct user_flag user_impr_flags[MAX_NUM_USER_BUILDING_FLAGS];
+
 /**********************************************************************//**
   Initialize building structures.
 **************************************************************************/
@@ -55,7 +57,8 @@ void improvements_init(void)
     p->item_number = i;
     requirement_vector_init(&p->reqs);
     requirement_vector_init(&p->obsolete_by);
-    p->disabled = FALSE;
+    p->ruledit_disabled = FALSE;
+    p->ruledit_dlg = NULL;
   }
 }
 
@@ -76,7 +79,7 @@ static void improvement_free(struct impr_type *p)
 /**********************************************************************//**
  Frees the memory associated with all improvements.
 **************************************************************************/
-void improvements_free()
+void improvements_free(void)
 {
   improvement_iterate(p) {
     improvement_free(p);
@@ -91,7 +94,7 @@ void improvement_feature_cache_init(void)
   improvement_iterate(pimprove) {
     pimprove->allows_units = FALSE;
     unit_type_iterate(putype) {
-      if (putype->need_improvement == pimprove) {
+      if (requirement_needs_improvement(pimprove, &putype->build_reqs)) {
         pimprove->allows_units = TRUE;
         break;
       }
@@ -118,6 +121,14 @@ void improvement_feature_cache_init(void)
       if (!requirement_fulfilled_by_improvement(pimprove,
                                                 &act->target_reqs)) {
         pimprove->protects_vs_actions = TRUE;
+        break;
+      }
+    } action_enablers_iterate_end;
+
+    pimprove->allows_actions = FALSE;
+    action_enablers_iterate(act) {
+      if (requirement_needs_improvement(pimprove, &act->actor_reqs)) {
+        pimprove->allows_actions = TRUE;
         break;
       }
     } action_enablers_iterate_end;
@@ -197,7 +208,7 @@ struct impr_type *improvement_by_number(const Impr_type_id id)
      tech_req to A_LAST; [was not in current 2007-07-27]
    - it is a space part, and the spacerace is not enabled.
 **************************************************************************/
-struct impr_type *valid_improvement(struct impr_type *pimprove)
+const struct impr_type *valid_improvement(const struct impr_type *pimprove)
 {
   if (NULL == pimprove) {
     return NULL;
@@ -220,13 +231,13 @@ struct impr_type *valid_improvement(struct impr_type *pimprove)
 
   In addition to valid_improvement(), tests for id is out of range.
 **************************************************************************/
-struct impr_type *valid_improvement_by_number(const Impr_type_id id)
+const struct impr_type *valid_improvement_by_number(const Impr_type_id id)
 {
   return valid_improvement(improvement_by_number(id));
 }
 
 /**********************************************************************//**
-  Return the (translated) name of the given improvement. 
+  Return the (translated) name of the given improvement.
   You don't have to free the return pointer.
 **************************************************************************/
 const char *improvement_name_translation(const struct impr_type *pimprove)
@@ -244,9 +255,10 @@ const char *improvement_rule_name(const struct impr_type *pimprove)
 }
 
 /**********************************************************************//**
-  Returns the number of shields it takes to build this improvement.
+  Returns the base number of shields it takes to build this improvement.
+  This one does not take city specific bonuses in to account.
 **************************************************************************/
-int impr_build_shield_cost(const struct impr_type *pimprove)
+int impr_base_build_shield_cost(const struct impr_type *pimprove)
 {
   int base = pimprove->build_cost;
 
@@ -254,15 +266,51 @@ int impr_build_shield_cost(const struct impr_type *pimprove)
 }
 
 /**********************************************************************//**
+  Returns estimate of the number of shields it takes to build this improvement.
+  pplayer and ptile can be NULL, but that might reduce quality of the
+  estimate.
+**************************************************************************/
+int impr_estimate_build_shield_cost(const struct player *pplayer,
+                                    const struct tile *ptile,
+                                    const struct impr_type *pimprove)
+{
+  int base = pimprove->build_cost
+    * (100 +
+       get_target_bonus_effects(NULL,
+                                &(const struct req_context) {
+                                  .player = pplayer,
+                                  .building = pimprove,
+                                  .tile = ptile,
+                                },
+                                NULL,
+                                EFT_IMPR_BUILD_COST_PCT)) / 100;
+
+  return MAX(base * game.info.shieldbox / 100, 1);
+}
+
+/**********************************************************************//**
+  Returns the number of shields it takes to build this improvement.
+**************************************************************************/
+int impr_build_shield_cost(const struct city *pcity,
+                           const struct impr_type *pimprove)
+{
+  int base = pimprove->build_cost
+    * (100 + get_building_bonus(pcity, pimprove, EFT_IMPR_BUILD_COST_PCT)) / 100;
+
+  return MAX(base * game.info.shieldbox / 100, 1);
+}
+
+/**********************************************************************//**
   Returns the amount of gold it takes to rush this improvement.
 **************************************************************************/
-int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock)
+int impr_buy_gold_cost(const struct city *pcity,
+                       const struct impr_type *pimprove, int shields_in_stock)
 {
   int cost = 0;
-  const int missing = impr_build_shield_cost(pimprove) - shields_in_stock;
+  const int missing = impr_build_shield_cost(pcity, pimprove) - shields_in_stock;
 
-  if (improvement_has_flag(pimprove, IF_GOLD)) {
-    /* Can't buy capitalization. */
+  if (is_convert_improvement(pimprove)) {
+    /* Can't buy coinage-like improvements. */
     return 0;
   }
 
@@ -270,12 +318,13 @@ int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock)
     cost = 2 * missing;
   }
 
-  if (is_great_wonder(pimprove)) {
-    cost *= 2;
-  }
   if (shields_in_stock == 0) {
     cost *= 2;
   }
+
+  cost = cost
+    * (100 + get_building_bonus(pcity, pimprove, EFT_IMPR_BUY_COST_PCT)) / 100;
+
   return cost;
 }
 
@@ -284,7 +333,7 @@ int impr_buy_gold_cost(const struct impr_type *pimprove, int shields_in_stock)
 **************************************************************************/
 int impr_sell_gold(const struct impr_type *pimprove)
 {
-  return impr_build_shield_cost(pimprove);
+  return MAX(pimprove->build_cost * game.info.shieldbox / 100, 1);
 }
 
 /**********************************************************************//**
@@ -363,15 +412,15 @@ bool improvement_obsolete(const struct player *pplayer,
 			  const struct impr_type *pimprove,
                           const struct city *pcity)
 {
-  struct tile *ptile = NULL;
-
-  if (pcity != NULL) {
-    ptile = city_tile(pcity);
-  }
+  const struct req_context context = {
+    .player = pplayer,
+    .city = pcity,
+    .tile = pcity ? city_tile(pcity) : NULL,
+    .building = pimprove,
+  };
 
   requirement_vector_iterate(&pimprove->obsolete_by, preq) {
-    if (is_req_active(pplayer, NULL, pcity, pimprove, ptile, NULL, NULL,
-                      NULL, NULL, NULL, preq, RPT_CERTAIN)) {
+    if (is_req_active(&context, NULL, preq, RPT_CERTAIN)) {
       return TRUE;
     }
   } requirement_vector_iterate_end;
@@ -383,16 +432,18 @@ bool improvement_obsolete(const struct player *pplayer,
   Returns TRUE iff improvement provides units buildable in city
 **************************************************************************/
 static bool impr_provides_buildable_units(const struct city *pcity,
-                                          struct impr_type *pimprove)
+                                          const struct impr_type *pimprove)
 {
+  const struct civ_map *nmap = &(wld.map);
+
   /* Fast check */
   if (!pimprove->allows_units) {
     return FALSE;
   }
 
   unit_type_iterate(ut) {
-    if (ut->need_improvement == pimprove
-        && can_city_build_unit_now(pcity, ut)) {
+    if (requirement_needs_improvement(pimprove, &ut->build_reqs)
+        && can_city_build_unit_now(nmap, pcity, ut)) {
       return TRUE;
     }
   } unit_type_iterate_end;
@@ -404,8 +455,9 @@ static bool impr_provides_buildable_units(const struct city *pcity,
   Returns TRUE iff improvement provides extras buildable in city
 **************************************************************************/
 static bool impr_provides_buildable_extras(const struct city *pcity,
-                                           struct impr_type *pimprove)
+                                           const struct impr_type *pimprove)
 {
+  const struct civ_map *nmap = &(wld.map);
 
   /* Fast check */
   if (!pimprove->allows_extras) {
@@ -414,7 +466,7 @@ static bool impr_provides_buildable_extras(const struct city *pcity,
 
   extra_type_iterate(pextra) {
     if (requirement_needs_improvement(pimprove, &pextra->reqs)) {
-      city_tile_iterate(city_map_radius_sq_get(pcity),
+      city_tile_iterate(nmap, city_map_radius_sq_get(pcity),
                         city_tile(pcity), ptile) {
         if (player_can_build_extra(pextra, city_owner(pcity), ptile)) {
           return TRUE;
@@ -430,7 +482,7 @@ static bool impr_provides_buildable_extras(const struct city *pcity,
   Returns TRUE iff improvement prevents a disaster in city
 **************************************************************************/
 static bool impr_prevents_disaster(const struct city *pcity,
-                                   struct impr_type *pimprove)
+                                   const struct impr_type *pimprove)
 {
   /* Fast check */
   if (!pimprove->prevents_disaster) {
@@ -454,17 +506,64 @@ static bool impr_prevents_disaster(const struct city *pcity,
          has or can gain that tech or unit, protection is still claimed.
 **************************************************************************/
 static bool impr_protects_vs_actions(const struct city *pcity,
-                                     struct impr_type *pimprove)
+                                     const struct impr_type *pimprove)
 {
   /* Fast check */
   if (!pimprove->protects_vs_actions) {
     return FALSE;
   }
 
-  action_enablers_iterate(act) {
-    if (!requirement_fulfilled_by_improvement(pimprove, &act->target_reqs)
-        && !is_action_possible_on_city(act->action, NULL, pcity)) {
+  action_enablers_iterate(enabler) {
+    if (!requirement_fulfilled_by_improvement(pimprove, &enabler->target_reqs)
+        && !is_action_possible_on_city(enabler_get_action_id(enabler),
+                                       NULL, pcity)) {
       return TRUE;
+    }
+  } action_enablers_iterate_end;
+
+  return FALSE;
+}
+
+/**********************************************************************//**
+  Returns TRUE iff improvement allows its owner to perform an action.
+**************************************************************************/
+static bool impr_allows_actions(const struct city *pcity,
+                                const struct impr_type *pimprove)
+{
+  const struct civ_map *nmap = &(wld.map);
+
+  /* Fast check */
+  if (!pimprove->allows_actions) {
+    return FALSE;
+  }
+
+  action_enablers_iterate(enabler) {
+    if (requirement_needs_improvement(pimprove, &enabler->actor_reqs)) {
+      action_id act = enabler_get_action_id(enabler);
+
+      switch (action_id_get_actor_kind(act)) {
+      case AAK_UNIT:
+        unit_type_iterate(ut) {
+          if (!utype_can_do_action(ut, act)) {
+            /* Not relevant */
+            continue;
+          }
+
+          if (utype_player_already_has_this(city_owner(pcity), ut)) {
+            /* The player has a unit that may use the building */
+            return TRUE;
+          }
+
+          if (can_city_build_unit_now(nmap, pcity, ut)) {
+            /* This city can build a unit that uses the building */
+            return TRUE;
+          }
+        } unit_type_iterate_end;
+        break;
+      case AAK_COUNT:
+        fc_assert(action_id_get_actor_kind(act) != AAK_COUNT);
+        break;
+      }
     }
   } action_enablers_iterate_end;
 
@@ -482,15 +581,12 @@ static bool impr_protects_vs_actions(const struct city *pcity,
   this city (i.e. Wonders)).
 **************************************************************************/
 static bool improvement_has_side_effects(const struct city *pcity,
-                                         struct impr_type *pimprove)
+                                         const struct impr_type *pimprove)
 {
-    /* FIXME: There should probably also be a test as to whether
-     *        the improvement *enables* an action (somewhere else),
-     *        but this is hard to determine at city scope. */
-
     return (impr_provides_buildable_units(pcity, pimprove)
             || impr_provides_buildable_extras(pcity, pimprove)
             || impr_prevents_disaster(pcity, pimprove)
+            || impr_allows_actions(pcity, pimprove)
             || impr_protects_vs_actions(pcity, pimprove));
 }
 
@@ -498,7 +594,7 @@ static bool improvement_has_side_effects(const struct city *pcity,
   Returns TRUE iff improvement provides some effect (good or bad).
 **************************************************************************/
 static bool improvement_has_effects(const struct city *pcity,
-                                    struct impr_type *pimprove)
+                                    const struct impr_type *pimprove)
 {
   struct universal source = { .kind = VUT_IMPROVEMENT,
                               .value = { .building = pimprove } };
@@ -510,7 +606,7 @@ static bool improvement_has_effects(const struct city *pcity,
 
   effect_list_iterate(plist, peffect) {
     if (0 != get_potential_improvement_bonus(pimprove, pcity,
-                                             peffect->type, RPT_CERTAIN)) {
+                                             peffect->type, RPT_CERTAIN, TRUE)) {
       return TRUE;
     }
   } effect_list_iterate_end;
@@ -526,10 +622,11 @@ static bool improvement_has_effects(const struct city *pcity,
   producing units under the current government might under another).
 **************************************************************************/
 bool is_improvement_productive(const struct city *pcity,
-                               struct impr_type *pimprove)
+                               const struct impr_type *pimprove)
 {
     return (!improvement_obsolete(city_owner(pcity), pimprove, pcity)
             && (improvement_has_flag(pimprove, IF_GOLD)
+                || improvement_has_flag(pimprove, IF_INFRA)
                 || improvement_has_side_effects(pcity, pimprove)
                 || improvement_has_effects(pcity, pimprove)));
 }
@@ -541,16 +638,19 @@ bool is_improvement_productive(const struct city *pcity,
    - all of its effects (if any) are provided by other means, or it's
      obsolete (and thus assumed to have no effect); and
    - it's not enabling the city to build some kind of units; and
-   - it's not Coinage (IF_GOLD).
+   - it's not convert production (IF_GOLD or IF_INFRA).
   (Note that it's not impossible that this improvement could become useful
   if circumstances changed, say if a new government enabled the building
   of its special units.)
 **************************************************************************/
 bool is_improvement_redundant(const struct city *pcity,
-                              struct impr_type *pimprove)
+                              const struct impr_type *pimprove)
 {
   /* A capitalization production is never redundant. */
   if (improvement_has_flag(pimprove, IF_GOLD)) {
+    return FALSE;
+  }
+  if (improvement_has_flag(pimprove, IF_INFRA)) {
     return FALSE;
   }
 
@@ -570,8 +670,10 @@ bool is_improvement_redundant(const struct city *pcity,
    is obsolete.
 **************************************************************************/
 bool can_player_build_improvement_direct(const struct player *p,
-					 struct impr_type *pimprove)
+                                         const struct impr_type *pimprove)
 {
+  const struct req_context context = { .player = p };
+
   bool space_part = FALSE;
 
   if (!valid_improvement(pimprove)) {
@@ -580,8 +682,7 @@ bool can_player_build_improvement_direct(const struct player *p,
 
   requirement_vector_iterate(&pimprove->reqs, preq) {
     if (preq->range >= REQ_RANGE_PLAYER
-        && !is_req_active(p, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                          NULL, NULL, preq, RPT_CERTAIN)) {
+        && !is_req_active(&context, NULL, preq, RPT_CERTAIN)) {
       return FALSE;
     }
   } requirement_vector_iterate_end;
@@ -606,9 +707,9 @@ bool can_player_build_improvement_direct(const struct player *p,
       return FALSE;
     }
   }
-  if (space_part &&
-      (get_player_bonus(p, EFT_ENABLE_SPACE) <= 0
-       || p->spaceship.state >= SSHIP_LAUNCHED)) {
+  if (space_part
+      && (get_player_bonus(p, EFT_ENABLE_SPACE) <= 0
+          || p->spaceship.state >= SSHIP_LAUNCHED)) {
     return FALSE;
   }
 
@@ -641,11 +742,13 @@ bool can_player_build_improvement_now(const struct player *p,
 /**********************************************************************//**
   Whether player can _eventually_ build given building somewhere -- i.e.,
   returns TRUE if building is available with current tech OR will be
-  available with future tech.  Returns FALSE if building is obsolete.
+  available with future tech. Returns FALSE if building is obsolete.
 **************************************************************************/
 bool can_player_build_improvement_later(const struct player *p,
-					struct impr_type *pimprove)
+                                        const struct impr_type *pimprove)
 {
+  const struct req_context context = { .player = p };
+
   if (!valid_improvement(pimprove)) {
     return FALSE;
   }
@@ -661,9 +764,7 @@ bool can_player_build_improvement_later(const struct player *p,
    * they can never be met). */
   requirement_vector_iterate(&pimprove->reqs, preq) {
     if (preq->range >= REQ_RANGE_PLAYER
-	&& is_req_unchanging(preq)
-	&& !is_req_active(p, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                          NULL, NULL, preq, RPT_POSSIBLE)) {
+        && is_req_preventing(&context, NULL, preq, RPT_POSSIBLE)) {
       return FALSE;
     }
   } requirement_vector_iterate_end;
@@ -703,7 +804,21 @@ bool is_improvement(const struct impr_type *pimprove)
 **************************************************************************/
 bool is_special_improvement(const struct impr_type *pimprove)
 {
-  return pimprove->genus == IG_SPECIAL;
+  /* TODO: Find either a new term for traditional "special" improvements
+   * (maybe "project"?), or a new umbrella term for all improvements that
+   * can't be present in the city as a finished building (including special
+   * and convert improvements). */
+  return (pimprove->genus == IG_SPECIAL)
+      || is_convert_improvement(pimprove);
+}
+
+/**********************************************************************//**
+  Is this a coinage-like improvement that converts production into some
+  other form of output?
+**************************************************************************/
+bool is_convert_improvement(const struct impr_type *pimprove)
+{
+  return (pimprove->genus == IG_CONVERT);
 }
 
 /**********************************************************************//**
@@ -784,7 +899,14 @@ bool wonder_is_built(const struct player *pplayer,
 struct city *city_from_wonder(const struct player *pplayer,
                               const struct impr_type *pimprove)
 {
-  int city_id = pplayer->wonders[improvement_index(pimprove)];
+  int idx = improvement_index(pimprove);
+  int city_id;
+
+  if (idx < 0) {
+    return NULL;
+  }
+
+  city_id = pplayer->wonders[idx];
 
   fc_assert_ret_val(NULL != pplayer, NULL);
   fc_assert_ret_val(is_wonder(pimprove), NULL);
@@ -818,6 +940,48 @@ struct city *city_from_wonder(const struct player *pplayer,
 #endif /* FREECIV_DEBUG */
 
   return player_city_by_number(pplayer, city_id);
+}
+
+/**********************************************************************//**
+  Can the player see wonder owned by the other player?
+
+  Embassy can be passed as parameter so that caller can make the somewhat
+  costly embassy detection just once even when calling this multiple
+  times (e.g. for number of different wonders)
+**************************************************************************/
+bool wonder_visible_to_player(const struct impr_type *wonder,
+                              const struct player *pplayer,
+                              const struct player *owner,
+                              enum fc_tristate embassy)
+{
+  if (pplayer == owner) {
+    /* Can see all own wonders,
+     * even improvements if that matters. */
+    return TRUE;
+  }
+
+  if (is_great_wonder(wonder)) {
+    return TRUE;
+  }
+
+  if (is_small_wonder(wonder)) {
+    switch (game.info.small_wonder_visibility) {
+    case WV_ALWAYS:
+      return TRUE;
+    case WV_NEVER:
+      return FALSE;
+    case WV_EMBASSY:
+      return embassy == TRI_YES
+        || (embassy == TRI_MAYBE && team_has_embassy(pplayer->team, owner));
+    }
+
+    fc_assert(FALSE);
+
+    return FALSE;
+  }
+
+  /* Now a wonder, but regular improvement */
+  return FALSE;
 }
 
 /**********************************************************************//**
@@ -932,18 +1096,28 @@ struct city *city_from_small_wonder(const struct player *pplayer,
 /**********************************************************************//**
   Return TRUE iff the improvement can be sold.
 **************************************************************************/
-bool can_sell_building(struct impr_type *pimprove)
+bool can_sell_building(const struct impr_type *pimprove)
 {
-  return (valid_improvement(pimprove) && is_improvement(pimprove));
+  return (valid_improvement(pimprove)
+          && is_building_sellable(pimprove));
 }
 
 /**********************************************************************//**
   Return TRUE iff the city can sell the given improvement.
 **************************************************************************/
 bool can_city_sell_building(const struct city *pcity,
-			    struct impr_type *pimprove)
+                            const struct impr_type *pimprove)
 {
-  return (city_has_building(pcity, pimprove) && is_improvement(pimprove));
+  return (city_has_building(pcity, pimprove)
+          && is_building_sellable(pimprove));
+}
+
+/**********************************************************************//**
+  Return TRUE iff the building is sellable one.
+**************************************************************************/
+bool is_building_sellable(const struct impr_type *pimprove)
+{
+  return is_improvement(pimprove);
 }
 
 /**********************************************************************//**
@@ -953,7 +1127,7 @@ bool can_city_sell_building(const struct city *pcity,
 **************************************************************************/
 enum test_result test_player_sell_building_now(struct player *pplayer,
                                                struct city *pcity,
-                                               struct impr_type *pimprove)
+                                               const struct impr_type *pimprove)
 {
   /* Check if player can sell anything from this city */
   if (pcity->owner != pplayer) {
@@ -965,7 +1139,7 @@ enum test_result test_player_sell_building_now(struct player *pplayer,
   }
 
   /* Check if particular building can be solt */
-  if (pimprove != NULL 
+  if (pimprove != NULL
       && !can_city_sell_building(pcity, pimprove)) {
     return TR_OTHER_FAILURE;
   }
@@ -973,12 +1147,11 @@ enum test_result test_player_sell_building_now(struct player *pplayer,
   return TR_SUCCESS;
 }
 
-
 /**********************************************************************//**
   Try to find a sensible replacement building, based on other buildings
   that may have caused this one to become obsolete.
 **************************************************************************/
-struct impr_type *improvement_replacement(const struct impr_type *pimprove)
+const struct impr_type *improvement_replacement(const struct impr_type *pimprove)
 {
   requirement_vector_iterate(&pimprove->obsolete_by, pobs) {
     if (pobs->source.kind == VUT_IMPROVEMENT && pobs->present) {
@@ -987,4 +1160,79 @@ struct impr_type *improvement_replacement(const struct impr_type *pimprove)
   } requirement_vector_iterate_end;
 
   return NULL;
+}
+
+/************************************************************************//**
+  Initialize user building flags.
+****************************************************************************/
+void user_impr_flags_init(void)
+{
+  int i;
+
+  for (i = 0; i < MAX_NUM_USER_BUILDING_FLAGS; i++) {
+    user_flag_init(&user_impr_flags[i]);
+  }
+}
+
+/************************************************************************//**
+  Frees the memory associated with all building flags
+****************************************************************************/
+void impr_flags_free(void)
+{
+  int i;
+
+  for (i = 0; i < MAX_NUM_USER_BUILDING_FLAGS; i++) {
+    user_flag_free(&user_impr_flags[i]);
+  }
+}
+
+/************************************************************************//**
+  Sets user defined name for building flag.
+****************************************************************************/
+void set_user_impr_flag_name(enum impr_flag_id id, const char *name,
+                              const char *helptxt)
+{
+  int bfid = id - IF_USER_FLAG_1;
+
+  fc_assert_ret(id >= IF_USER_FLAG_1 && id <= IF_LAST_USER_FLAG);
+
+  if (user_impr_flags[bfid].name != NULL) {
+    FC_FREE(user_impr_flags[bfid].name);
+    user_impr_flags[bfid].name = NULL;
+  }
+
+  if (name && name[0] != '\0') {
+    user_impr_flags[bfid].name = fc_strdup(name);
+  }
+
+  if (user_impr_flags[bfid].helptxt != NULL) {
+    free(user_impr_flags[bfid].helptxt);
+    user_impr_flags[bfid].helptxt = NULL;
+  }
+
+  if (helptxt && helptxt[0] != '\0') {
+    user_impr_flags[bfid].helptxt = fc_strdup(helptxt);
+  }
+}
+
+/************************************************************************//**
+  Building flag name callback, called from specenum code.
+****************************************************************************/
+const char *impr_flag_id_name_cb(enum impr_flag_id flag)
+{
+  if (flag < IF_USER_FLAG_1 || flag > IF_LAST_USER_FLAG) {
+    return NULL;
+  }
+
+  return user_impr_flags[flag - IF_USER_FLAG_1].name;
+}
+
+/************************************************************************//**
+  Return the (untranslated) help text of the user building flag.
+****************************************************************************/
+const char *impr_flag_helptxt(enum impr_flag_id id)
+{
+  fc_assert(id >= IF_USER_FLAG_1 && id <= IF_LAST_USER_FLAG);
+
+  return user_impr_flags[id - IF_USER_FLAG_1].helptxt;
 }

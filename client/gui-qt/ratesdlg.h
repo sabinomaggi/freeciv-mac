@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 2003 - The Freeciv Project
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -46,8 +46,8 @@ class QSize;
 class QSlider;
 
 /**************************************************************************
- * Custom slider with two settable values
- *************************************************************************/
+  Custom slider with two settable values
+**************************************************************************/
 class fc_double_edge : public QWidget
 {
   Q_OBJECT
@@ -61,7 +61,7 @@ private:
   int max_rates;
   QPixmap cursor_pix;
 public:
-  fc_double_edge(QWidget *parent = NULL);
+  fc_double_edge(QWidget *parent = nullptr);
   ~fc_double_edge();
   int current_min;
   int current_max;
@@ -74,14 +74,14 @@ protected:
 };
 
 /**************************************************************************
- * Dialog used to change tax rates
- *************************************************************************/
+  Dialog used to change tax rates
+**************************************************************************/
 class tax_rates_dialog: public qfc_dialog
 {
 Q_OBJECT
 
   public:
-  tax_rates_dialog(QWidget *parent = 0);
+  tax_rates_dialog(QWidget *parent = nullptr);
 
 private:
   fc_double_edge *fcde;
@@ -92,14 +92,14 @@ private slots:
 };
 
 /**************************************************************************
- * Dialog used to change policies
- *************************************************************************/
-class multipler_rates_dialog: public qfc_dialog
+  Dialog used to change policies
+**************************************************************************/
+class multiplier_rates_dialog: public QDialog
 {
   Q_OBJECT
 
 public:
-  explicit multipler_rates_dialog(QWidget* parent = 0, Qt::WindowFlags f = 0);
+  explicit multiplier_rates_dialog(QWidget *parent = nullptr);
 private:
   QList<QSlider*> slider_list;
   QPushButton *cancel_button;
@@ -113,4 +113,4 @@ private slots:
 
 void popup_multiplier_dialog(void);
 
-#endif /* FC__RATESDLG_H */
+#endif // FC__RATESDLG_H

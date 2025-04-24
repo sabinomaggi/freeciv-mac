@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -55,40 +55,40 @@ tiles = { "row", "column","tag"
 
 ; Terrain special resources:
 
- 0,   2, "ts.oasis"
- 0,   3, "ts.oil"
+ 0,   2, "ts.oasis:0"
+ 0,   3, "ts.oil:0"
 
- 1,   2, "ts.buffalo"
- 1,   3, "ts.wheat"
+ 1,   2, "ts.buffalo:0"
+ 1,   3, "ts.wheat:0"
 
- 2,  2, "ts.fish"
- 2,  3, "ts.whales"
+ 2,  2, "ts.fish:0"
+ 2,  3, "ts.whales:0"
 
- 7,   7, "ts.grassland_resources", "ts.river_resources"
+ 7,   7, "ts.grassland_resources:0", "ts.river_resources:0"
 
- 3,   2, "ts.pheasant"
- 3,   3, "ts.silk"
+ 3,   2, "ts.pheasant:0"
+ 3,   3, "ts.silk:0"
 
- 4,   2, "ts.coal"
- 4,   3, "ts.wine"
+ 4,   2, "ts.coal:0"
+ 4,   3, "ts.wine:0"
 
- 5,   2, "ts.gold"
- 5,   3, "ts.iron"
+ 5,   2, "ts.gold:0"
+ 5,   3, "ts.iron:0"
 
- 6,   2, "ts.tundra_game"
- 6,   3, "ts.furs"
+ 6,   2, "ts.tundra_game:0"
+ 6,   3, "ts.furs:0"
 
- 7,   2, "ts.arctic_ivory"
- 7,   3, "ts.arctic_oil"
+ 7,   2, "ts.arctic_ivory:0"
+ 7,   3, "ts.arctic_oil:0"
 
- 8,   2, "ts.peat"
- 8,   3, "ts.spice"
+ 8,   2, "ts.peat:0"
+ 8,   3, "ts.spice:0"
 
- 9,   2, "ts.gems"
- 9,   3, "ts.fruit"
- 9,   4, "ts.horses"
- 9,   5, "ts.seals"
- 9,   6, "ts.forest_game"
+ 9,   2, "ts.gems:0"
+ 9,   3, "ts.fruit:0"
+ 9,   4, "ts.horses:0"
+ 9,   5, "ts.seals:0"
+ 9,   6, "ts.forest_game:0"
 
 
 ; Maglevs
@@ -121,15 +121,16 @@ tiles = { "row", "column","tag"
  12, 7, "road.rail_w"
  12, 8, "road.rail_nw"
 
-;add-ons
- 2, 7, "tx.oil_mine"
- 2, 8, "tx.oil_rig"
+; Add-ons
+ 2, 7, "tx.oil_mine:0"
+ 2, 8, "tx.oil_rig:0"
  3, 7, "tx.irrigation"
  4, 7, "tx.farmland"
- 5, 7, "tx.mine"
- 6, 7, "tx.pollution"
- 8, 7, "tx.village"
- 9, 7, "tx.fallout"
+ 5, 7, "tx.mine:0"
+ 6, 7, "tx.pollution:0"
+ 8, 7, "tx.village:0"
+ 8, 8, "tx.nets:0"
+ 9, 7, "tx.fallout:0"
 }
 
 
@@ -148,7 +149,7 @@ tiles = { "row", "column","tag"
   0, 2, "t.unknown1"
   0, 3, "t.blend.ocean"
   0, 3, "t.blend.coast"
-  0, 4, "user.attention"
+  0, 4, "user.attention", "user.infratile"
   0, 5, "tx.fog"
 
   1, 0, "path.step"            ; turn boundary within path

@@ -33,13 +33,10 @@
 
 #include "dialogs_g.h"
 
-static void soundset_suggestion_callback(GtkWidget *dlg, gint arg);
-static void musicset_suggestion_callback(GtkWidget *dlg, gint arg);
-
 /************************************************************************//**
   Callback either loading suggested soundset or doing nothing
 ****************************************************************************/
-static void soundset_suggestion_callback(GtkWidget *dlg, gint arg)
+static void soundset_suggestion_response(gint arg)
 {
   if (arg == GTK_RESPONSE_YES) {
     /* User accepted soundset loading */
@@ -60,9 +57,9 @@ void popup_soundset_suggestion_dialog(void)
   dialog = gtk_dialog_new_with_buttons(_("Preferred soundset"),
                                        NULL,
                                        0,
-                                       _("Load soundset"),
+                                       _("_Load soundset"),
                                        GTK_RESPONSE_YES,
-                                       _("Keep current soundset"),
+                                       _("_Keep current soundset"),
                                        GTK_RESPONSE_NO,
                                        NULL);
   setup_dialog(dialog, toplevel);
@@ -76,25 +73,23 @@ void popup_soundset_suggestion_dialog(void)
               game.control.preferred_soundset, sound_set_name);
 
   label = gtk_label_new(buf);
-  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), label);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
+                 label);
   gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_CENTER);
-  gtk_widget_show(label);
-
-  g_signal_connect(dialog, "response",
-                   G_CALLBACK(soundset_suggestion_callback), NULL);
+  gtk_widget_set_visible(label, TRUE);
 
   /* In case incoming rulesets are incompatible with current soundset
    * we need to block their receive before user has accepted loading
    * of the correct soundset. */
-  gtk_dialog_run(GTK_DIALOG(dialog));
+  soundset_suggestion_response(blocking_dialog(dialog));
 
-  gtk_widget_destroy(dialog);
+  gtk_window_destroy(GTK_WINDOW(dialog));
 }
 
 /************************************************************************//**
   Callback either loading suggested musicset or doing nothing
 ****************************************************************************/
-static void musicset_suggestion_callback(GtkWidget *dlg, gint arg)
+static void musicset_suggestion_response(gint arg)
 {
   if (arg == GTK_RESPONSE_YES) {
     /* User accepted musicset loading */
@@ -114,9 +109,9 @@ void popup_musicset_suggestion_dialog(void)
   dialog = gtk_dialog_new_with_buttons(_("Preferred musicset"),
                                        NULL,
                                        0,
-                                       _("Load musicset"),
+                                       _("_Load musicset"),
                                        GTK_RESPONSE_YES,
-                                       _("Keep current musicset"),
+                                       _("_Keep current musicset"),
                                        GTK_RESPONSE_NO,
                                        NULL);
   gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_YES);
@@ -129,17 +124,15 @@ void popup_musicset_suggestion_dialog(void)
               game.control.preferred_musicset, music_set_name);
 
   label = gtk_label_new(buf);
-  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), label);
+  gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))),
+                 label);
   gtk_label_set_justify(GTK_LABEL(label), GTK_JUSTIFY_CENTER);
-  gtk_widget_show(label);
-
-  g_signal_connect(dialog, "response",
-                   G_CALLBACK(musicset_suggestion_callback), NULL);
+  gtk_widget_set_visible(label, TRUE);
 
   /* In case incoming rulesets are incompatible with current musicset
    * we need to block their receive before user has accepted loading
-   * of the correct soundset. */
-  gtk_dialog_run(GTK_DIALOG(dialog));
+   * of the correct musicset. */
+  musicset_suggestion_response(blocking_dialog(dialog));
 
-  gtk_widget_destroy(dialog);
+  gtk_window_destroy(GTK_WINDOW(dialog));
 }

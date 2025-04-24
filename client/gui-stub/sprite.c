@@ -23,33 +23,32 @@
 #include "sprite.h"
 
 /************************************************************************//**
-  Return a NULL-terminated, permanently allocated array of possible
-  graphics types extensions.  Extensions listed first will be checked
-  first.
+  Return a nullptr-terminated, permanently allocated array of possible
+  graphics types extensions. Extensions listed first will be checked first.
 ****************************************************************************/
 const char **gfx_fileextensions(void)
 {
   /* PORTME */
 
-  /* hack to allow stub to run */
+  /* Hack to allow stub to run */
   static const char *ext[] = {
     "png",	/* png should be the default. */
     /* ...etc... */
-    NULL
+    nullptr
   };
 
   return ext;
 }
 
 /************************************************************************//**
-  Load the given graphics file into a sprite.  This function loads an
+  Load the given graphics file into a sprite. This function loads an
   entire image file, which may later be broken up into individual sprites
-  with crop_sprite.
+  with crop_sprite().
 ****************************************************************************/
-struct sprite *gui_load_gfxfile(const char *filename)
+struct sprite *gui_load_gfxfile(const char *filename, bool svgflag)
 {
   /* PORTME */
-  return NULL;
+  return nullptr;
 }
 
 /************************************************************************//**
@@ -58,20 +57,20 @@ struct sprite *gui_load_gfxfile(const char *filename)
 
   source gives the sprite that is to be cropped.
 
-  x,y, width, height gives the rectangle to be cropped.  The pixel at
+  x,y, width, height gives the rectangle to be cropped. The pixel at
   position of the source sprite will be at (0,0) in the new sprite, and
   the new sprite will have dimensions (width, height).
 
   mask gives an additional mask to be used for clipping the new
   sprite. Only the transparency value of the mask is used in
-  crop_sprite. The formula is: dest_trans = src_trans *
-  mask_trans. Note that because the transparency is expressed as an
+  crop_sprite. The formula is: dest_trans = src_trans * mask_trans.
+  Note that because the transparency is expressed as an
   integer it is common to divide it by 256 afterwards.
 
   mask_offset_x, mask_offset_y is the offset of the mask relative to the
-  origin of the source image.  The pixel at (mask_offset_x,mask_offset_y)
-  in the mask image will be used to clip pixel (0,0) in the source image
-  which is pixel (-x,-y) in the new image.
+  origin of the source image. The pixel at (mask_offset_x, mask_offset_y)
+  in the mask image will be used to clip pixel (0, 0) in the source image
+  which is pixel (-x, -y) in the new image.
 ****************************************************************************/
 struct sprite *gui_crop_sprite(struct sprite *source,
                                int x, int y, int width, int height,
@@ -80,16 +79,16 @@ struct sprite *gui_crop_sprite(struct sprite *source,
                                float scale, bool smooth)
 {
   /* PORTME */
-  return NULL;
+  return nullptr;
 }
 
 /************************************************************************//**
-  Create a new sprite with the given height, width and color.
+  Create a new sprite with the given width, height, and color.
 ****************************************************************************/
 struct sprite *gui_create_sprite(int width, int height, struct color *pcolor)
 {
   /* PORTME */
-  return NULL;
+  return nullptr;
 }
 
 /************************************************************************//**
@@ -110,4 +109,13 @@ void gui_get_sprite_dimensions(struct sprite *sprite, int *width, int *height)
 void gui_free_sprite(struct sprite *s)
 {
   /* PORTME */
+}
+
+/************************************************************************//**
+  Return a sprite image of a number.
+****************************************************************************/
+struct sprite *gui_load_gfxnumber(int num)
+{
+  /* PORTME */
+  return nullptr;
 }

@@ -26,13 +26,14 @@
 // common
 #include "requirements.h"
 
+class QLineEdit;
 class QSpinBox;
 
 class ruledit_gui;
 
 enum effect_filter_main_class { EFMC_NORMAL,
-                                EFMC_NONE, /* No requirements */
-                                EFMC_ALL   /* Any requirements */
+                                EFMC_NONE, // No requirements
+                                EFMC_ALL   // Any requirements
 };
 
 struct effect_list_fill_data
@@ -54,7 +55,7 @@ class effect_edit : public QDialog
     void refresh();
     void add(const char *msg);
     void add_effect_to_list(struct effect *peffect,
-                            struct effect_list_fill_data *data);
+                            struct effect_list_fill_data *fill_data);
 
     struct universal *filter_get();
 
@@ -74,14 +75,21 @@ class effect_edit : public QDialog
     QToolButton *edit_type_button;
     QSpinBox *value_box;
 
+    QToolButton *mp_button;
+    QLineEdit *comment;
+
   private slots:
     void select_effect();
     void fill_active();
     void edit_reqs();
+    void add_now();
+    void delete_now();
     void close_now();
 
     void effect_type_menu(QAction *action);
     void set_value(int value);
+    void multiplier_menu(QAction *action);
+    void comment_given();
 
  protected:
     void closeEvent(QCloseEvent *event);

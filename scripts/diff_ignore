@@ -19,7 +19,6 @@
 .deps
 .libs
 .git
-Freeciv.h
 Makefile
 Makefile.in
 POTFILES
@@ -31,12 +30,14 @@ cat-id-tbl.c
 charset.alias
 fcgui
 freeciv-gtk3
-freeciv-gtk3x
+freeciv-gtk3.22
+freeciv-gtk4
 freeciv-sdl2
 freeciv-qt
 *.sav.gz
 civgame.log
 freeciv-server
+freeciv-web
 config.cache
 config.guess
 fc_config.h
@@ -49,6 +50,8 @@ configure
 core
 depcomp
 freeciv-*.tar.gz
+freeciv-*.zip
+freeciv-*.tar.xz
 install-sh
 missing
 mkinstalldirs
@@ -57,6 +60,7 @@ ref-add.sed
 ref-del.sed
 fcser
 fcruledit
+fcruleup
 stamp-cat-id
 stamp-h
 stamp-h1
@@ -66,7 +70,7 @@ undep.sh
 freeciv-manual
 freeciv-mp-*
 freeciv-ruledit
-fcruledit
+freeciv-ruleup
 freeciv.spec
 libtool
 tolua

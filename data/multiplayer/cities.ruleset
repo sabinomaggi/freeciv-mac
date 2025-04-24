@@ -1,19 +1,19 @@
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes
+; for other "maintenance". If you want to make custom changes
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
 [datafile]
-description="Cities data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02 web-compatible"
-format_version=20
+description = "Cities data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17 web-compatible"
+format_version = 50
 
 ; /* <-- avoid gettext warnings
 ;
-; A specialist is a city citizen who is not a tile worker.  Usually the
+; A specialist is a city citizen who is not a tile worker. Usually the
 ; player can control what specialist each citizen is, so long as the
 ; requirements for that specialist are met.
 ;
@@ -29,7 +29,7 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; short_name    = one-character "short name" used (for instance) in cityrep;
-;                 should be first character/abbrevation of "name"
+;                 should be first character/abbreviation of "name"
 ; graphic       = tag specifying preferred graphic
 ;                 Different images based on citizen number are supported.
 ;                 If no such images indexed with citizen number are found,
@@ -103,6 +103,8 @@ pop_report_zeroes    = 4        ; Population in reports in tens of thousands
 
 [citizen]
 nationality          = FALSE    ; account for the nationality of the citizens
+ubuilder_nationality = FALSE    ; does pop_cost unit get builder`s nationality,
+                                ; or that of the majority of the citizens in the city
 convert_speed        = 50       ; base probability 50/1000 -> once every 20 turns
 partisans_pct        = 0        ; percentage of own nationality to inspire partisans
                                 ; if 0, original city owner information is used instead
@@ -131,5 +133,5 @@ food_wipe         = TRUE
 gold_wipe         = TRUE
 
 shield_protected  = "EvacuateFirst"
-shield_unit_act   = "Help Wonder", "Recycle Unit", "Disband Unit"
+shield_unit_act   = "Help Wonder", "Disband Unit Recover", "Disband Unit"
 shield_wipe       = FALSE

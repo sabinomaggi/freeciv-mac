@@ -22,6 +22,9 @@
 #include "movement.h"
 #include "unittype.h"
 
+/* server/advisors */
+#include "autoworkers.h"
+
 #include "advruleset.h"
 
 /**********************************************************************//**
@@ -71,16 +74,18 @@ void adv_units_ruleset_init(void)
       pclass->adv.sea_move = MOVE_NONE;
     }
 
+    pclass->adv.ferry_types = 0;
   } unit_class_iterate_end;
 
   unit_type_iterate(ptype) {
+    const struct req_context context = { .unittype = ptype };
+
     ptype->adv.igwall = TRUE;
 
     effect_list_iterate(get_effects(EFT_DEFEND_BONUS), peffect) {
       if (peffect->value > 0) {
         requirement_vector_iterate(&peffect->reqs, preq) {
-          if (!is_req_active(NULL, NULL, NULL, NULL, NULL, NULL, ptype,
-                             NULL, NULL, NULL, preq, RPT_POSSIBLE)) {
+          if (!is_req_active(&context, NULL, preq, RPT_POSSIBLE)) {
             ptype->adv.igwall = FALSE;
             break;
           }
@@ -91,6 +96,23 @@ void adv_units_ruleset_init(void)
       }
     } effect_list_iterate_end;
 
-    ptype->adv.worker = utype_has_flag(ptype, UTYF_SETTLERS);
+    if (utype_has_role(ptype, L_FERRYBOAT)) {
+      unit_class_iterate(aclass) {
+        if (BV_ISSET(ptype->cargo, uclass_index(aclass))) {
+          aclass->adv.ferry_types++;
+        }
+      } unit_class_iterate_end;
+    }
+
+    ptype->adv.worker
+      = (utype_has_flag(ptype, UTYF_WORKERS)
+         && (utype_can_do_action_result(ptype, ACTRES_CULTIVATE)
+             || utype_can_do_action_result(ptype, ACTRES_PLANT)
+             || utype_can_do_action_result(ptype, ACTRES_IRRIGATE)
+             || utype_can_do_action_result(ptype, ACTRES_MINE)
+             || utype_can_do_action_result(ptype, ACTRES_TRANSFORM_TERRAIN)));
   } unit_type_iterate_end;
+
+  /* Initialize autoworkers actions */
+  auto_workers_ruleset_init();
 }

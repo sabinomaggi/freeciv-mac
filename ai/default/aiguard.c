@@ -25,11 +25,10 @@
 /* server */
 #include "srv_log.h"
 
-/* ai */
-#include "ailog.h"
-#include "aiplayer.h"
-#include "aitools.h"
-#include "aiunit.h"
+/* ai/default */
+#include "dailog.h"
+#include "daiplayer.h"
+#include "daiunit.h"
 
 #include "aiguard.h"
 

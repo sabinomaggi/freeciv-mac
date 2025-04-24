@@ -1,9 +1,9 @@
 
 ; Modifying this file:
 ; You should not modify this file except to make bugfixes or
-; for other "maintenance".  If you want to make custom changes
+; for other "maintenance". If you want to make custom changes
 ; you should create a new datadir subdirectory and copy this file
-; into that directory, and then modify that copy.  Then use the
+; into that directory, and then modify that copy. Then use the
 ; command "rulesetdir <mysubdir>" in the server to have freeciv
 ; use your new customized file.
 
@@ -11,12 +11,12 @@
 ; than minor changes.
 
 [datafile]
-description="Sandbox governments data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "Sandbox governments data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
 
 [governments]
-during_revolution="Anarchy"
+during_revolution = "Anarchy"
 
 ; /* <-- avoid gettext warnings
 ;
@@ -27,8 +27,8 @@ during_revolution="Anarchy"
 ; output when reading this file.
 ;
 ; For the "official" rulesets, the order of these sections should not
-; be changed because that would break backward compatability with
-; savegames.  (In particular, if Fundamentalism is added to default
+; be changed because that would break backward compatibility with
+; savegames. (In particular, if Fundamentalism is added to default
 ; ruleset, should be added at end.)
 ;
 ; Notes on fields:
@@ -40,14 +40,24 @@ during_revolution="Anarchy"
 ;                to rename an item after a ruleset has been released, you
 ;                should set "rule_name" to the original value of "name".
 ; reqs         = requirements for this government (see README.effects)
-; graphic      = tag specifing preferred graphic
+; graphic      = tag specifying preferred graphic
 ; graphic_alt  = alternate graphics tag if preferred is not found;
 ;                should be a standard tag if preferred is not;
 ;                otherwise may be "-"
+; sound        = Sound tag for the audio to play when player switch
+;                to government.
+; sound_alt    = Alternative sound tag, in case primary one is not found.
+; sound_alt2   = Second alternative sound tag, in case neither primary tag
+;                nor the first alt tag is found.
 ; ai_better    = AI will not consider this government for use if the
 ;                government listed here is available
-; ruler_titles = ruler titles by nation, "-" is default, and non-matched
-;                nations are ignored
+; ruler_male_title   = The default male ruler title for the government type.
+;                      It's a format string where name of the ruler is marked
+;                      by '%s'.
+;                      Individual nations may override this by their
+;                      own title.
+; ruler_female_title = The default female ruler title for the government type.
+;                      See above ruler_male_title.
 ; helptext     = optional help text string; should escape all raw newlines
 ;                so that xgettext parsing works
 ;
@@ -60,6 +70,9 @@ name        = _("Anarchy")
 ; No reqs
 graphic     = "gov.anarchy"
 graphic_alt = "-"
+sound       = "g_anarchy"
+sound_alt   = "-"
+sound_alt2  = "-"
 
 ruler_male_title = _("Warlord %s")
 ruler_female_title = _("Warlady %s")
@@ -73,13 +86,19 @@ Anarchy is simply the absence of any recognizable government.\
 ; /* xgettext:no-c-format */
 _("\
 * Buildings and technologies do not require any upkeep.\n\
+* Each worked tile that gives more than 2 Food, Shield, or Trade will\
+ suffer a -1 penalty, unless the city working it is celebrating.\
+ (Cities below size 3 will not celebrate.)\n\
 * Each city can support up to 2 units for free; further units each cost\
  1 shield per turn.\n\
 * Military units do not cause unhappiness even when deployed aggressively.\n\
-* You have no control over tax rates. Half of the trade income is\
- simply lost to your economy (less if you have luxury-promoting buildings),\
- and the remainder all goes to luxuries.\
- Conventional corruption increases with distance from the capital\
+* Military units impose martial law. Up to 3 military units inside a city\
+ will each force 1 unhappy citizen to become content.\n\
+* You have no control over tax rates. All trade income is\
+ converted to luxuries.\n\
+* Half of the luxuries, including those converted from other\
+ trade income, are wasted.\n\
+* Conventional corruption increases with distance from the capital\
  (half as fast with knowledge of The Corporation).\n\
 * Base production waste is 30%. This increases with distance from the\
  capital (half as fast with knowledge of Trade).\
@@ -92,6 +111,9 @@ name        = _("Tribal")
 ; No reqs
 graphic     = "gov.tribal"
 graphic_alt = "s.tax_luxury"
+sound       = "g_tribal"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 ai_better   = "Republic"
 
 ruler_male_title = _("Warlord %s")
@@ -102,12 +124,16 @@ Under a Tribal government, you are part ruler of your people. Your\
  control over your citizens is maintained largely by spiritual counsel.\
 "), _("\
 Compared to Despotism, a Tribal economy is more shield-oriented. Its\
- bonuses to veterancy can be an advantage in wartime.\
+ bonuses to veterancy can be an advantage in wartime, but it lacks the\
+ martial law of other early governments.\
 "),
 ; /* xgettext:no-c-format */
 _("\
 * Increases by half the chance of land units getting the next veteran level\
  after a battle.\n\
+* Each worked tile that gives more than 2 Food, Shield, or Trade will\
+ suffer a -1 penalty, unless the city working it is celebrating.\
+ (Cities below size 3 will not celebrate.)\n\
 * Each city gets 1 extra content citizen.\n\
 * Each city can support up to 2 units for free; further units each cost\
  1 shield per turn.\n\
@@ -127,6 +153,9 @@ name        = _("Despotism")
 ; No reqs
 graphic     = "gov.despotism"
 graphic_alt = "-"
+sound       = "g_despotism"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 ai_better   = "Monarchy"
 
 ruler_male_title = _("Chief %s")
@@ -140,11 +169,17 @@ Compared to Tribalism, a Despotic economy is more trade-oriented.\
 "),
 ; /* xgettext:no-c-format */
 _("\
-* Your capital city gets a +75% bonus to gold production.\n\
+* Your centers of government (cities with Palace and Ecclesiastical\
+ Palace) get a +75% bonus to gold production.\n\
+* Each worked tile that gives more than 2 Food, Shield, or Trade will\
+ suffer a -1 penalty, unless the city working it is celebrating.\
+ (Cities below size 3 will not celebrate.)\n\
 * Each city can support up to 2 units for free; further units each cost\
  1 gold per turn.\n\
 * Unlike later governments, military units do not cause unhappiness even\
  when deployed aggressively.\n\
+* Military units impose martial law. Up to 3 military units inside a city\
+ will each force 1 unhappy citizen to become content.\n\
 * Base corruption is 20%. This increases with distance from the capital\
  (half as fast with knowledge of The Corporation).\n\
 * Base production waste is 10%. This increases with distance from the\
@@ -160,6 +195,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.monarchy"
 graphic_alt = "-"
+sound       = "g_monarchy"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("King %s")
 ruler_female_title = _("Queen %s")
@@ -172,13 +210,16 @@ Monarchy gives low unit upkeep costs.\
 "),
 ; /* xgettext:no-c-format */
 _("\
-* Your capital city gets a +50% bonus to gold production.\n\
+* Your centers of government (cities with Palace and Ecclesiastical\
+ Palace) get a +50% bonus to gold production.\n\
 * Celebrating cities produce one extra trade point for every tile which is\
  already producing trade. (Cities below size 3 will not celebrate.)\n\
 * Each city can support up to 3 units for free (the maximum possible);\
  further units each cost 1 gold per turn.\n\
 * Each city tolerates up to 3 aggressively deployed military units;\
  each further unit causes 1 unhappy citizen.\n\
+* Military units impose martial law. Up to 3 military units inside a city\
+ will each force 1 unhappy citizen to become content.\n\
 * Base corruption is 10%. This increases with distance from the capital\
  (half as fast with knowledge of The Corporation).\n\
 * Base production waste is 20%. This increases with distance from the\
@@ -194,6 +235,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.communism"
 graphic_alt = "-"
+sound       = "g_communism"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("Comrade %s")
 ruler_female_title = _("?female:Comrade %s")
@@ -211,10 +255,14 @@ Communism is a good government for maximizing shield production, and\
 _("\
 * City improvements which would normally have an upkeep of 1 gold are\
  free of upkeep.\n\
+* Cancels the bonus from Mysticism and Theology (to Temples and Cathedrals).\n\
 * Each city can support up to 3 units for free (the maximum possible);\
  further units each cost 1 shield per turn.\n\
 * Each city tolerates up to 3 aggressively deployed military units;\
  each further unit causes 1 unhappy citizen.\n\
+* Military units impose martial law. Up to 3 military units inside a city\
+ will each force 2 unhappy citizens to become content (the maximum\
+ possible).\n\
 * Base corruption is 30%, but is not affected by distance to the capital.\n\
 * There is no production waste.\
 "), _("* Your bureaucracy can prevent you from disbanding certain units.\
@@ -229,6 +277,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.fundamentalism"
 graphic_alt = "-"
+sound       = "g_fundamentalism"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("High Priest %s")
 ruler_female_title = _("High Priestess %s")
@@ -275,6 +326,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.federation"
 graphic_alt = "s.tax_gold"
+sound       = "g_federation"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("Consul %s")
 ruler_female_title = _("?female:Consul %s")
@@ -298,7 +352,8 @@ _("\
  with distance from the capital (half as much as with most other\
  governments). Knowledge of The Corporation eliminates this corruption.\n\
 * Base production waste is 30%, but is not affected by distance to the\
- capital.\
+ capital.\n\
+* Has a senate that may prevent declaration of war.\
 ")
 
 ;------------------------------------------------------------------------
@@ -310,6 +365,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.republic"
 graphic_alt = "-"
+sound       = "g_republic"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("President %s")
 ruler_female_title = _("?female:President %s")
@@ -349,6 +407,9 @@ reqs = { "type", "name", "range"
        }
 graphic     = "gov.democracy"
 graphic_alt = "-"
+sound       = "g_democracy"
+sound_alt   = "g_generic"
+sound_alt2  = "-"
 
 ruler_male_title = _("Prime Minister %s")
 ruler_female_title = _("?female:Prime Minister %s")
@@ -373,7 +434,8 @@ _("\
 * Base corruption is 5%. This increases with distance from the capital\
  (half as fast with knowledge of The Corporation).\n\
 * Base production waste is 25%. This increases with distance from the\
- capital (half as fast with knowledge of Trade).\
+ capital (half as fast with knowledge of Trade).\n\
+* Has a senate that may prevent declaration of war.\
 "), _("* Your bureaucracy can prevent you from disbanding certain units.\
 ")
 
@@ -397,6 +459,8 @@ _("\
 ;                           effect_value = (ui_value + offset) * (factor/100)
 ;                           Optional; by default offset=0, factor=100, so
 ;                           that UI values are used as-is.
+; minimum_turns           = how often multiplier can be changed, or: how long one is stuck
+;                           with the given value after changing to it
 ; reqs                    = requirements for adjusting this policy (see README.effects)
 ; helptext                = optional help text string; should escape all raw
 ;                           newlines so that xgettext parsing works
@@ -415,3 +479,56 @@ Each step of personal freedom you allow your citizens yields a 10% \
 increase in science output, but makes an additional citizen unhappy \
 for every aggressively deployed military unit.\
 ")
+
+[multiplier_polluting_productivity]
+name      = _("Polluting Productivity")
+start     = 0
+stop      = 10
+step      = 1
+default   = 0
+; /* xgettext:no-c-format */
+helptext  = _("\
+Each step of polluting productivity increases a cities shield \
+production by 1%, but also increases all pollution related to \
+shields by 5%.\
+")
+
+[multiplier_military_training_duration]
+name      = _("Military Training Duration")
+start     = 0
+stop      = 2
+step      = 1
+default   = 0
+; /* xgettext:no-c-format */
+helptext  = _("\
+Each step increases newly built military units veterancy level \
+by 1, but also increases the costs of the unit by 25% due to \
+the additional training.\
+")
+
+[multiplier_diplomatic_training_duration]
+name      = _("Diplomatic Training Duration")
+start     = 0
+stop      = 2
+step      = 1
+default   = 0
+; /* xgettext:no-c-format */
+helptext  = _("\
+Each step increases newly built diplomatic units veterancy \
+level by 1, but also increases the costs of the unit by 25% \
+due to the additional training.\
+")
+
+[multiplier_civil_training_duration]
+name      = _("Civil Training Duration")
+start     = 0
+stop      = 2
+step      = 1
+default   = 0
+; /* xgettext:no-c-format */
+helptext  = _("\
+Each step increases newly built civil (workers, engineers) \
+units veterancy level by 1, but also increases the costs of \
+the unit by 25% due to the additional training.\
+")
+

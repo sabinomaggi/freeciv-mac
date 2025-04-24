@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -43,40 +43,40 @@ tiles = { "row", "column","tag"
 
 ; Terrain special resources:
 
-  1,    0, "ts.oil"
-  2,    0, "ts.oasis"
-  1,    1, "ts.buffalo"
-  2,    1, "ts.wheat"
-  1,    2, "ts.grassland_resources"
-  1,    2, "ts.river_resources"
-  2,    2, "ts.pheasant"
-  1,    3, "ts.tundra_game"
-  2,    3, "ts.furs"
-  1,    4, "ts.arctic_ivory"
-  2,    4, "ts.arctic_oil"
-  1,    5, "ts.peat"
-  2,    5, "ts.spice"
-  1,    6, "ts.gems"
-  2,    6, "ts.fruit"
-  1,    7, "ts.forest_game"
-  2,    7, "ts.silk"
-  1,    8, "ts.coal"
-  2,    8, "ts.wine"
-  1,    9, "ts.gold"
-  2,    9, "ts.iron"
-  1,   10, "ts.fish"
-  2,   10, "ts.whales"
+  1,    0, "ts.oil:0"
+  2,    0, "ts.oasis:0"
+  1,    1, "ts.buffalo:0"
+  2,    1, "ts.wheat:0"
+  1,    2, "ts.grassland_resources:0"
+  1,    2, "ts.river_resources:0"
+  2,    2, "ts.pheasant:0"
+  1,    3, "ts.tundra_game:0"
+  2,    3, "ts.furs:0"
+  1,    4, "ts.arctic_ivory:0"
+  2,    4, "ts.arctic_oil:0"
+  1,    5, "ts.peat:0"
+  2,    5, "ts.spice:0"
+  1,    6, "ts.gems:0"
+  2,    6, "ts.fruit:0"
+  1,    7, "ts.forest_game:0"
+  2,    7, "ts.silk:0"
+  1,    8, "ts.coal:0"
+  2,    8, "ts.wine:0"
+  1,    9, "ts.gold:0"
+  2,    9, "ts.iron:0"
+  1,   10, "ts.fish:0"
+  2,   10, "ts.whales:0"
 
-  3,    6, "ts.seals"
+  3,    6, "ts.seals:0"
 
 ; Strategic Resources
 
-  3,    0, "ts.saltpeter"
-  3,    1, "ts.aluminum"
-  3,    2, "ts.uranium"
-  3,    3, "ts.horses"
-  3,    4, "ts.elephant"
-  3,    5, "ts.rubber"
+  3,    0, "ts.saltpeter:0"
+  3,    1, "ts.aluminum:0"
+  3,    2, "ts.uranium:0"
+  3,    3, "ts.horses:0"
+  3,    4, "ts.elephant:0"
+  3,    5, "ts.rubber:0"
 
 ; Roads
 
@@ -116,15 +116,16 @@ tiles = { "row", "column","tag"
 
 ;add-ons
 
-  4,    0, "tx.oil_mine"
-  4,    1, "tx.oil_rig"
-  4,    2, "tx.mine"
+  4,    0, "tx.oil_mine:0"
+  4,    1, "tx.oil_rig:0"
+  4,    2, "tx.mine:0"
   4,    3, "tx.irrigation"
   4,    4, "tx.farmland"
-  4,    5, "tx.fallout"
-  4,    6, "tx.pollution"
-  4,    7, "tx.village"
- 
+  4,    5, "tx.fallout:0"
+  4,    6, "tx.pollution:0"
+  4,    7, "tx.village:0"
+  4,    8, "tx.nets:0"
+
 ; misc
 
   5,    0, "t.coast_color"
@@ -134,7 +135,7 @@ tiles = { "row", "column","tag"
   5,    0, "t.blend.ocean"
   5,    1, "t.dither_tile"
   5,    1, "tx.darkness"
-  5,    3, "user.attention"
+  5,    3, "user.attention", "user.infratile"
   5,    4, "tx.fog"
   5,    5, "mask.tile"
 

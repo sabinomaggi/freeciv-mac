@@ -37,7 +37,7 @@
 #include "mem.h"
 #include "support.h"
 
-/* commmon */
+/* common */
 #include "dataio.h"
 #include "game.h"
 #include "events.h"
@@ -53,7 +53,7 @@
 #define JUMBO_SIZE		0xffff
 
 /*
- * All values 0<=size<COMPRESSION_BORDER are uncompressed packets.
+ * All values 0 <= size < COMPRESSION_BORDER are uncompressed packets.
  */
 #define COMPRESSION_BORDER	(16*1024+1)
 
@@ -65,11 +65,13 @@
 #define log_compress    log_debug
 #define log_compress2   log_debug
 
+#define MAX_DECOMPRESSION 400
+
 #endif /* USE_COMPRESSION */
 
-/* 
- * Valid values are 0, 1 and 2. For 2 you have to set generate_stats
- * to 1 in generate_packets.py.
+/*
+ * Valid values are 0, 1 and 2. For 2 you have to run generate_packets.py
+ * with --gen-stats.
  */
 #define PACKET_SIZE_STATISTICS 0
 
@@ -90,7 +92,7 @@ static int stat_size_compressed = 0;
 static int stat_size_no_compression = 0;
 
 /**********************************************************************//**
-  Returns the compression level. Initilialize it if needed.
+  Returns the compression level. Initialize it if needed.
 **************************************************************************/
 static inline int get_compression_level(void)
 {
@@ -114,15 +116,18 @@ static bool conn_compression_flush(struct connection *pconn)
 {
   int compression_level = get_compression_level();
   uLongf compressed_size = 12 + 1.001 * pconn->compression.queue.size;
-  int error;
   Bytef compressed[compressed_size];
   bool jumbo;
   unsigned long compressed_packet_len;
 
-  error = compress2(compressed, &compressed_size,
-                    pconn->compression.queue.p,
-                    pconn->compression.queue.size,
-                    compression_level);
+#ifndef FREECIV_NDEBUG
+  int error =
+#endif
+  compress2(compressed, &compressed_size,
+            pconn->compression.queue.p,
+            pconn->compression.queue.size,
+            compression_level);
+
   fc_assert_ret_val(error == Z_OK, FALSE);
 
   /* Compression signalling currently assumes a 2-byte packet length; if that
@@ -144,6 +149,7 @@ static bool conn_compression_flush(struct connection *pconn)
 
     if (!jumbo) {
       unsigned char header[2];
+
       FC_STATIC_ASSERT(COMPRESSION_BORDER > MAX_LEN_PACKET,
                        uncompressed_compressed_packet_len_overlap);
 
@@ -155,6 +161,7 @@ static bool conn_compression_flush(struct connection *pconn)
       connection_send_data(pconn, compressed, compressed_size);
     } else {
       unsigned char header[6];
+
       FC_STATIC_ASSERT(JUMBO_SIZE >= JUMBO_BORDER+COMPRESSION_BORDER,
                        compressed_normal_jumbo_packet_len_overlap);
 
@@ -174,6 +181,7 @@ static bool conn_compression_flush(struct connection *pconn)
                          pconn->compression.queue.size);
     stat_size_no_compression += pconn->compression.queue.size;
   }
+
   return pconn->used;
 }
 #endif /* USE_COMPRESSION */
@@ -195,9 +203,9 @@ bool conn_compression_thaw(struct connection *pconn)
     return conn_compression_flush(pconn);
   }
 #endif /* USE_COMPRESSION */
+
   return pconn->used;
 }
-
 
 /**********************************************************************//**
   It returns the request id of the outgoing packet (or 0 if is_server()).
@@ -207,7 +215,6 @@ int send_packet_data(struct connection *pc, unsigned char *data, int len,
 {
   /* default for the server */
   int result = 0;
-
 
   log_packet("sending packet type=%s(%d) len=%d to %s",
              packet_name(packet_type), packet_type, len,
@@ -291,8 +298,8 @@ int send_packet_data(struct connection *pc, unsigned char *data, int len,
       int i;
 
       for (i = 0; i < PACKET_LAST; i++) {
-	packets_stats[i].counter = 0;
-	packets_stats[i].size = 0;
+        packets_stats[i].counter = 0;
+        packets_stats[i].size = 0;
       }
     }
 
@@ -301,14 +308,14 @@ int send_packet_data(struct connection *pc, unsigned char *data, int len,
 
     packet_counter++;
     if (packet_type == PACKET_START_TURN
-	&& last_start_turn_seen != game.turn) {
-	start_turn_seen=TRUE;
+        && last_start_turn_seen != game.turn) {
+      start_turn_seen = TRUE;
       last_start_turn_seen = game.turn;
     }
 
     if ((packet_type ==
-	 PACKET_PROCESSING_FINISHED || packet_type == PACKET_THAW_HINT)
-	&& start_turn_seen) {
+         PACKET_PROCESSING_FINISHED || packet_type == PACKET_THAW_HINT)
+        && start_turn_seen) {
       start_turn_seen = FALSE;
       print = TRUE;
       clear = TRUE;
@@ -325,10 +332,10 @@ int send_packet_data(struct connection *pc, unsigned char *data, int len,
       log_ll("%8s %8s %8s %s", "Packets", "Bytes", "Byt/Pac", "Name");
 
       for (i = 0; i < PACKET_LAST; i++) {
-	if (packets_stats[i].counter == 0) {
-	  continue;
-	}
-	sum += packets_stats[i].size;
+        if (packets_stats[i].counter == 0) {
+          continue;
+        }
+        sum += packets_stats[i].size;
         log_ll("%8d %8d %8d %s(%i)",
                packets_stats[i].counter, packets_stats[i].size,
                packets_stats[i].size / packets_stats[i].counter,
@@ -344,8 +351,8 @@ int send_packet_data(struct connection *pc, unsigned char *data, int len,
       int i;
 
       for (i = 0; i < PACKET_LAST; i++) {
-	packets_stats[i].counter = 0;
-	packets_stats[i].size = 0;
+        packets_stats[i].counter = 0;
+        packets_stats[i].size = 0;
       }
       packet_counter = 0;
       pc->statistics.bytes_send = 0;
@@ -381,9 +388,9 @@ void *get_packet_from_connection_raw(struct connection *pc,
   void *(*receive_handler)(struct connection *);
 
   if (!pc->used) {
-    return NULL;		/* connection was closed, stop reading */
+    return NULL; /* connection was closed, stop reading */
   }
-  
+
   if (pc->buffer->ndata < data_type_size(pc->packet_header.length)) {
     /* Not got enough for a length field yet */
     return NULL;
@@ -420,7 +427,7 @@ void *get_packet_from_connection_raw(struct connection *pc,
 #endif /* USE_COMPRESSION */
 
   if ((unsigned)whole_packet_len > pc->buffer->ndata) {
-    return NULL;		/* not all data has been read */
+    return NULL; /* not all data has been read */
   }
 
 #ifdef USE_COMPRESSION
@@ -434,31 +441,39 @@ void *get_packet_from_connection_raw(struct connection *pc,
 
   if (compressed_packet) {
     uLong compressed_size = whole_packet_len - header_size;
-    /* 
-     * We don't know the decompressed size. We assume a bad case
-     * here: an expansion by an factor of 150.
-     * We've had a case where factor of 100 was not big enough.
-     */
-    unsigned long int decompressed_size = 150 * compressed_size;
-    void *decompressed = fc_malloc(decompressed_size);
-    int error;
+    int decompress_factor = 80;
+    unsigned long int decompressed_size = decompress_factor * compressed_size;
+    int error = Z_BUF_ERROR;
     struct socket_packet_buffer *buffer = pc->buffer;
-    
-    error =
-	uncompress(decompressed, &decompressed_size,
-		   ADD_TO_POINTER(buffer->data, header_size), 
-		   compressed_size);
-    if (error != Z_OK) {
-      log_verbose("Uncompressing of the packet stream failed. "
-                  "The connection will be closed now.");
-      connection_close(pc, _("decoding error"));
-      return NULL;
-    }
+    void *decompressed = fc_malloc(decompressed_size);
+
+    do {
+      error =
+        uncompress(decompressed, &decompressed_size,
+                   ADD_TO_POINTER(buffer->data, header_size),
+                   compressed_size);
+
+      if (error == Z_BUF_ERROR) {
+        decompress_factor += 50;
+        decompressed_size = decompress_factor * compressed_size;
+        decompressed = fc_realloc(decompressed, decompressed_size);
+      }
+
+      if (error != Z_OK) {
+        if (error != Z_BUF_ERROR || decompress_factor > MAX_DECOMPRESSION ) {
+          log_verbose("Uncompressing of the packet stream failed. "
+                      "The connection will be closed now.");
+          connection_close(pc, _("decoding error"));
+          return NULL;
+        }
+      }
+
+    } while (error != Z_OK);
 
     buffer->ndata -= whole_packet_len;
-    /* 
+    /*
      * Remove the packet with the compressed data and shift all the
-     * remaining data to the front. 
+     * remaining data to the front.
      */
     memmove(buffer->data, buffer->data + whole_packet_len, buffer->ndata);
 
@@ -473,7 +488,7 @@ void *get_packet_from_connection_raw(struct connection *pc,
      */
     memmove(buffer->data + decompressed_size, buffer->data, buffer->ndata);
 
-    /* 
+    /*
      * Copy the uncompressed data.
      */
     memcpy(buffer->data, decompressed, decompressed_size);
@@ -481,7 +496,7 @@ void *get_packet_from_connection_raw(struct connection *pc,
     free(decompressed);
 
     buffer->ndata += decompressed_size;
-    
+
     log_compress("COMPRESS: decompressed %ld into %ld",
                  compressed_size, decompressed_size);
 
@@ -504,8 +519,7 @@ void *get_packet_from_connection_raw(struct connection *pc,
   dio_get_type_raw(&din, pc->packet_header.type, &utype.itype);
   utype.type = utype.itype;
 
-  if (utype.type < 0
-      || utype.type >= PACKET_LAST
+  if (utype.type >= PACKET_LAST
       || (receive_handler = pc->phs.handlers->receive[utype.type]) == NULL) {
     log_verbose("Received unsupported packet type %d (%s). The connection "
                 "will be closed now.",
@@ -524,7 +538,7 @@ void *get_packet_from_connection_raw(struct connection *pc,
     pc->incoming_packet_notify(pc, utype.type, whole_packet_len);
   }
 
-#if PACKET_SIZE_STATISTICS 
+#if PACKET_SIZE_STATISTICS
   {
     static struct {
       int counter;
@@ -539,8 +553,8 @@ void *get_packet_from_connection_raw(struct connection *pc,
       int i;
 
       for (i = 0; i < PACKET_LAST; i++) {
-	packets_stats[i].counter = 0;
-	packets_stats[i].size = 0;
+        packets_stats[i].counter = 0;
+        packets_stats[i].size = 0;
       }
     }
 
@@ -553,9 +567,10 @@ void *get_packet_from_connection_raw(struct connection *pc,
 
       log_test("Received packets:");
       for (i = 0; i < PACKET_LAST; i++) {
-	if (packets_stats[i].counter == 0)
-	  continue;
-	sum += packets_stats[i].size;
+        if (packets_stats[i].counter == 0) {
+          continue;
+        }
+        sum += packets_stats[i].size;
         log_test("  [%-25.25s %3d]: %6d packets; %8d bytes total; "
                  "%5d bytes/packet average",
                  packet_name(i), i, packets_stats[i].counter,
@@ -665,16 +680,17 @@ bool packet_check(struct data_in *din, struct connection *pc)
                conn_description (pc));
     return FALSE;
   }
+
   return TRUE;
 }
 
 /**********************************************************************//**
- Updates pplayer->attribute_block according to the given packet.
+  Updates pplayer->attribute_block according to the given packet.
 **************************************************************************/
 void generic_handle_player_attribute_chunk(struct player *pplayer,
-					   const struct
-					   packet_player_attribute_chunk
-					   *chunk)
+                                           const struct
+                                           packet_player_attribute_chunk
+                                           *chunk)
 {
   log_packet("received attribute chunk %u/%u %u",
              (unsigned int) chunk->offset,
@@ -709,8 +725,8 @@ void generic_handle_player_attribute_chunk(struct player *pplayer,
     pplayer->attribute_block_buffer.length = chunk->total_length;
   }
   memcpy((char *) (pplayer->attribute_block_buffer.data) + chunk->offset,
-	 chunk->data, chunk->chunk_length);
-  
+         chunk->data, chunk->chunk_length);
+
   if (chunk->offset + chunk->chunk_length == chunk->total_length) {
     /* Received full attribute block */
     if (pplayer->attribute_block.data != NULL) {
@@ -718,17 +734,17 @@ void generic_handle_player_attribute_chunk(struct player *pplayer,
     }
     pplayer->attribute_block.data = pplayer->attribute_block_buffer.data;
     pplayer->attribute_block.length = pplayer->attribute_block_buffer.length;
-    
+
     pplayer->attribute_block_buffer.data = NULL;
     pplayer->attribute_block_buffer.length = 0;
   }
 }
 
 /**********************************************************************//**
- Split the attribute block into chunks and send them over pconn.
+  Split the attribute block into chunks and send them over pconn.
 **************************************************************************/
 void send_attribute_block(const struct player *pplayer,
-			  struct connection *pconn)
+                          struct connection *pconn)
 {
   struct packet_player_attribute_chunk packet;
   int current_chunk, chunks, bytes_left;
@@ -754,8 +770,8 @@ void send_attribute_block(const struct player *pplayer,
     packet.chunk_length = size_of_current_chunk;
 
     memcpy(packet.data,
-	   (char *) (pplayer->attribute_block.data) + packet.offset,
-	   packet.chunk_length);
+           (char *) (pplayer->attribute_block.data) + packet.offset,
+           packet.chunk_length);
     bytes_left -= packet.chunk_length;
 
     if (packet.chunk_length < ATTRIBUTE_CHUNK_SIZE) {
@@ -788,7 +804,6 @@ void pre_send_packet_player_attribute_chunk(struct connection *pc,
 
   log_packet("sending attribute chunk %d/%d %d",
              packet->offset, packet->total_length, packet->chunk_length);
-
 }
 
 /**********************************************************************//**
@@ -827,22 +842,34 @@ const struct packet_handlers *packet_handlers_get(const char *capability)
   struct packet_handlers *phandlers;
   char functional_capability[MAX_LEN_CAPSTR] = "";
   char *tokens[MAX_LEN_CAPSTR / 2];
+  char *functional_tokens[MAX_LEN_CAPSTR / 2];
   int tokens_num;
+  int functional_tokens_num = 0;
   int i;
 
   fc_assert(strlen(capability) < sizeof(functional_capability));
 
   /* Get functional network capability string. */
   tokens_num = get_tokens(capability, tokens, ARRAY_SIZE(tokens), " \t\n,");
-  qsort(tokens, tokens_num, sizeof(*tokens), compare_strings_ptrs);
   for (i = 0; i < tokens_num; i++) {
-    if (!has_capability(tokens[i], packet_functional_capability)) {
-      continue;
+    char *token;
+
+    token = tokens[i];
+    if (token[0] == '+') {
+      token++;
     }
+
+    if (has_capability(token, packet_functional_capability)) {
+      functional_tokens[functional_tokens_num++] = token;
+    }
+  }
+  qsort(functional_tokens, functional_tokens_num,
+        sizeof(*functional_tokens), compare_strings_ptrs);
+  for (i = 0; i < functional_tokens_num; i++) {
     if (functional_capability[0] != '\0') {
       sz_strlcat(functional_capability, " ");
     }
-    sz_strlcat(functional_capability, tokens[i]);
+    sz_strlcat(functional_capability, functional_tokens[i]);
   }
   free_tokens(tokens, tokens_num);
 
@@ -862,6 +889,7 @@ const struct packet_handlers *packet_handlers_get(const char *capability)
   }
 
   fc_assert(phandlers != NULL);
+
   return phandlers;
 }
 

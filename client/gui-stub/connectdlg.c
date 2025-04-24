@@ -33,19 +33,12 @@
 #include "connectdlg.h"
 #include "packhand_gen.h"
 
-/**********************************************************************//**
-  Really close and destroy the dialog.
-**************************************************************************/
-void really_close_connection_dialog(void)
-{
-  /* PORTME */
-}
 
 /**********************************************************************//**
   Close and destroy the dialog. But only if we don't have a local
   server running (that we started).
 **************************************************************************/
-void gui_close_connection_dialog()
+void gui_close_connection_dialog(void)
 {
   /* PORTME */
 }
@@ -65,12 +58,12 @@ void handle_authentication_req(enum authentication_type type,
      /* PORTME: switch configs if need be */
     return;
   case AUTH_LOGIN_FIRST:
-    /* if we magically have a password already present in 'password'
+    /* if we magically have a password already present in 'fc_password'
      * then, use that and skip the password entry dialog */
-    if (password[0] != '\0') {
+    if (fc_password[0] != '\0') {
       struct packet_authentication_reply reply;
 
-      sz_strlcpy(reply.password, password);
+      sz_strlcpy(reply.password, fc_password);
       send_packet_authentication_reply(&client.conn, &reply);
       return;
     } else {
@@ -92,7 +85,7 @@ void handle_authentication_req(enum authentication_type type,
   server.
 **************************************************************************/
 void handle_game_load(bool load_successful, const char *filename)
-{ 
+{
   /* PORTME */
 }
 

@@ -13,7 +13,7 @@ CONTENTS
 1. Default build
 ----------------
 
-By default Freeciv is built with two AI types; "classic" and "threaded",
+By default Freeciv is built with two AI types; "classic" and "tex",
 statically built in, and with no support for dynamic AI modules.
 Classic AI is always used for all players, effectively hiding the
 fact that AI module interface even exist.
@@ -48,7 +48,7 @@ built in to freeciv.
 
 To statically link some of the supplied AI modules to freeciv,
 use --enable-ai-static=<comma,separated,list>. Default value for this
-is "classic,threaded". Order of the modules is important in that first of
+is "classic,tex". Order of the modules is important in that first of
 the modules will be the default AI type used for all the players for whom
 it's not explicitly set.
 
@@ -80,7 +80,7 @@ const char *fc_ai_<modulename>_capstr(void)
   check if module is compatible with the version of freeciv one tries to
   load it into. Current freeciv's capstr is in common/ai.h macro FC_AI_MOD_CAPSTR.
 
- 
+
 bool fc_ai_<modulename>_setup(struct ai_type *ai)
   This function is called for AI module to setup itself. Most importantly
   it should setup callback table ai->funcs so that its other functions
@@ -97,7 +97,7 @@ For "--LoadAI <modulename>" to find the AI module, it must reside in ${libdir}/f
 --------------------------------------------
 
 Default AI here refers to specific code module that any AI module can use, not to any
-one AI module. Classic AI module is just a thin wrapper around it, and also Threaded AI
+one AI module. Classic AI module is just a thin wrapper around it, and also Tex AI
 uses it.
 
 Almost all functions in default AI API take pointer to current AI type as parameter.
@@ -106,22 +106,32 @@ having such AI type specific data.
 
 If a AI type wants to add its own data associated with some code structure, it needs
 to make sure data needed by default AI is in the beginning of the allocated data blocks.
-For example, see threaded AI: tai_player_alloc(), tai_player_free(), and struct tai_plr.
+For example, see tex AI: texai_player_alloc(), texai_player_free(), and struct tai_plr.
 
 Default AI code is usually built in freeciv only if some AI type using it has been built;
-either 'classic' or 'threaded'. If no such ai type has been built, you can still force
+either 'classic' or 'tex'. If no such ai type has been built, you can still force
 it in for custom ai types to use by passing configure option --with-ai-lib
 
 
 6. Callback interface ChangeLog
 -------------------------------
 
+New in Freeciv 3.2:
+-------------------
+- Added 'revolution_start', called when player's revolution gets activated
+
+
 New in Freeciv 3.1:
 -------------------
 - Added 'tile_info', called when tile has changed
+- Added 'city_info', called when city has changed (calls still happen for few
+  specific changes only)
+- Added 'unit_info', called when unit has changed (calls still happen for few
+  specific changes only)
 - Added 'map_alloc' and 'map_free', called when map tiles are allocated or freed
 - Added 'map_ready', called when map has been generated or, in case of scenario, loaded
 - Added 'unit_move_seen', called for all AI types when unit moves
+- old_type parameter for 'unit_transformed' is now const
 
 
 New in Freeciv 3.0:

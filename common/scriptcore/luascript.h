@@ -74,6 +74,9 @@ void luascript_log_vargs(struct fc_lua *fcl, enum log_level level,
 
 void luascript_push_args(struct fc_lua *fcl, int nargs,
                          enum api_types *parg_types, va_list args);
+void luascript_pop_returns(struct fc_lua *fcl, const char *func_name,
+                           int nreturns, enum api_types *preturn_types,
+                           va_list args);
 bool luascript_check_function(struct fc_lua *fcl, const char *funcname);
 
 int luascript_call(struct fc_lua *fcl, int narg, int nret, const char *code);
@@ -94,6 +97,7 @@ void luascript_vars_save(struct fc_lua *fcl, struct section_file *file,
 void luascript_vars_load(struct fc_lua *fcl, struct section_file *file,
                          const char *section);
 
+const Direction *luascript_dir(enum direction8);
 
 /* Returns additional arguments on failure. */
 #define LUASCRIPT_ASSERT_CAT(str1, str2) str1 ## str2

@@ -2,11 +2,11 @@
   -GtkWidget-outline-style: auto;
   -GtkButton-margin: 1;
   -GtkButton-padding: 2;
- 
+
   -GtkRange-margin: 1;
   -GtkRange-min-width: 15;
   -GtkRange-min-height: 15;
- 
+
   -GtkScale-min-width: 11;
   -GtkScale-min-height: 21;
 
@@ -19,9 +19,9 @@
   -GtkStatusbar-text-shadow: none;
   -GtkSpinButton-text-shadow: none;
 
+/*
   padding: 2px;
 
-/*
   color                 : #ff0000;
   background-color      : #e1cea1;
 */
@@ -181,7 +181,7 @@ GtkTreeMenu.menu {
   background-color: #e7d6b0;
 }
 
-.tooltip {
+tooltip * {
   color: #635b48;
   background-color: #d7d7d7;
 }

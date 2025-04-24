@@ -5,8 +5,10 @@ SUBDIRS = man ca de fr it ja nl sv
 docs =				\
 	BUGS			\
 	CodingStyle		\
+	doxygen.md		\
 	FAQ			\
 	HACKING			\
+	INSTALL.autotools	\
 	INSTALL.Cygwin		\
 	HOWTOPLAY		\
 	README.achievements     \
@@ -15,16 +17,19 @@ docs =				\
 	README.AI		\
 	README.AI_modules	\
 	README.attributes 	\
+	README.crosser		\
 	README.delta		\
 	README.effects		\
 	README.fcdb		\
 	README.governor		\
 	README.graphics		\
+	README.modpack_installer	\
 	README.msys2		\
 	README.nations		\
 	README.packaging	\
 	README.rulesets		\
 	README.tilesets		\
+	README.scenarios	\
 	README.scorelog		\
 	README.sound		\
 	TODO

@@ -65,14 +65,16 @@ static int get_tile_value(struct tile *ptile)
   roaded = tile_virtual_new(ptile);
 
   if (num_role_units(L_SETTLERS) > 0) {
-    struct unit_type *start_worker = get_role_unit(L_SETTLERS, 0);
+    const struct req_context start_worker_ctxt = {
+      .tile = roaded,
+      .unittype = get_role_unit(L_SETTLERS, 0),
+    };
 
     extra_type_by_cause_iterate(EC_ROAD, pextra) {
       struct road_type *proad = extra_road_get(pextra);
 
       if (road_can_be_built(proad, roaded)
-          && are_reqs_active(NULL, NULL, NULL, NULL, roaded,
-                             NULL, start_worker, NULL, NULL, NULL,
+          && are_reqs_active(&start_worker_ctxt, NULL,
                              &pextra->reqs, RPT_CERTAIN)) {
         tile_add_extra(roaded, pextra);
       }
@@ -173,7 +175,7 @@ static bool check_native_area(const struct unit_type *utype,
 }
 
 /************************************************************************//**
-  Return TRUE if (x,y) is a good starting position.
+  Return TRUE if tile is a good starting position.
 
   Bad places:
   - Islands with no room.
@@ -181,7 +183,6 @@ static bool check_native_area(const struct unit_type *utype,
   - On a hut;
   - Too close to another starter on the same continent:
     'dist' is too close (real_map_distance)
-    'nr' is the number of other start positions to check for too closeness.
 ****************************************************************************/
 static bool is_valid_start_pos(const struct tile *ptile, const void *dataptr)
 {
@@ -189,10 +190,10 @@ static bool is_valid_start_pos(const struct tile *ptile, const void *dataptr)
   struct islands_data_type *island;
   int cont_size, cont = tile_continent(ptile);
 
-  /* Only start on certain terrain types. */  
+  /* Only start on certain terrain types. */
   if (pdata->value[tile_index(ptile)] < pdata->min_value) {
-      return FALSE;
-  } 
+    return FALSE;
+  }
 
   fc_assert_ret_val(cont > 0, FALSE);
   if (islands[islands_index[cont]].starters == 0) {
@@ -200,7 +201,8 @@ static bool is_valid_start_pos(const struct tile *ptile, const void *dataptr)
   }
 
   /* Don't start on a hut. */
-  if (tile_has_cause_extra(ptile, EC_HUT)) {
+  /* FIXME: Could be ok for unit not entering or frightening hut */
+  if (hut_on_tile(ptile)) {
     return FALSE;
   }
 
@@ -240,6 +242,7 @@ static bool is_valid_start_pos(const struct tile *ptile, const void *dataptr)
       return FALSE;
     }
   } map_startpos_iterate_end;
+
   return TRUE;
 }
 
@@ -290,7 +293,7 @@ static bool filter_starters(const struct tile *ptile, const void *data)
   MAPSTARTPOS_2or3: 2 players per isle (maybe one isle with 3).
   MAPSTARTPOS_ALL: all players in asingle isle.
   MAPSTARTPOS_VARIABLE: at least 2 player per isle.
-  
+
   Assumes assign_continent_numbers() has already been done!
   Returns true on success
 ****************************************************************************/
@@ -304,10 +307,11 @@ bool create_start_positions(enum map_startpos mode,
   int *tile_value = NULL;
   int min_goodies_per_player = 1500;
   int total_goodies = 0;
-  /* this is factor is used to maximize land used in extreme little maps */
-  float efactor =  player_count() / map_size_checked() / 4; 
+  /* This is factor is used to maximize land used in extreme little maps */
+  float efactor =  player_count() / map_size_checked() / 4;
   bool failure = FALSE;
   bool is_tmap = temperature_is_initialized();
+  const struct civ_map *nmap = &(wld.map);
 
   if (wld.map.num_continents < 1) {
     /* Currently we can only place starters on land terrain, so fail
@@ -334,18 +338,18 @@ bool create_start_positions(enum map_startpos mode,
   tile_value_aux = fc_calloc(MAP_INDEX_SIZE, sizeof(*tile_value_aux));
   tile_value = fc_calloc(MAP_INDEX_SIZE, sizeof(*tile_value));
 
-  /* get the tile value */
+  /* Get the tile value */
   whole_map_iterate(&(wld.map), value_tile) {
     tile_value_aux[tile_index(value_tile)] = get_tile_value(value_tile);
   } whole_map_iterate_end;
 
-  /* select the best tiles */
+  /* Select the best tiles */
   whole_map_iterate(&(wld.map), value_tile) {
     int this_tile_value = tile_value_aux[tile_index(value_tile)];
     int lcount = 0, bcount = 0;
 
-    /* check all tiles within the default city radius */
-    city_tile_iterate(CITY_MAP_DEFAULT_RADIUS_SQ, value_tile, ptile1) {
+    /* Check all tiles within the default city radius */
+    city_tile_iterate(nmap, CITY_MAP_DEFAULT_RADIUS_SQ, value_tile, ptile1) {
       if (this_tile_value > tile_value_aux[tile_index(ptile1)]) {
         lcount++;
       } else if (this_tile_value < tile_value_aux[tile_index(ptile1)]) {
@@ -358,7 +362,7 @@ bool create_start_positions(enum map_startpos mode,
     }
     tile_value[tile_index(value_tile)] = 100 * this_tile_value;
   } whole_map_iterate_end;
-  /* get an average value */
+  /* Get an average value */
   smooth_int_map(tile_value, TRUE);
 
   initialize_isle_data();
@@ -376,7 +380,7 @@ bool create_start_positions(enum map_startpos mode,
   } whole_map_iterate_end;
 
   /* evaluate the best places on the map */
-  adjust_int_map_filtered(tile_value, 1000, NULL, filter_starters);
+  adjust_int_map_filtered(tile_value, 0, 1000, NULL, filter_starters);
 
   /* Sort the islands so the best ones come first.  Note that islands[0] is
    * unused so we just skip it. */
@@ -407,14 +411,14 @@ bool create_start_positions(enum map_startpos mode,
 
   /* the variable way is the last possibility */
   if (MAPSTARTPOS_VARIABLE == mode) {
-    min_goodies_per_player = total_goodies * (0.65 + 0.8 * efactor) 
+    min_goodies_per_player = total_goodies * (0.65 + 0.8 * efactor)
       / (1 + efactor)  / player_count();
   }
 
-  { 
+  {
     int nr, to_place = player_count(), first = 1;
 
-    /* inizialize islands_index */
+    /* Initialize islands_index */
     for (nr = 1; nr <= wld.map.num_continents; nr++) {
       islands_index[islands[nr].id] = nr;
     }

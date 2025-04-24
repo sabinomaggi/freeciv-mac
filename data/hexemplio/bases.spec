@@ -7,16 +7,26 @@
 ; 'City_Image' and the resulting image is used to draw the city on the tile.
 ;
 ; Obviously the first tile must be 'style_name'_city_0 and the sizes must be
-; in ascending order. There must also be a 'style_name'_wall_0 tile used to
-; draw the wall and an occupied tile to indicate a military units in a city.
+; in ascending order. There must also be a 'style_name'_wall_0 tile used
+; for the default wall graphics and an occupied tile to indicate
+; a military units in a city.
+; For providing multiple walls buildings (as requested by the "Visible_Walls"
+; effect value) tags are 'style_name'_bldg_'effect_value'_'index'.
 ; The maximum number of images is only limited by the maximum size of a city
 ; (currently MAX_CITY_SIZE = 255).
+;
+; For providing custom citizen icons for the city style, use tags of the form
+; 'citizen.<tag>.<citizen_type>_<index>'
+; where <tag> is citizens_graphic tag from the styles.ruleset,
+; <citizen_type> is type like 'content', same ones as
+; misc/small.spec has for the default citizen icons, and
+; <index> is a running number for alternative sprites.
 ;
 
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -41,23 +51,23 @@ pixel_border = 1
 tiles = { "row", "column", "tag"
 
 ;[HH][GS]
- 0,  0, "base.airstrip_mg"			
+ 0,  0, "base.airstrip_mg:0"
  1,  0, "tx.airstrip_full"
 ;[HH][GS]
- 0,  1, "base.airbase_mg"
+ 0,  1, "base.airbase_mg:0"
  1,  1, "tx.airbase_full"
 ;[HH][GS]
- 1,  2, "base.outpost_fg"
- 0,  2, "base.outpost_bg"
+ 1,  2, "base.outpost_fg:0"
+ 0,  2, "base.outpost_bg:0"
 ;[HH]
- 1,  3, "base.fortress_fg"
- 0,  3, "base.fortress_bg"
+ 1,  3, "base.fortress_fg:0"
+ 0,  3, "base.fortress_bg:0"
 ;[HH]
  0,  4, "city.disorder"
 ;[El]
- 1,  4, "base.buoy_mg"
+ 1,  4, "base.buoy_mg:0"
 ;[VC]
- 0,  5, "extra.ruins_mg"
+ 0,  5, "extra.ruins_mg:0"
 ;[HH]
  1,  5, "city.european_occupied_0"
  1,  5, "city.classical_occupied_0"

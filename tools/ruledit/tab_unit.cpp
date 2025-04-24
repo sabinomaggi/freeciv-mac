@@ -16,12 +16,12 @@
 #endif
 
 // Qt
+#include <QCheckBox>
 #include <QGridLayout>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QToolButton>
 
 // utility
@@ -48,10 +48,8 @@ tab_unit::tab_unit(ruledit_gui *ui_in) : QWidget()
   QVBoxLayout *main_layout = new QVBoxLayout(this);
   QGridLayout *unit_layout = new QGridLayout();
   QLabel *label;
-  QPushButton *effects_button;
-  QPushButton *add_button;
-  QPushButton *delete_button;
-  QPushButton *edit_button;
+  QPushButton *button;
+  int row = 0;
 
   ui = ui_in;
   selected = 0;
@@ -66,42 +64,46 @@ tab_unit::tab_unit(ruledit_gui *ui_in) : QWidget()
   label = new QLabel(QString::fromUtf8(R__("Rule Name")));
   label->setParent(this);
   rname = new QLineEdit(this);
-  rname->setText("None");
+  rname->setText(R__("None"));
   connect(rname, SIGNAL(returnPressed()), this, SLOT(name_given()));
-  unit_layout->addWidget(label, 0, 0);
-  unit_layout->addWidget(rname, 0, 2);
+  unit_layout->addWidget(label, row, 0);
+  unit_layout->addWidget(rname, row++, 2);
 
   label = new QLabel(QString::fromUtf8(R__("Name")));
   label->setParent(this);
-  same_name = new QRadioButton();
+  same_name = new QCheckBox();
   connect(same_name, SIGNAL(toggled(bool)), this, SLOT(same_name_toggle(bool)));
   name = new QLineEdit(this);
-  name->setText("None");
+  name->setText(R__("None"));
   connect(name, SIGNAL(returnPressed()), this, SLOT(name_given()));
-  unit_layout->addWidget(label, 1, 0);
-  unit_layout->addWidget(same_name, 1, 1);
-  unit_layout->addWidget(name, 1, 2);
+  unit_layout->addWidget(label, row, 0);
+  unit_layout->addWidget(same_name, row, 1);
+  unit_layout->addWidget(name, row++, 2);
 
-  edit_button = new QPushButton(QString::fromUtf8(R__("Edit Unit")), this);
-  connect(edit_button, SIGNAL(pressed()), this, SLOT(edit_now()));
-  unit_layout->addWidget(edit_button, 2, 2);
+  button = new QPushButton(QString::fromUtf8(R__("Edit Values")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(edit_now()));
+  unit_layout->addWidget(button, row++, 2);
 
-  effects_button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
-  connect(effects_button, SIGNAL(pressed()), this, SLOT(edit_effects()));
-  unit_layout->addWidget(effects_button, 3, 2);
-  show_experimental(effects_button);
+  button = new QPushButton(QString::fromUtf8(R__("Requirements")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(edit_reqs()));
+  unit_layout->addWidget(button, row++, 2);
 
-  add_button = new QPushButton(QString::fromUtf8(R__("Add Unit")), this);
-  connect(add_button, SIGNAL(pressed()), this, SLOT(add_now()));
-  unit_layout->addWidget(add_button, 4, 0);
-  show_experimental(add_button);
+  button = new QPushButton(QString::fromUtf8(R__("Effects")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(edit_effects()));
+  unit_layout->addWidget(button, row++, 2);
 
-  delete_button = new QPushButton(QString::fromUtf8(R__("Remove this Unit")), this);
-  connect(delete_button, SIGNAL(pressed()), this, SLOT(delete_now()));
-  unit_layout->addWidget(delete_button, 4, 2);
-  show_experimental(delete_button);
+  button = new QPushButton(QString::fromUtf8(R__("Add Unit")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(add_now()));
+  unit_layout->addWidget(button, row, 0);
+  show_experimental(button);
+
+  button = new QPushButton(QString::fromUtf8(R__("Remove this Unit")), this);
+  connect(button, SIGNAL(pressed()), this, SLOT(delete_now()));
+  unit_layout->addWidget(button, row++, 2);
+  show_experimental(button);
 
   refresh();
+  update_utype_info(nullptr);
 
   main_layout->addLayout(unit_layout);
 
@@ -115,13 +117,11 @@ void tab_unit::refresh()
 {
   unit_list->clear();
 
-  unit_type_iterate(ptype) {
-    if (!ptype->disabled) {
-      QListWidgetItem *item = new QListWidgetItem(utype_rule_name(ptype));
+  unit_type_re_active_iterate(ptype) {
+    QListWidgetItem *item = new QListWidgetItem(utype_rule_name(ptype));
 
-      unit_list->insertItem(utype_index(ptype), item);
-    }
-  } unit_type_iterate_end;
+    unit_list->insertItem(utype_index(ptype), item);
+  } unit_type_re_active_iterate_end;
 }
 
 /**********************************************************************//**
@@ -145,8 +145,8 @@ void tab_unit::update_utype_info(struct unit_type *ptype)
       name->setEnabled(true);
     }
   } else {
-    name->setText("None");
-    rname->setText("None");
+    name->setText(R__("None"));
+    rname->setText(R__("None"));
     same_name->setChecked(true);
     name->setEnabled(false);
   }
@@ -160,7 +160,10 @@ void tab_unit::select_unit()
   QList<QListWidgetItem *> select_list = unit_list->selectedItems();
 
   if (!select_list.isEmpty()) {
-    update_utype_info(unit_type_by_rule_name(select_list.at(0)->text().toUtf8().data()));
+    QByteArray un_bytes;
+
+    un_bytes = select_list.at(0)->text().toUtf8();
+    update_utype_info(unit_type_by_rule_name(un_bytes.data()));
   }
 }
 
@@ -170,9 +173,13 @@ void tab_unit::select_unit()
 void tab_unit::name_given()
 {
   if (selected != nullptr) {
+    QByteArray name_bytes;
+    QByteArray rname_bytes;
+
     unit_type_iterate(ptype) {
-      if (ptype != selected && !ptype->disabled) {
-        if (!strcmp(utype_rule_name(ptype), rname->text().toUtf8().data())) {
+      if (ptype != selected && !ptype->ruledit_disabled) {
+        rname_bytes = rname->text().toUtf8();
+        if (!strcmp(utype_rule_name(ptype), rname_bytes.data())) {
           ui->display_msg(R__("A unit type with that rule name already "
                               "exists!"));
           return;
@@ -184,19 +191,21 @@ void tab_unit::name_given()
       name->setText(rname->text());
     }
 
+    name_bytes = name->text().toUtf8();
+    rname_bytes = rname->text().toUtf8();
     names_set(&(selected->name), 0,
-              name->text().toUtf8().data(),
-              rname->text().toUtf8().data());
+              name_bytes.data(),
+              rname_bytes.data());
     refresh();
   }
 }
 
 /**********************************************************************//**
-  User requested unit deletion 
+  User requested unit deletion
 **************************************************************************/
 void tab_unit::delete_now()
 {
-  if (selected != 0) {
+  if (selected != nullptr) {
     requirers_dlg *requirers;
 
     requirers = ui->create_requirers(utype_rule_name(selected));
@@ -204,7 +213,11 @@ void tab_unit::delete_now()
       return;
     }
 
-    selected->disabled = true;
+    selected->ruledit_disabled = true;
+
+    if (selected->ruledit_dlg != nullptr) {
+      ((edit_utype *)selected->ruledit_dlg)->done(0);
+    }
 
     refresh();
     update_utype_info(nullptr);
@@ -217,9 +230,14 @@ void tab_unit::delete_now()
 void tab_unit::edit_now()
 {
   if (selected != nullptr) {
-    edit_utype *edit = new edit_utype(ui, selected);
+    if (selected->ruledit_dlg == nullptr) {
+      edit_utype *edit = new edit_utype(ui, selected);
 
-    edit->show();
+      edit->show();
+      selected->ruledit_dlg = edit;
+    } else {
+      ((edit_utype *)selected->ruledit_dlg)->raise();
+    }
   }
 }
 
@@ -233,6 +251,11 @@ bool tab_unit::initialize_new_utype(struct unit_type *ptype)
   }
 
   name_set(&(ptype->name), 0, "New Unit");
+  BV_CLR_ALL(ptype->flags);
+  if (ptype->helptext != nullptr) {
+    strvec_clear(ptype->helptext);
+  }
+
   return true;
 }
 
@@ -245,9 +268,9 @@ void tab_unit::add_now()
 
   // Try to reuse freed utype slot
   unit_type_iterate(ptype) {
-    if (ptype->disabled) {
+    if (ptype->ruledit_disabled) {
       if (initialize_new_utype(ptype)) {
-        ptype->disabled = false;
+        ptype->ruledit_disabled = false;
         update_utype_info(ptype);
         refresh();
       }
@@ -281,6 +304,17 @@ void tab_unit::same_name_toggle(bool checked)
   name->setEnabled(!checked);
   if (checked) {
     name->setText(rname->text());
+  }
+}
+
+/**********************************************************************//**
+  User wants to edit reqs
+**************************************************************************/
+void tab_unit::edit_reqs()
+{
+  if (selected != nullptr) {
+    ui->open_req_edit(QString::fromUtf8(utype_rule_name(selected)),
+                      &selected->build_reqs);
   }
 }
 

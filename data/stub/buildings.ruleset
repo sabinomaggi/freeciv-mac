@@ -2,9 +2,21 @@
 ; description.
 
 [datafile]
-description="<modpack> buildings data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "<modpack> buildings data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
+
+[control]
+
+; Names for custom building flags. There can be up to 8 of these.
+; name          = rule name; In some circumstances user may see this
+;                 as part of some sentences, so try to make it descriptive
+;                 and sensible.
+; helptxt       = displayed in the help for building types with this flag
+;                 (optional)
+;building_flags =
+;  { "name", "helptxt"
+;  }
 
 ; /* <-- avoid gettext warnings
 ;
@@ -24,15 +36,20 @@ format_version=20
 ;                 to rename an item after a ruleset has been released, you
 ;                 should set "rule_name" to the original value of "name".
 ; genus	        = genus; one of:
-;                 "GreatWonder", "SmallWonder", "Improvement", "Special".
+;                 "GreatWonder", "SmallWonder", "Improvement", "Special",
+;                 or "Convert".
 ; reqs		= requirements to build the building (see effects.ruleset
 ;		  and README.effects for help on requirements)
-; graphic	= icon of improvement (used in city dialog)
-; graphic_alt	= alternate icon of improvement
+; graphic       = icon of improvement (used in city dialog)
+; graphic_alt   = alternate icon of improvement
+; graphic_alt2  = second alternative icon.
 ; obsolete_by	= requirements for the building to become obsolete
 ; build_cost	= production shields required to build
 ; upkeep	= monetary upkeep value
 ; sabotage	= percent chance of diplomat sabotage being successful
+; sound         = tag of the sound to play when building finished
+; sound_alt     = alternate sound tag
+; sound_alt2    = second alternative sound tag
 ; flags         = special flag strings
 ;
 ; ** Building flags **
@@ -45,10 +62,13 @@ format_version=20
 ;                      Should only be used with genus "SmallWonder".
 ; "Gold"             = Not a real building; production turned into gold
 ;                      indefinitely (capitalization/coinage).
-;                      Genus should be "Special".
+;                      Genus should be "Convert".
+; "Infra"            = Not a real building; production turned into infrapoints
+;                      indefinitely. Genus should be "Convert".
 ; "DisasterProof"    = Disasters never destroy this building. Is meaningful
 ;                      only for genus "Improvement" buildings as others are
 ;                      automatically disaster proof.
+; "Indestructible"   = Surgical strike can never destroy this building.
 ;
 ; */ <-- avoid gettext warnings
 
@@ -59,16 +79,18 @@ reqs	=
     { "type", "name", "range"
 ; No requirements
     }
-graphic	= "b.barracks"
-graphic_alt	= "-"
+graphic         = "b.generic"
+graphic_alt     = "b.barracks"
+graphic_alt2    = "-"
 obsolete_by     =
     { "type", "name", "range"
     }
 build_cost	= 100
 upkeep		= 0
 sabotage	= 100
-sound		= "b_barracks"
-sound_alt	= "b_generic"
+sound		= "b_generic"
+sound_alt	= "b_barracks"
+sound_alt2      = "-"
 helptext	= _("\
 This is the only building you can build.\
 ")

@@ -42,7 +42,7 @@
   the penalty for reduced hitpoints, the active effects, and any veteran
   bonuses.
 
-  'utype' and 'pplayer' must be set. 'ptile' can be NULL.
+  'utype' must be set. 'pplayer' and 'ptile' can be nullptrs.
 ****************************************************************************/
 int utype_move_rate(const struct unit_type *utype, const struct tile *ptile,
                     const struct player *pplayer, int veteran_level,
@@ -51,11 +51,11 @@ int utype_move_rate(const struct unit_type *utype, const struct tile *ptile,
   const struct unit_class *uclass;
   const struct veteran_level *vlevel;
   int base_move_rate, move_rate;
+  int min_speed;
 
-  fc_assert_ret_val(NULL != utype, 0);
-  fc_assert_ret_val(NULL != pplayer, 0);
+  fc_assert_ret_val(utype != nullptr, 0);
   vlevel = utype_veteran_level(utype, veteran_level);
-  fc_assert_ret_val(NULL != vlevel, 0);
+  fc_assert_ret_val(vlevel != nullptr, 0);
   uclass = utype_class(utype);
 
   base_move_rate = utype->move_rate + vlevel->move_bonus;
@@ -68,13 +68,15 @@ int utype_move_rate(const struct unit_type *utype, const struct tile *ptile,
 
   /* Add on effects bonus (Magellan's Expedition, Lighthouse,
    * Nuclear Power). */
-  move_rate += (get_unittype_bonus(pplayer, ptile, utype, EFT_MOVE_BONUS)
+  move_rate += (get_unittype_bonus(pplayer, ptile, utype, nullptr,
+                                   EFT_MOVE_BONUS)
                 * SINGLE_MOVE);
 
   /* Don't let the move_rate be less than min_speed unless the base_move_rate is
    * also less than min_speed. */
-  if (move_rate < uclass->min_speed) {
-    move_rate = MIN(uclass->min_speed, base_move_rate);
+  min_speed = MIN(uclass->min_speed, base_move_rate);
+  if (move_rate < min_speed) {
+    move_rate = min_speed;
   }
 
   return move_rate;
@@ -103,6 +105,7 @@ int utype_unknown_move_cost(const struct unit_type *utype)
 {
   const struct unit_class *uclass = utype_class(utype);
   int move_cost;
+  int worst_effect_mc;
 
   if (!uclass_has_flag(uclass, UCF_TERRAIN_SPEED)) {
     /* Unit is not subject to terrain movement costs. */
@@ -124,6 +127,29 @@ int utype_unknown_move_cost(const struct unit_type *utype)
     move_cost *= SINGLE_MOVE; /* Real value. */
   }
 
+  /* Move cost from effects. */
+  worst_effect_mc = 0;
+  action_by_result_iterate(paction, ACTRES_UNIT_MOVE) {
+    struct universal req_pattern[] = {
+      { .kind = VUT_ACTION, .value.action = paction },
+      { .kind = VUT_UTYPE,  .value.utype = utype },
+    };
+    int max_effect_mc;
+
+    if (!utype_can_do_action(utype, action_id(paction))) {
+      /* Not relevant. */
+      continue;
+    }
+
+    max_effect_mc = effect_cumulative_max(EFT_ACTION_SUCCESS_MOVE_COST,
+                                          req_pattern, ARRAY_SIZE(req_pattern));
+
+    if (max_effect_mc > worst_effect_mc) {
+      worst_effect_mc = max_effect_mc;
+    }
+  } action_by_result_iterate_end;
+  move_cost += worst_effect_mc;
+
   /* Let's see if we can cross over all terrain types, else apply a malus.
    * We want units that may encounter unsuitable terrain explore less.
    * N.B.: We don't take in account terrain no unit can enter here. */
@@ -139,50 +165,82 @@ int utype_unknown_move_cost(const struct unit_type *utype)
   return move_cost;
 }
 
-
 /************************************************************************//**
-  Return TRUE iff the unit can be a defender at its current location.  This
-  should be checked when looking for a defender - not all units on the
+  Return TRUE iff the unit can be a defender at its current location.
+  This should be checked when looking for a defender - not all units on the
   tile are valid defenders.
 ****************************************************************************/
 bool unit_can_defend_here(const struct civ_map *nmap, const struct unit *punit)
 {
   struct unit *ptrans = unit_transport_get(punit);
 
-  /* Do not just check if unit is transported.
-   * Even transported units may step out from transport to fight,
-   * if this is their native terrain. */
-  return (can_unit_exist_at_tile(nmap, punit, unit_tile(punit))
-          && (ptrans == NULL || can_unit_unload(punit, ptrans)));
+  if (ptrans == NULL) {
+    /* FIXME: Redundant check; if unit is in the tile without transport
+     *        it's known to be able to exist there. */
+    return can_unit_exist_at_tile(nmap, punit, unit_tile(punit));
+  }
+
+  switch (unit_type_get(punit)->tp_defense) {
+  case TDT_BLOCKED:
+    return FALSE;
+  case TDT_ALIGHT:
+    return can_unit_exist_at_tile(nmap, punit, unit_tile(punit))
+      && can_unit_deboard_or_be_unloaded(nmap, punit, ptrans);
+  case TDT_ALWAYS:
+    return TRUE;
+  }
+
+  fc_assert(FALSE);
+
+  return FALSE;
 }
 
 /************************************************************************//**
- This unit can attack non-native tiles (eg. Ships ability to
- shore bombardment)
+  Returns TRUE iff a unit of this type can attack non-native tiles (eg.
+  Ships ability to shore bombardment) given that it can perform an attack
+  action.
 ****************************************************************************/
-bool can_attack_non_native(const struct unit_type *utype)
+bool can_attack_non_native_hard_reqs(const struct unit_type *utype)
 {
   return uclass_has_flag(utype_class(utype), UCF_ATTACK_NON_NATIVE)
-         && utype->attack_strength > 0
          && !utype_has_flag(utype, UTYF_ONLY_NATIVE_ATTACK);
 }
 
 /************************************************************************//**
- This unit can attack from non-native tiles (Marines can attack from
- transport, ships from harbour cities)
+  This unit can attack non-native tiles (eg. Ships ability to
+  shore bombardment)
+****************************************************************************/
+bool can_attack_non_native(const struct unit_type *utype)
+{
+  return can_attack_non_native_hard_reqs(utype)
+         && (utype_can_do_action_result(utype, ACTRES_ATTACK)
+             || utype_can_do_action_result(utype, ACTRES_BOMBARD)
+             || utype_can_do_action_result(utype, ACTRES_WIPE_UNITS)
+             || utype_can_do_action_result(utype, ACTRES_NUKE_UNITS));
+}
+
+/************************************************************************//**
+  This unit can attack from non-native tiles (Marines can attack from
+  transport, ships from harbor cities)
 ****************************************************************************/
 bool can_attack_from_non_native(const struct unit_type *utype)
 {
-  return (utype_can_do_act_when_ustate(utype, ACTION_ATTACK,
-                                       USP_NATIVE_TILE, FALSE)
-          || utype_can_do_act_when_ustate(utype, ACTION_CONQUER_CITY,
-                                          USP_LIVABLE_TILE, FALSE));
+  return (utype_can_do_action_result_when_ustate(utype, ACTRES_ATTACK,
+                                                 USP_NATIVE_TILE, FALSE)
+          || utype_can_do_action_result_when_ustate(utype,
+                                                    ACTRES_WIPE_UNITS,
+                                                    USP_LIVABLE_TILE, FALSE)
+          || utype_can_do_action_result_when_ustate(utype,
+                                                    ACTRES_CONQUER_CITY,
+                                                    USP_LIVABLE_TILE,
+                                                    FALSE));
 }
 
 /************************************************************************//**
   Check for a city channel.
 ****************************************************************************/
-bool is_city_channel_tile(const struct unit_class *punitclass,
+bool is_city_channel_tile(const struct civ_map *nmap,
+                          const struct unit_class *punitclass,
                           const struct tile *ptile,
                           const struct tile *pexclude)
 {
@@ -193,7 +251,7 @@ bool is_city_channel_tile(const struct unit_class *punitclass,
   dbv_init(&tile_processed, map_num_tiles());
   for (;;) {
     dbv_set(&tile_processed, tile_index(ptile));
-    adjc_iterate(&(wld.map), ptile, piter) {
+    adjc_iterate(nmap, ptile, piter) {
       if (dbv_isset(&tile_processed, tile_index(piter))) {
         continue;
       } else if (piter != pexclude
@@ -219,13 +277,14 @@ bool is_city_channel_tile(const struct unit_class *punitclass,
 
   dbv_free(&tile_processed);
   tile_list_destroy(process_queue);
+
   return found;
 }
 
 /************************************************************************//**
   Return TRUE iff a unit of the given unit type can "exist" at this location.
   This means it can physically be present on the tile (without the use of a
-  transporter). See also can_unit_survive_at_tile.
+  transporter). See also can_unit_survive_at_tile().
 ****************************************************************************/
 bool can_exist_at_tile(const struct civ_map *nmap,
                        const struct unit_type *utype,
@@ -238,7 +297,7 @@ bool can_exist_at_tile(const struct civ_map *nmap,
       && (uclass_has_flag(utype_class(utype), UCF_BUILD_ANYWHERE)
           || is_native_near_tile(nmap, utype_class(utype), ptile)
           || (1 == game.info.citymindist
-              && is_city_channel_tile(utype_class(utype), ptile, NULL)))) {
+              && is_city_channel_tile(nmap, utype_class(utype), ptile, NULL)))) {
     return TRUE;
   }
 
@@ -254,7 +313,7 @@ bool can_exist_at_tile(const struct civ_map *nmap,
 /************************************************************************//**
   Return TRUE iff the unit can "exist" at this location.  This means it can
   physically be present on the tile (without the use of a transporter).  See
-  also can_unit_survive_at_tile.
+  also can_unit_survive_at_tile().
 ****************************************************************************/
 bool can_unit_exist_at_tile(const struct civ_map *nmap,
                             const struct unit *punit,
@@ -310,7 +369,8 @@ bool is_native_to_class(const struct unit_class *punitclass,
   moves, so that callers are responsible for checking for other sources of
   legal moves (e.g. cities, transports, etc.).
 ****************************************************************************/
-bool is_native_move(const struct unit_class *punitclass,
+bool is_native_move(const struct civ_map *nmap,
+                    const struct unit_class *punitclass,
                     const struct tile *src_tile,
                     const struct tile *dst_tile)
 {
@@ -372,16 +432,16 @@ bool is_native_move(const struct unit_class *punitclass,
         return TRUE;
       case RMM_CARDINAL:
         /* Road connects source and destination if cardinal move. */
-        if (is_move_cardinal(&(wld.map), src_tile, dst_tile)) {
+        if (is_move_cardinal(nmap, src_tile, dst_tile)) {
           return TRUE;
         }
         break;
       case RMM_RELAXED:
-        if (is_move_cardinal(&(wld.map), src_tile, dst_tile)) {
+        if (is_move_cardinal(nmap, src_tile, dst_tile)) {
           /* Cardinal moves have no between tiles, so connected. */
           return TRUE;
         }
-        cardinal_between_iterate(&(wld.map), src_tile, dst_tile, between) {
+        cardinal_between_iterate(nmap, src_tile, dst_tile, between) {
           if (tile_has_extra(between, iextra)
               || (pextra != iextra && tile_has_extra(between, pextra))) {
             /* We have a link for the connection.
@@ -419,18 +479,20 @@ bool is_native_near_tile(const struct civ_map *nmap,
 }
 
 /************************************************************************//**
-  Return TRUE iff the unit can "survive" at this location.  This means it can
+  Return TRUE iff the unit can "survive" at this location. This means it can
   not only be physically present at the tile but will be able to survive
-  indefinitely on its own (without a transporter).  Units that require fuel
-  or have a danger of drowning are examples of non-survivable units.  See
-  also can_unit_exist_at_tile().
+  indefinitely on its own (without a transporter). Units that require fuel
+  or have a danger of drowning are examples of non-survivable units.
+  See also can_unit_exist_at_tile().
 
-  (This function could be renamed as unit_wants_transporter.)
+  (This function could be renamed as unit_wants_transporter().)
 ****************************************************************************/
 bool can_unit_survive_at_tile(const struct civ_map *nmap,
                               const struct unit *punit,
                               const struct tile *ptile)
 {
+  const struct unit_type *utype;
+
   if (!can_unit_exist_at_tile(nmap, punit, ptile)) {
     return FALSE;
   }
@@ -439,12 +501,18 @@ bool can_unit_survive_at_tile(const struct civ_map *nmap,
     return TRUE;
   }
 
-  if (tile_has_refuel_extra(ptile, unit_type_get(punit))) {
+  utype = unit_type_get(punit);
+  if (tile_has_refuel_extra(ptile, utype_class(utype))) {
     /* Unit can always survive at refueling base */
     return TRUE;
   }
 
-  if (utype_fuel(unit_type_get(punit))) {
+  if (utype_has_flag(utype, UTYF_COAST) && is_safe_ocean(nmap, ptile)) {
+    /* Refueling coast */
+    return TRUE;
+  }
+
+  if (utype_fuel(utype)) {
     /* Unit requires fuel and this is not refueling tile */
     return FALSE;
   }
@@ -491,32 +559,7 @@ bool can_step_taken_wrt_to_zoc(const struct unit_type *punittype,
   }
 
   return (is_my_zoc(unit_owner, src_tile, zmap)
-	  || is_my_zoc(unit_owner, dst_tile, zmap));
-}
-
-/************************************************************************//**
-  See can_step_take_wrt_to_zoc().  This function is exactly the same but
-  it takes a unit instead of a unittype and player.
-****************************************************************************/
-static bool zoc_ok_move_gen(const struct unit *punit,
-                            const struct tile *src_tile,
-                            const struct tile *dst_tile,
-                            const struct civ_map *zmap)
-{
-  return can_step_taken_wrt_to_zoc(unit_type_get(punit), unit_owner(punit),
-				   src_tile, dst_tile, zmap);
-}
-
-/************************************************************************//**
-  Returns whether the unit can safely move from its current position to
-  the adjacent dst_tile.  This function checks only ZOC.
-
-  See can_step_taken_wrt_to_zoc().
-****************************************************************************/
-bool zoc_ok_move(const struct unit *punit, const struct tile *dst_tile,
-                 const struct civ_map *zmap)
-{
-  return zoc_ok_move_gen(punit, unit_tile(punit), dst_tile, zmap);
+          || is_my_zoc(unit_owner, dst_tile, zmap));
 }
 
 /************************************************************************//**
@@ -529,36 +572,58 @@ bool unit_can_move_to_tile(const struct civ_map *nmap,
                            const struct unit *punit,
                            const struct tile *dst_tile,
                            bool igzoc,
+                           bool enter_transport,
                            bool enter_enemy_city)
 {
   return (MR_OK == unit_move_to_tile_test(nmap, punit,
                                           punit->activity, unit_tile(punit),
-                                          dst_tile, igzoc, NULL,
+                                          dst_tile, igzoc,
+                                          enter_transport, NULL,
                                           enter_enemy_city));
 }
 
 /************************************************************************//**
+  Returns whether the unit can teleport from its current tile to
+  the destination tile.
+
+  See unit_teleport_to_tile_test().
+****************************************************************************/
+bool unit_can_teleport_to_tile(const struct civ_map *nmap,
+                               const struct unit *punit,
+                               const struct tile *dst_tile,
+                               bool enter_transport,
+                               bool enter_enemy_city)
+{
+  return (MR_OK == unit_teleport_to_tile_test(nmap, punit, punit->activity,
+                                              unit_tile(punit), dst_tile,
+                                              enter_transport, NULL,
+                                              enter_enemy_city));
+}
+
+/************************************************************************//**
   Returns whether the unit can move from its current tile to the
-  destination tile.  An enumerated value is returned indication the error
+  destination tile. An enumerated value is returned indication the error
   or success status.
 
   The unit can move if:
     1) The unit is idle or on server goto.
     2) Unit is not prohibited from moving by scenario
-    3) The target location is next to the unit.
-    4) There are no non-allied units on the target tile.
-    5) Animals cannot move out from home terrains
-    6) Unit can move to a tile where it can't survive on its own if there
+    3) Unit is not a "random movement only" one, or this is random movement
+    4) The target location is next to the unit.
+    5) There are no non-allied units on the target tile.
+    6) Animals cannot move out from home terrains
+    7) Unit can move to a tile where it can't survive on its own if there
        is free transport capacity.
-    7) There are no peaceful but non allied units on the target tile.
-    8) There is not a non allied city on the target tile when
+    8) There are no peaceful but non-allied units on the target tile.
+    9) There is not a non-allied city on the target tile when
        enter_enemy_city is false. When enter_enemy_city is true a non
        peaceful city is also accepted.
-    9) There is no non-allied unit blocking (zoc) [or igzoc is true].
-   10) Triremes cannot move out of sight from land.
-   11) It is not the territory of a player we are at peace with.
-   12) The unit is unable to disembark from current transporter.
-   13) The unit is making a non-native move (e.g. lack of road)
+   10) There is no non-allied unit blocking (zoc) [or igzoc is true].
+   11) Triremes cannot move out of sight from land.
+   12) It is not the territory of a player we are at peace with,
+       or it's terrain where borders don't count
+   13) The unit is unable to disembark from current transporter.
+   14) The unit is making a non-native move (e.g. lack of road)
 ****************************************************************************/
 enum unit_move_result
 unit_move_to_tile_test(const struct civ_map *nmap,
@@ -566,7 +631,7 @@ unit_move_to_tile_test(const struct civ_map *nmap,
                        enum unit_activity activity,
                        const struct tile *src_tile,
                        const struct tile *dst_tile, bool igzoc,
-                       struct unit *embark_to,
+                       bool enter_transport, struct unit *embark_to,
                        bool enter_enemy_city)
 {
   bool zoc;
@@ -587,44 +652,52 @@ unit_move_to_tile_test(const struct civ_map *nmap,
   }
 
   /* 3) */
+  if ((!is_server() || game.server.random_move_time != puowner)
+      && utype_has_flag(punittype, UTYF_RANDOM_MOVEMENT)) {
+    return MR_RANDOM_ONLY;
+  }
+
+  /* 4) */
   if (!is_tiles_adjacent(src_tile, dst_tile)) {
     /* Of course you can only move to adjacent positions. */
     return MR_BAD_DESTINATION;
   }
 
-  /* 4) */
-  if (is_non_allied_unit_tile(dst_tile, puowner)) {
+  /* 5) */
+  if (is_non_allied_unit_tile(dst_tile, puowner,
+                              utype_has_flag(punittype, UTYF_FLAGLESS))) {
     /* You can't move onto a tile with non-allied units on it (try
      * attacking instead). */
     return MR_DESTINATION_OCCUPIED_BY_NON_ALLIED_UNIT;
   }
 
-  /* 5) */
+  /* 6) */
   if (puowner->ai_common.barbarian_type == ANIMAL_BARBARIAN
       && dst_tile->terrain->animal != punittype) {
     return MR_ANIMAL_DISALLOWED;
   }
 
-  /* 6) */
+  /* 7) */
   if (embark_to != NULL) {
     if (!could_unit_load(punit, embark_to)) {
       return MR_NO_TRANSPORTER_CAPACITY;
     }
   } else if (!(can_exist_at_tile(nmap, punittype, dst_tile)
-               || unit_could_load_at(punit, dst_tile))) {
+               || (enter_transport
+                   && unit_could_load_at(punit, dst_tile)))) {
     return MR_NO_TRANSPORTER_CAPACITY;
   }
 
-  /* 7) */
+  /* 8) */
   if (is_non_attack_unit_tile(dst_tile, puowner)) {
     /* You can't move into a non-allied tile.
      *
      * FIXME: this should never happen since it should be caught by check
-     * #3. */
+     * #5. */
     return MR_NO_WAR;
   }
 
-  /* 8) */
+  /* 9) */
   if ((pcity = tile_city(dst_tile))) {
     if (enter_enemy_city) {
       if (pplayers_non_attack(city_owner(pcity), puowner)) {
@@ -642,7 +715,7 @@ unit_move_to_tile_test(const struct civ_map *nmap,
     }
   }
 
-  /* 9) */
+  /* 10) */
   zoc = igzoc
     || can_step_taken_wrt_to_zoc(punittype, puowner, src_tile, dst_tile, nmap);
   if (!zoc) {
@@ -650,30 +723,128 @@ unit_move_to_tile_test(const struct civ_map *nmap,
     return MR_ZOC;
   }
 
-  /* 10) */
+  /* 11) */
   if (utype_has_flag(punittype, UTYF_COAST_STRICT)
-      && !is_safe_ocean(&(wld.map), dst_tile)) {
+      && !pcity && !is_safe_ocean(nmap, dst_tile)) {
     return MR_TRIREME;
   }
 
-  /* 11) */
+  /* 12) */
   if (!utype_has_flag(punittype, UTYF_CIVILIAN)
       && !player_can_invade_tile(puowner, dst_tile)) {
     return MR_PEACE;
   }
 
-  /* 12) */
+  /* 13) */
   if (unit_transported(punit)
      && !can_unit_unload(punit, unit_transport_get(punit))) {
     return MR_CANNOT_DISEMBARK;
   }
 
-  /* 13) */
-  if (!(is_native_move(utype_class(punittype), src_tile, dst_tile)
+  /* 14) */
+  if (!(is_native_move(nmap, utype_class(punittype), src_tile, dst_tile)
         /* Allow non-native moves into cities or boarding transport. */
         || pcity
         || unit_could_load_at(punit, dst_tile))) {
     return MR_NON_NATIVE_MOVE;
+  }
+
+  return MR_OK;
+}
+
+/************************************************************************//**
+  Returns whether the unit can teleport from its current tile to the
+  destination tile. An enumerated value is returned indication the error
+  or success status.
+
+  The unit can teleport if:
+    1) There are no non-allied units on the target tile.
+    2) Animals cannot move out from home terrains
+    3) Unit can move to a tile where it can't survive on its own if there
+       is free transport capacity.
+    4) There are no peaceful but non-allied units on the target tile.
+    5) There is not a non-allied city on the target tile when
+       enter_enemy_city is false. When enter_enemy_city is true a non
+       peaceful city is also accepted.
+    6) Triremes cannot move out of sight from land.
+    7) It is not the territory of a player we are at peace with,
+       or it's terrain where borders don't count
+****************************************************************************/
+enum unit_move_result
+unit_teleport_to_tile_test(const struct civ_map *nmap,
+                           const struct unit *punit,
+                           enum unit_activity activity,
+                           const struct tile *src_tile,
+                           const struct tile *dst_tile,
+                           bool enter_transport, struct unit *embark_to,
+                           bool enter_enemy_city)
+{
+  struct city *pcity;
+  const struct unit_type *punittype = unit_type_get(punit);
+  const struct player *puowner = unit_owner(punit);
+
+  /* 1) */
+  if (is_non_allied_unit_tile(dst_tile, puowner,
+                              utype_has_flag(punittype, UTYF_FLAGLESS))) {
+    /* You can't move onto a tile with non-allied units on it (try
+     * attacking instead). */
+    return MR_DESTINATION_OCCUPIED_BY_NON_ALLIED_UNIT;
+  }
+
+  /* 2) */
+  if (puowner->ai_common.barbarian_type == ANIMAL_BARBARIAN
+      && dst_tile->terrain->animal != punittype) {
+    return MR_ANIMAL_DISALLOWED;
+  }
+
+  /* 3) */
+  if (embark_to != NULL) {
+    if (!could_unit_load(punit, embark_to)) {
+      return MR_NO_TRANSPORTER_CAPACITY;
+    }
+  } else if (!(can_exist_at_tile(nmap, punittype, dst_tile)
+               || (enter_transport
+                   && unit_could_load_at(punit, dst_tile)))) {
+    return MR_NO_TRANSPORTER_CAPACITY;
+  }
+
+  /* 4) */
+  if (is_non_attack_unit_tile(dst_tile, puowner)) {
+    /* You can't move into a non-allied tile.
+     *
+     * FIXME: this should never happen since it should be caught by check
+     * #1. */
+    return MR_NO_WAR;
+  }
+
+  /* 5) */
+  if ((pcity = tile_city(dst_tile))) {
+    if (enter_enemy_city) {
+      if (pplayers_non_attack(city_owner(pcity), puowner)) {
+        /* You can't move into an empty city of a civilization you're at
+         * peace with - you must first either declare war or make an
+         * alliance. */
+        return MR_NO_WAR;
+      }
+    } else {
+      if (!pplayers_allied(city_owner(pcity), puowner)) {
+        /* You can't move into an empty city of a civilization you're not
+         * allied to. Assume that the player tried to attack. */
+        return MR_NO_WAR;
+      }
+    }
+  }
+
+  /* 6) */
+  if (utype_has_flag(punittype, UTYF_COAST_STRICT)
+      && !pcity && !is_safe_ocean(nmap, dst_tile)) {
+    return MR_TRIREME;
+  }
+
+  /* 7) */
+  if (!utype_has_flag(punittype, UTYF_CIVILIAN)
+      && !player_can_invade_tile(puowner, dst_tile)) {
+    return MR_PEACE;
   }
 
   return MR_OK;

@@ -1,7 +1,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -59,7 +59,7 @@ tiles = { "row", "column", "tag"
   3,  2, "b.sam_battery"
   3,  3, "b.coastal_defense"
   3,  4, "b.solar_plant"
-  3,  5, "b.harbour"
+  3,  5, "b.harbor", "b.harbour"
   3,  6, "b.offshore_platform"
   3,  7, "b.airport"
 
@@ -69,7 +69,7 @@ tiles = { "row", "column", "tag"
 ;  4,  3, "a.alphabet"
 ;  4,  4, "a.bridge_building"
   4,  5, "b.capitalization"
-;  4,  6, "a.philosphy"
+;  4,  6, "a.philosophy"
 ;  4,  7, "a.chemistry"
 
   5,  0, "b.apollo_program"
@@ -80,7 +80,7 @@ tiles = { "row", "column", "tag"
   5,  5, "b.cure_for_cancer"
   5,  6, "b.darwins_voyage"
   5,  7, "b.eiffel_tower"
-  
+
   6,  0, "b.great_library"
   6,  1, "b.great_wall"
   6,  2, "b.hanging_gardens"
@@ -89,7 +89,7 @@ tiles = { "row", "column", "tag"
   6,  5, "b.js_bachs_cathedral"
   6,  6, "b.king_richards_crusade"
   6,  7, "b.leonardos_workshop"
-  
+
   7,  0, "b.lighthouse"
   7,  1, "b.magellans_expedition"
   7,  2, "b.manhattan_project"
@@ -98,7 +98,7 @@ tiles = { "row", "column", "tag"
   7,  5, "b.oracle"
   7,  6, "b.pyramids"
   7,  7, "b.seti_program"
-  
+
   8,  0, "b.shakespeares_theatre"
   8,  1, "b.space_component"
   8,  2, "b.space_modules"

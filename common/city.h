@@ -24,22 +24,23 @@ extern "C" {
 /* common */
 #include "fc_types.h"
 #include "name_translation.h"
-#include "improvement.h"
+#include "tile.h"
 #include "traderoutes.h"
-#include "unitlist.h"
-#include "vision.h"
 #include "workertask.h"
 #include "worklist.h"
 
-enum production_class_type {
-  PCT_UNIT,
-  PCT_NORMAL_IMPROVEMENT,
-  PCT_WONDER,
-  PCT_LAST
-};
+struct impr_type;
+struct unit;
+struct unit_list;
+struct vision;
+struct packet_city_rally_point;
 
-/* Various city options.  These are stored by the server and can be
- * toggled by the user.  Each one defaults to off.  Adding new ones
+#include "city_enums_gen.h"
+
+#define PCT_LAST PCT_COUNT
+
+/* Various city options. These are stored by the server and can be
+ * toggled by the user. Each one defaults to off. Adding new ones
  * will break network compatibility. If you want to reorder or remove
  * an option remember to load the city option order from the savegame.
  * It is stored in savefile.city_options_vector
@@ -47,7 +48,7 @@ enum production_class_type {
  * Used in the network protocol.
  */
 #define SPECENUM_NAME city_options
-/* If building a settler at size 1 disbands the city */
+/* If unit production (e.g. settler) is allowed to disband a small city */
 #define SPECENUM_VALUE0 CITYO_DISBAND
 #define SPECENUM_VALUE0NAME "Disband"
 /* If new citizens are science specialists */
@@ -60,11 +61,19 @@ enum production_class_type {
 #define SPECENUM_BITVECTOR bv_city_options
 #include "specenum_gen.h"
 
-/* Changing the max radius requires updating network capabilities and results
- * in incompatible savefiles. */
-#define CITY_MAP_MIN_RADIUS       0
-#define CITY_MAP_DEFAULT_RADIUS   2
-#define CITY_MAP_MAX_RADIUS       5
+/* Used in savegames, and there's currently no order of the values
+ * stored in the savegame. Implement that before touching the values. */
+#define SPECENUM_NAME city_wl_cancel_behavior
+#define SPECENUM_VALUE0 WLCB_SMART
+  /* TRANS: Worklist Cancelling behavior
+   * (when something cannot be built right away) */
+#define SPECENUM_VALUE0NAME N_("?wlcb:Smart")
+#define SPECENUM_VALUE1 WLCB_ALWAYS_PURGE
+#define SPECENUM_VALUE1NAME N_("?wlcb:Always Purge")
+#define SPECENUM_VALUE2 WLCB_ALWAYS_POSTPONE
+#define SPECENUM_VALUE2NAME N_("?wlcb:Always Postpone")
+#define SPECENUM_COUNT WLCB_LAST
+#include "specenum_gen.h"
 
 /* The city includes all tiles dx^2 + dy^2 <= CITY_MAP_*_RADIUS_SQ */
 #define CITY_MAP_DEFAULT_RADIUS_SQ \
@@ -73,9 +82,9 @@ enum production_class_type {
   (CITY_MAP_MIN_RADIUS * CITY_MAP_MIN_RADIUS + 1)
 #define CITY_MAP_MAX_RADIUS_SQ \
   (CITY_MAP_MAX_RADIUS * CITY_MAP_MAX_RADIUS + 1)
-/* the id for the city center */
+/* The id for the city center */
 #define CITY_MAP_CENTER_RADIUS_SQ      -1
-/* the tile index of the city center */
+/* The tile index of the city center */
 #define CITY_MAP_CENTER_TILE_INDEX      0
 
 /* Maximum diameter of the workable city area. */
@@ -91,7 +100,7 @@ enum production_class_type {
  * The city size is saved as unsigned char. Therefore, MAX_CITY_SIZE should
  * be below 255!
  */
-#define MAX_CITY_SIZE		0xFF
+#define MAX_CITY_SIZE           0xFF
 
 /* Iterate a city map, from the center (the city) outwards */
 struct iter_index {
@@ -184,13 +193,13 @@ void citylog_map_workers(enum log_level level, struct city *pcity);
 /* Iterate a city map in checked real map coordinates.
  * _radius_sq is the squared city radius.
  * _city_tile is the center of the (possible) city.
- * (_index) will be the city tile index in the intervall
+ * (_index) will be the city tile index in the interval
  * [0, city_map_tiles(_radius_sq)] */
-#define city_tile_iterate_index(_radius_sq, _city_tile, _tile,		\
+#define city_tile_iterate_index(_nmap, _radius_sq, _city_tile, _tile,   \
                                 _index) {				\
   city_map_iterate_outwards_radius_sq_index(CITY_MAP_CENTER_RADIUS_SQ,	\
                                             _radius_sq, _index, _x, _y)	\
-  struct tile *_tile = city_map_to_tile(_city_tile, _radius_sq,         \
+  struct tile *_tile = city_map_to_tile(_nmap, _city_tile, _radius_sq,  \
                                         _x, _y);			\
   if (NULL != _tile) {
 
@@ -199,12 +208,12 @@ void citylog_map_workers(enum log_level level, struct city *pcity);
   } city_map_iterate_outwards_radius_sq_index_end;
 
 /* simple extension to skip is_free_worked() tiles. */
-#define city_tile_iterate_skip_free_worked(_radius_sq, _city_tile,	\
-                                           _tile, _index, _x, _y) {	\
-  city_map_iterate(_radius_sq, _index, _x, _y) {			\
-    if (!is_free_worked_index(_index)) {				\
-      struct tile *_tile = city_map_to_tile(_city_tile, _radius_sq,	\
-                                            _x, _y);			\
+#define city_tile_iterate_skip_free_worked(_nmap, _radius_sq, _city_tile,  \
+                                           _tile, _index, _x, _y) {	   \
+  city_map_iterate(_radius_sq, _index, _x, _y) {			   \
+    if (!is_free_worked_index(_index)) {				   \
+      struct tile *_tile = city_map_to_tile(_nmap, _city_tile, _radius_sq, \
+                                            _x, _y);			   \
       if (NULL != _tile) {
 
 #define city_tile_iterate_skip_free_worked_end				\
@@ -213,17 +222,18 @@ void citylog_map_workers(enum log_level level, struct city *pcity);
   } city_map_iterate_end;						\
 }
 
-/* Does the same thing as city_tile_iterate_index, but keeps the city
+/* Does the same thing as city_tile_iterate_index(), but keeps the city
  * coordinates hidden. */
-#define city_tile_iterate(_radius_sq, _city_tile, _tile) {              \
-  city_map_iterate_outwards_radius_sq(CITY_MAP_CENTER_RADIUS_SQ,	\
-                                      _radius_sq, _x, _y)	        \
-  struct tile *_tile = city_map_to_tile(_city_tile, _radius_sq,         \
-                                        _x, _y);			\
+#define city_tile_iterate(_nmap, _radius_sq, _city_tile, _tile) {          \
+  const struct tile *_center##_tile = _city_tile;                          \
+  city_map_iterate_outwards_radius_sq(CITY_MAP_CENTER_RADIUS_SQ,           \
+                                      _radius_sq, _x, _y)                  \
+  struct tile *_tile = city_map_to_tile(_nmap, _center##_tile, _radius_sq, \
+                                        _x, _y);                           \
   if (NULL != _tile) {
 
-#define city_tile_iterate_end					        \
-    }									\
+#define city_tile_iterate_end                                           \
+    }                                                                   \
   } city_map_iterate_outwards_radius_sq_end;
 
 /* Improvement status (for cities' lists of improvements)
@@ -280,7 +290,7 @@ enum output_loss {
 };
 
 /* This enumerators are used at client side only (so changing it doesn't
- * break the compability) to mark that the city need specific gui updates
+ * break the compatibility) to mark that the city need specific gui updates
  * (e.g. city dialog, or city report). */
 enum city_updates {
   CU_NO_UPDATE          = 0,
@@ -289,28 +299,33 @@ enum city_updates {
   CU_POPUP_DIALOG       = 1 << 2
 };
 
-/* See city_build_here_test(). */
-enum city_build_result {
-  CB_OK,
-  CB_BAD_CITY_TERRAIN,
-  CB_BAD_UNIT_TERRAIN,
-  CB_BAD_BORDERS,
-  CB_NO_MIN_DIST
+enum city_needs_arrange {
+  CNA_NOT = 0,
+  CNA_NORMAL,
+  CNA_BROADCAST_PENDING
 };
 
 struct tile_cache; /* defined and only used within city.c */
 
 struct adv_city; /* defined in ./server/advisors/infracache.h */
 
+struct cm_parameter; /* defined in ./common/aicore/cm.h */
+
+#ifdef FREECIV_WEB
+#pragma pack(push, 1)
+#endif
 struct city {
-  char name[MAX_LEN_CITYNAME];
+  char *name;
   struct tile *tile; /* May be NULL, should check! */
   struct player *owner; /* Cannot be NULL. */
-  struct player *original; /* Cannot be NULL. */
+  struct player *original; /* Often NULL in client,
+                            * can be NULL on server after player removal */
   int id;
   int style;
+  enum capital_type capital;
+  enum city_acquire_type acquire_t;
 
-  /* the people */
+  /* The people */
   citizens size;
   citizens feel[CITIZEN_LAST][FEELING_LAST];
 
@@ -322,7 +337,7 @@ struct city {
 
   citizens *nationality;      /* Nationality of the citizens. */
 
-  /* trade routes */
+  /* Trade routes */
   struct trade_route_list *routes;
 
   /* Tile output, regardless of if the tile is actually worked. It is used
@@ -333,7 +348,7 @@ struct city {
    * radius. */
   int tile_cache_radius_sq;
 
-  /* the productions */
+  /* The productions */
   int surplus[O_LAST]; /* Final surplus in each category. */
   int waste[O_LAST]; /* Waste/corruption in each category. */
   int unhappy_penalty[O_LAST]; /* Penalty from unhappy cities. */
@@ -343,8 +358,9 @@ struct city {
 
   /* Cached values for CPU savings. */
   int bonus[O_LAST];
+  int abs_bonus[O_LAST];
 
-  /* the physics */
+  /* The physics */
   int food_stock;
   int shield_stock;
   int pollution;                /* not saved */
@@ -360,9 +376,10 @@ struct city {
   bool did_buy;
   bool did_sell;
   bool was_happy;
+  bool had_famine;
 
-  int anarchy;                  /* anarchy rounds count */ 
-  int rapture;                  /* rapture rounds count */ 
+  int anarchy;                  /* anarchy rounds count */
+  int rapture;                  /* rapture rounds count */
   int turn_founded;
   int turn_last_built;
 
@@ -381,12 +398,28 @@ struct city {
   struct worklist worklist;
 
   bv_city_options city_options;
+  enum city_wl_cancel_behavior wlcb;
 
   struct unit_list *units_supported;
+
+  int *counter_values;
 
   int history;                 /* Cumulative culture */
 
   struct worker_task_list *task_reqs;
+
+  int steal; /* Diplomats steal once; for spies, gets harder */
+
+  struct {
+    size_t length;
+    /* If true, rally point is active until owner cancels or loses city. */
+    bool persistent;
+    /* Orders should be cleared if an enemy is met. */
+    bool vigilant;
+    struct unit_order *orders;
+  } rally_point;
+
+  struct cm_parameter *cm_parameter;
 
   union {
     struct {
@@ -397,14 +430,12 @@ struct city {
 
       int illness;
 
-      int steal; /* diplomats steal once; for spies, gets harder */
-
       /* If > 0, workers will not be rearranged until they are unfrozen. */
       int workers_frozen;
 
       /* If set, workers need to be arranged when the city is unfrozen.
        * Set inside auto_arrange_workers() and city_freeze_workers_queue(). */
-      bool needs_arrange;
+      enum city_needs_arrange needs_arrange;
 
       /* If set, city needs to be refreshed at a later time.
        * Set inside city_refresh() and city_refresh_queue_add(). */
@@ -429,6 +460,7 @@ struct city {
       bool unhappy;
       int  city_image;
       int  culture;
+      int  buy_cost;
 
       /* The color is an index into the city_colors array in mapview_common */
       bool colored;
@@ -449,13 +481,15 @@ struct city {
     } client;
   };
 };
+#ifdef FREECIV_WEB
+#pragma pack(pop)
+#endif
 
 struct citystyle {
   struct name_translation name;
   char graphic[MAX_LEN_NAME];
   char graphic_alt[MAX_LEN_NAME];
   char citizens_graphic[MAX_LEN_NAME];
-  char citizens_graphic_alt[MAX_LEN_NAME];
   struct requirement_vector reqs;
 };
 
@@ -484,21 +518,23 @@ extern struct output_type output_types[];
 
 #define city_list_iterate_safe(citylist, _city)                        \
 {                                                                      \
-  int _city##_size = city_list_size(citylist);                         \
+  struct city_list *_city##_cl = citylist;                             \
+  int _city##_size = city_list_size(_city##_cl);                       \
                                                                        \
   if (_city##_size > 0) {                                              \
     int _city##_numbers[_city##_size];                                 \
-    int _city##_index = 0;                                             \
+    int _city##_index;                                                 \
                                                                        \
-    city_list_iterate(citylist, _city) {                               \
-      _city##_numbers[_city##_index++] = _city->id;                    \
+    _city##_size = 0;                                                  \
+    city_list_iterate(_city##_cl, _city) {                             \
+      _city##_numbers[_city##_size++] = _city->id;                     \
     } city_list_iterate_end;                                           \
                                                                        \
     for (_city##_index = 0;                                            \
-        _city##_index < _city##_size;                                  \
-        _city##_index++) {                                             \
+         _city##_index < _city##_size;                                 \
+         _city##_index++) {                                            \
       struct city *_city =                                             \
-       game_city_by_number(_city##_numbers[_city##_index]);            \
+        game_city_by_number(_city##_numbers[_city##_index]);           \
                                                                        \
       if (NULL != _city) {
 
@@ -508,7 +544,7 @@ extern struct output_type output_types[];
   }                                                                    \
 }
 
-/* output type functions */
+/* Output type functions */
 
 const char *get_output_identifier(Output_type_id output);
 const char *get_output_name(Output_type_id output);
@@ -517,13 +553,23 @@ Output_type_id output_type_by_identifier(const char *id);
 void add_specialist_output(const struct city *pcity, int *output);
 void set_city_production(struct city *pcity);
 
-/* properties */
+/* Properties */
 
 const char *city_name_get(const struct city *pcity);
-struct player *city_owner(const struct city *pcity);
-struct tile *city_tile(const struct city *pcity);
+void city_name_set(struct city *pcity, const char *new_name);
+#define city_owner(_pcity_) (_pcity_)->owner
+#define city_tile(_pcity_) (_pcity_)->tile
 
-citizens city_size_get(const struct city *pcity);
+/**********************************************************************//**
+  Get the city size.
+**************************************************************************/
+static inline citizens city_size_get(const struct city *pcity)
+{
+  fc_assert_ret_val(pcity != NULL, 0);
+
+  return pcity->size;
+}
+
 void city_size_add(struct city *pcity, int add);
 void city_size_set(struct city *pcity, citizens size);
 
@@ -535,45 +581,52 @@ citizens player_angry_citizens(const struct player *pplayer);
 int city_population(const struct city *pcity);
 int city_total_impr_gold_upkeep(const struct city *pcity);
 int city_total_unit_gold_upkeep(const struct city *pcity);
-int city_unit_unhappiness(struct unit *punit, int *free_unhappy);
-bool city_happy(const struct city *pcity);  /* generally use celebrating instead */
-bool city_unhappy(const struct city *pcity);                /* anarchy??? */
+int city_unit_unhappiness(const struct civ_map *nmap,
+                          struct unit *punit, int *free_unhappy);
+bool city_happy(const struct city *pcity);  /* Generally use celebrating instead */
+bool city_unhappy(const struct city *pcity);                /* Anarchy??? */
 bool base_city_celebrating(const struct city *pcity);
-bool city_celebrating(const struct city *pcity);            /* love the king ??? */
+bool city_celebrating(const struct city *pcity);            /* Love the king ??? */
 bool city_rapture_grow(const struct city *pcity);
 bool city_is_occupied(const struct city *pcity);
 
-/* city related improvement and unit functions */
+/* City related improvement and unit functions */
 
 int city_improvement_upkeep(const struct city *pcity,
-			    const struct impr_type *pimprove);
+                            const struct impr_type *pimprove);
 
 bool can_city_build_improvement_direct(const struct city *pcity,
-				       struct impr_type *pimprove);
+                                       const struct impr_type *pimprove);
 bool can_city_build_improvement_later(const struct city *pcity,
-				      struct impr_type *pimprove);
+                                      const struct impr_type *pimprove);
 bool can_city_build_improvement_now(const struct city *pcity,
-				    struct impr_type *pimprove);
+                                    const struct impr_type *pimprove);
 
-bool can_city_build_unit_direct(const struct city *pcity,
-				const struct unit_type *punittype);
-bool can_city_build_unit_later(const struct city *pcity,
-			       const struct unit_type *punittype);
-bool can_city_build_unit_now(const struct city *pcity,
-			     const struct unit_type *punittype);
+bool can_city_build_unit_direct(const struct civ_map *nmap,
+                                const struct city *pcity,
+                                const struct unit_type *punittype);
+bool can_city_build_unit_later(const struct civ_map *nmap,
+                               const struct city *pcity,
+                               const struct unit_type *punittype);
+bool can_city_build_unit_now(const struct civ_map *nmap,
+                             const struct city *pcity,
+                             const struct unit_type *punittype);
 
-bool can_city_build_direct(const struct city *pcity,
+bool can_city_build_direct(const struct civ_map *nmap,
+                           const struct city *pcity,
                            const struct universal *target);
-bool can_city_build_later(const struct city *pcity,
+bool can_city_build_later(const struct civ_map *nmap,
+                          const struct city *pcity,
                           const struct universal *target);
-bool can_city_build_now(const struct city *pcity,
+bool can_city_build_now(const struct civ_map *nmap,
+                        const struct city *pcity,
                         const struct universal *target);
 
 int city_unit_slots_available(const struct city *pcity);
 bool city_can_use_specialist(const struct city *pcity,
 			     Specialist_type_id type);
 bool city_has_building(const struct city *pcity,
-		       const struct impr_type *pimprove);
+                       const struct impr_type *pimprove);
 bool is_capital(const struct city *pcity);
 bool is_gov_center(const struct city *pcity);
 bool city_got_defense_effect(const struct city *pcity,
@@ -582,8 +635,11 @@ bool city_got_defense_effect(const struct city *pcity,
 int city_production_build_shield_cost(const struct city *pcity);
 bool city_production_build_units(const struct city *pcity,
                                  bool add_production, int *num_units);
-int city_production_buy_gold_cost(const struct city *pcity);
+int city_production_unit_veteran_level(struct city *pcity,
+                                       const struct unit_type *punittype);
 
+bool city_production_is_genus(const struct city *pcity,
+                              enum impr_genus_id genus);
 bool city_production_has_flag(const struct city *pcity,
                               enum impr_flag_id flag);
 int city_production_turns_to_build(const struct city *pcity,
@@ -600,17 +656,19 @@ int city_turns_to_grow(const struct city *pcity);
 bool city_can_grow_to(const struct city *pcity, int pop_size);
 bool city_can_change_build(const struct city *pcity);
 
-void city_choose_build_default(struct city *pcity);
+void city_choose_build_default(const struct civ_map *nmap, struct city *pcity);
 
-/* textual representation of buildings */
+/* Textual representation of buildings */
 
 const char *city_improvement_name_translation(const struct city *pcity,
-					      struct impr_type *pimprove);
+					      const struct impr_type *pimprove);
 const char *city_production_name_translation(const struct city *pcity);
 
-/* city map functions */
+/* City map functions */
 bool is_valid_city_coords(const int city_radius_sq, const int city_map_x,
                           const int city_map_y);
+bool city_map_includes_tile(const struct city *const pcity,
+                            const struct tile *map_tile);
 bool city_base_to_city_map(int *city_map_x, int *city_map_y,
                            const struct city *const pcity,
                            const struct tile *map_tile);
@@ -619,7 +677,8 @@ bool city_tile_to_city_map(int *city_map_x, int *city_map_y,
                            const struct tile *city_center,
                            const struct tile *map_tile);
 
-struct tile *city_map_to_tile(const struct tile *city_center,
+struct tile *city_map_to_tile(const struct civ_map *nmap,
+                              const struct tile *city_center,
                               int city_radius_sq, int city_map_x,
                               int city_map_y);
 
@@ -629,51 +688,100 @@ void generate_city_map_indices(void);
 void free_city_map_index(void);
 void city_production_caravan_shields_init(void);
 
-/* output on spot */
+/* Output on spot */
 int city_tile_output(const struct city *pcity, const struct tile *ptile,
-		     bool is_celebrating, Output_type_id otype);
+                     bool is_celebrating, Output_type_id otype);
 int city_tile_output_now(const struct city *pcity, const struct tile *ptile,
-			 Output_type_id otype);
+                         Output_type_id otype);
 
 bool base_city_can_work_tile(const struct player *restriction,
                              const struct city *pcity,
                              const struct tile *ptile);
 bool city_can_work_tile(const struct city *pcity, const struct tile *ptile);
 
-bool city_can_be_built_here(const struct tile *ptile,
-                            const struct unit *punit);
-enum city_build_result city_build_here_test(const struct tile *ptile,
-                                            const struct unit *punit);
+bool citymindist_prevents_city_on_tile(const struct civ_map *nmap,
+                                       const struct tile *ptile);
 
-/* list functions */
+bool city_can_be_built_here(const struct civ_map *nmap,
+                            const struct tile *ptile,
+                            const struct unit *punit,
+                            bool hut_test);
+bool city_can_be_built_tile_only(const struct civ_map *nmap,
+                                 const struct tile *ptile);
+
+/* List functions */
 struct city *city_list_find_number(struct city_list *This, int id);
 struct city *city_list_find_name(struct city_list *This, const char *name);
 
 int city_name_compare(const void *p1, const void *p2);
 
-/* city style functions */
+/* City style functions */
 const char *city_style_rule_name(const int style);
 const char *city_style_name_translation(const int style);
 
 int city_style_by_rule_name(const char *s);
 int city_style_by_translated_name(const char *s);
 
-struct city *is_enemy_city_tile(const struct tile *ptile,
-				const struct player *pplayer);
-struct city *is_allied_city_tile(const struct tile *ptile,
-				 const struct player *pplayer);
-struct city *is_non_attack_city_tile(const struct tile *ptile,
-				     const struct player *pplayer);
-struct city *is_non_allied_city_tile(const struct tile *ptile,
-				     const struct player *pplayer);
+struct city *tile_enemy_city(const struct tile *ptile,
+                             const struct player *pplayer);
 
-bool is_unit_near_a_friendly_city(const struct unit *punit);
-bool is_friendly_city_near(const struct player *owner,
-                           const struct tile *ptile);
-bool city_exists_within_max_city_map(const struct tile *ptile,
+/**********************************************************************//**
+  Is there an enemy city on the tile?
+**************************************************************************/
+static inline bool is_enemy_city_tile(const struct tile *ptile,
+                                      const struct player *pplayer)
+{
+  return NULL != tile_enemy_city(ptile, pplayer);
+}
+
+struct city *tile_allied_city(const struct tile *ptile,
+                              const struct player *pplayer);
+
+/**********************************************************************//**
+  Is there an allied city on the tile?
+**************************************************************************/
+static inline bool is_allied_city_tile(const struct tile *ptile,
+                                       const struct player *pplayer)
+{
+  return NULL != tile_allied_city(ptile, pplayer);
+}
+
+struct city *tile_non_attack_city(const struct tile *ptile,
+                                  const struct player *pplayer);
+
+/**********************************************************************//**
+  Is there a non-attack city on the tile?
+**************************************************************************/
+static inline bool is_non_attack_city_tile(const struct tile *ptile,
+                                           const struct player *pplayer)
+{
+  return NULL != tile_non_attack_city(ptile, pplayer);
+}
+
+struct city *tile_non_allied_city(const struct tile *ptile,
+                                  const struct player *pplayer);
+
+/**********************************************************************//**
+  Is there a non-allied city on the tile?
+**************************************************************************/
+static inline bool is_non_allied_city_tile(const struct tile *ptile,
+                                           const struct player *pplayer)
+{
+  return NULL != tile_non_allied_city(ptile, pplayer);
+}
+
+bool is_unit_near_a_friendly_city(const struct civ_map *nmap,
+                                  const struct unit *punit,
+                                  int distance);
+bool is_friendly_city_near(const struct civ_map *nmap,
+                           const struct player *owner,
+                           const struct tile *ptile,
+                           int distance);
+bool city_exists_within_max_city_map(const struct civ_map *nmap,
+                                     const struct tile *ptile,
                                      bool may_be_on_center);
 
-/* granary size as a function of city size */
+/* Granary size as a function of city size */
 int city_granary_size(int city_size);
 
 void city_add_improvement(struct city *pcity,
@@ -681,8 +789,9 @@ void city_add_improvement(struct city *pcity,
 void city_remove_improvement(struct city *pcity,
 			     const struct impr_type *pimprove);
 
-/* city update functions */
-void city_refresh_from_main_map(struct city *pcity, bool *workers_map);
+/* City update functions */
+void city_refresh_from_main_map(const struct civ_map *nmap,
+                                struct city *pcity, bool *workers_map);
 
 int city_waste(const struct city *pcity, Output_type_id otype, int total,
                int *breakdown);
@@ -691,13 +800,13 @@ Specialist_type_id best_specialist(Output_type_id otype,
 int get_final_city_output_bonus(const struct city *pcity, Output_type_id otype);
 bool city_built_last_turn(const struct city *pcity);
 
-/* city creation / destruction */
+/* City creation / destruction */
 struct city *create_city_virtual(struct player *pplayer,
 				 struct tile *ptile, const char *name);
 void destroy_city_virtual(struct city *pcity);
 bool city_is_virtual(const struct city *pcity);
 
-/* misc */
+/* Misc */
 bool is_city_option_set(const struct city *pcity, enum city_options option);
 void city_styles_alloc(int num);
 void city_styles_free(void);
@@ -743,7 +852,26 @@ bool city_exist(int id);
 
 /* === */
 
-bool is_city_center(const struct city *pcity, const struct tile *ptile);
+/**********************************************************************//**
+  Return TRUE if the city is centered at the given tile.
+
+  NB: This doesn't simply check whether pcity->tile == ptile because that
+  would miss virtual clones made of city center tiles, which are used by
+  autoworker to judge whether improvements are worthwhile. The upshot is
+  that city centers would appear to lose their irrigation/farmland bonuses
+  as well as their minimum outputs of one food and one shield, and thus
+  autoworker would rarely transform or mine them.
+**************************************************************************/
+static inline bool is_city_center(const struct city *pcity,
+                                  const struct tile *ptile)
+{
+  if (!pcity || !pcity->tile || !ptile) {
+    return FALSE;
+  }
+
+  return tile_index(city_tile(pcity)) == tile_index(ptile);
+}
+
 bool is_free_worked(const struct city *pcity, const struct tile *ptile);
 
 #define is_free_worked_index(city_tile_index) \
@@ -754,8 +882,13 @@ void *city_ai_data(const struct city *pcity, const struct ai_type *ai);
 void city_set_ai_data(struct city *pcity, const struct ai_type *ai,
                       void *data);
 
+void city_rally_point_clear(struct city *pcity);
+void city_rally_point_receive(const struct packet_city_rally_point *packet,
+                              struct city *pcity)
+  fc__attribute((nonnull (1)));
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__CITY_H */
+#endif /* FC__CITY_H */

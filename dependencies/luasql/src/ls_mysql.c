@@ -2,7 +2,6 @@
 ** LuaSQL, MySQL driver
 ** Authors:  Eduardo Quintao
 ** See Copyright Notice in license.html
-** $Id: ls_mysql.c,v 1.31 2009/02/07 23:16:23 tomas Exp $
 */
 
 #include <assert.h>
@@ -17,6 +16,7 @@
 #endif
 
 #include "mysql.h"
+#include "errmsg.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -75,9 +75,8 @@ typedef struct {
 	int        numcols;            /* number of columns */
 	int        colnames, coltypes; /* reference to column information tables */
 	MYSQL_RES *my_res;
+	MYSQL 	  *my_conn;
 } cur_data;
-
-LUASQL_API int luaopen_luasql_mysql (lua_State *L);
 
 
 /*
@@ -247,6 +246,64 @@ static int cur_fetch (lua_State *L) {
 	}
 }
 
+/*
+** Get the next result from multiple statements
+*/
+static int cur_next_result (lua_State *L) {
+	cur_data *cur = getcursor (L);
+	MYSQL* con = cur->my_conn;
+	int status;
+	if(mysql_more_results(con)){
+		status = mysql_next_result(con);
+		if(status == 0){
+			mysql_free_result(cur->my_res);
+			cur->my_res = mysql_store_result(con);
+			if(cur->my_res != NULL){
+				lua_pushboolean(L, 1);
+				return 1;
+			}else{
+				lua_pushboolean(L, 0);
+				lua_pushinteger(L, mysql_errno(con));
+				lua_pushstring(L, mysql_error(con));
+				return 3;
+			}
+		}else{
+			lua_pushboolean(L, 0);
+			lua_pushinteger(L, status);
+			switch(status){
+				case CR_COMMANDS_OUT_OF_SYNC:
+					lua_pushliteral(L, "CR_COMMANDS_OUT_OF_SYNC");
+				break;
+				case CR_SERVER_GONE_ERROR:
+					lua_pushliteral(L, "CR_SERVER_GONE_ERROR");
+				break;
+				case CR_SERVER_LOST:
+					lua_pushliteral(L, "CR_SERVER_LOST");
+				break;
+				case CR_UNKNOWN_ERROR:
+					lua_pushliteral(L, "CR_UNKNOWN_ERROR");
+				break;
+				default:
+					lua_pushliteral(L, "Unknown");
+			}
+			return 3;
+		}
+	}else{
+		lua_pushboolean(L, 0);
+		lua_pushinteger(L, -1);
+		return 2;
+	}
+}
+
+/*
+** Check if next result is available
+*/
+static int cur_has_next_result (lua_State *L) {
+	cur_data *cur = getcursor (L);
+	lua_pushboolean(L, mysql_more_results(cur->my_conn));
+	return 1;
+}
+
 
 /*
 ** Cursor object collector function
@@ -282,7 +339,7 @@ static int cur_close (lua_State *L) {
 ** a reference to it on the cursor structure.
 */
 static void _pushtable (lua_State *L, cur_data *cur, size_t off) {
-	int *ref = (int *)((char *)cur + off);
+	int *ref = (int *)cur + off / sizeof(int);
 
 	/* If colnames or coltypes do not exist, create both. */
 	if (*ref == LUA_NOREF)
@@ -322,9 +379,20 @@ static int cur_numrows (lua_State *L) {
 
 
 /*
+** Seeks to an arbitrary row in a query result set.
+*/
+static int cur_seek (lua_State *L) {
+	cur_data *cur = getcursor (L);
+	lua_Integer rownum = luaL_checkinteger (L, 2);
+	mysql_data_seek (cur->my_res, rownum);
+	return 0;
+}
+
+
+/*
 ** Create a new Cursor object and push it on top of the stack.
 */
-static int create_cursor (lua_State *L, int conn, MYSQL_RES *result, int cols) {
+static int create_cursor (lua_State *L, MYSQL *my_conn, int conn, MYSQL_RES *result, int cols) {
 	cur_data *cur = (cur_data *)lua_newuserdata(L, sizeof(cur_data));
 	luasql_setmeta (L, LUASQL_CURSOR_MYSQL);
 
@@ -335,6 +403,7 @@ static int create_cursor (lua_State *L, int conn, MYSQL_RES *result, int cols) {
 	cur->colnames = LUA_NOREF;
 	cur->coltypes = LUA_NOREF;
 	cur->my_res = result;
+	cur->my_conn = my_conn;
 	lua_pushvalue (L, conn);
 	cur->conn = luaL_ref (L, LUA_REGISTRYINDEX);
 
@@ -367,6 +436,27 @@ static int conn_close (lua_State *L) {
 	conn_gc (L);
 	lua_pushboolean (L, 1);
 	return 1;
+}
+
+/*
+** Ping connection.
+*/
+static int conn_ping (lua_State *L) {
+	conn_data *conn=(conn_data *)luaL_checkudata(L, 1, LUASQL_CONNECTION_MYSQL);
+	luaL_argcheck (L, conn != NULL, 1, LUASQL_PREFIX"connection expected");
+	if (conn->closed) {
+		lua_pushboolean (L, 0);
+		return 1;
+	}
+	if (mysql_ping (conn->my_conn) == 0) {
+		lua_pushboolean (L, 1);
+		return 1;
+	} else if (mysql_errno (conn->my_conn) == CR_SERVER_GONE_ERROR) {
+		lua_pushboolean (L, 0);
+		return 1;
+	}
+	luaL_error(L, mysql_error(conn->my_conn));
+	return 0;
 }
 
 
@@ -404,7 +494,7 @@ static int conn_execute (lua_State *L) {
 		unsigned int num_cols = mysql_field_count(conn->my_conn);
 
 		if (res) { /* tuples returned */
-			return create_cursor (L, 1, res, num_cols);
+			return create_cursor (L, conn->my_conn, 1, res, num_cols);
 		}
 		else { /* mysql_use_result() returned nothing; should it have? */
 			if(num_cols == 0) { /* no tuples returned */
@@ -427,6 +517,7 @@ static int conn_commit (lua_State *L) {
 	lua_pushboolean(L, !mysql_commit(conn->my_conn));
 	return 1;
 }
+
 
 
 /*
@@ -492,6 +583,8 @@ static int env_connect (lua_State *L) {
 	const char *password = luaL_optstring(L, 4, NULL);
 	const char *host = luaL_optstring(L, 5, NULL);
 	const int port = luaL_optinteger(L, 6, 0);
+	const char *unix_socket = luaL_optstring(L, 7, NULL);
+	const long client_flag = (long)luaL_optinteger(L, 8, 0);
 	MYSQL *conn;
 	getenvironment(L); /* validade environment */
 
@@ -501,7 +594,7 @@ static int env_connect (lua_State *L) {
 		return luasql_faildirect(L, "error connecting: Out of memory.");
 
 	if (!mysql_real_connect(conn, host, username, password, 
-		sourcename, port, NULL, 0))
+		sourcename, port, unix_socket, client_flag))
 	{
 		char error_msg[100];
 		strncpy (error_msg,  mysql_error(conn), 99);
@@ -552,6 +645,7 @@ static void create_metatables (lua_State *L) {
     struct luaL_Reg connection_methods[] = {
         {"__gc", conn_gc},
         {"close", conn_close},
+        {"ping", conn_ping},
         {"escape", escape_string},
         {"execute", conn_execute},
         {"commit", conn_commit},
@@ -567,6 +661,9 @@ static void create_metatables (lua_State *L) {
         {"getcoltypes", cur_getcoltypes},
         {"fetch", cur_fetch},
         {"numrows", cur_numrows},
+        {"seek", cur_seek},
+		{"nextresult", cur_next_result},
+		{"hasnextresult", cur_has_next_result},
 		{NULL, NULL},
     };
 	luasql_createmeta (L, LUASQL_ENVIRONMENT_MYSQL, environment_methods);
@@ -603,7 +700,11 @@ LUASQL_API int luaopen_luasql_mysql (lua_State *L) {
 	luaL_setfuncs(L, driver, 0);
 	luasql_set_info (L);
     lua_pushliteral (L, "_CLIENTVERSION");
-    lua_pushliteral (L, MYSQL_SERVER_VERSION);
+#ifdef MARIADB_CLIENT_VERSION_STR
+lua_pushliteral (L, MARIADB_CLIENT_VERSION_STR);
+#else
+lua_pushliteral (L, MYSQL_SERVER_VERSION);
+#endif
     lua_settable (L, -3);
 	return 1;
 }

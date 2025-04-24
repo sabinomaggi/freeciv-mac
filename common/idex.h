@@ -17,14 +17,15 @@
 extern "C" {
 #endif /* __cplusplus */
 
-/**************************************************************************
+/***************************************************************************
    idex = ident index: a lookup table for quick mapping of unit and city
    id values to unit and city pointers.
 ***************************************************************************/
 
 /* common */
 #include "fc_types.h"
-#include "world_object.h"
+
+struct world;
 
 void idex_init(struct world *iworld);
 void idex_free(struct world *iworld);
@@ -35,11 +36,11 @@ void idex_register_unit(struct world *iworld, struct unit *punit);
 void idex_unregister_city(struct world *iworld, struct city *pcity);
 void idex_unregister_unit(struct world *iworld, struct unit *punit);
 
-struct city *idex_lookup_city(struct world *iworld, int id);
-struct unit *idex_lookup_unit(struct world *iworld, int id);
+struct city *idex_lookup_city(const struct world *iworld, int id);
+struct unit *idex_lookup_unit(const struct world *iworld, int id);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif  /* FC__IDEX_H */
+#endif /* FC__IDEX_H */

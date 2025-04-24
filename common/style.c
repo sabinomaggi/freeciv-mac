@@ -41,7 +41,7 @@ void styles_alloc(int count)
 
   for (i = 0; i < count; i++) {
     styles[i].id = i;
-    styles[i].disabled = FALSE;
+    styles[i].ruledit_disabled = FALSE;
   }
 }
 
@@ -185,11 +185,10 @@ struct music_style *music_style_by_number(int id)
 struct music_style *player_music_style(struct player *plr)
 {
   struct music_style *best = NULL;
+  const struct req_context plr_context = { .player = plr };
 
   music_styles_iterate(pms) {
-    if (are_reqs_active(plr, NULL, NULL, NULL, NULL,
-                        NULL, NULL, NULL, NULL, NULL, &pms->reqs,
-                        RPT_CERTAIN)) {
+    if (are_reqs_active(&plr_context, NULL, &pms->reqs, RPT_CERTAIN)) {
       best = pms;
     }
   } music_styles_iterate_end;
@@ -210,11 +209,10 @@ int style_of_city(const struct city *pcity)
 **************************************************************************/
 int basic_city_style_for_style(struct nation_style *pstyle)
 {
-  enum fc_tristate style_style;
   int i;
 
-  for (i = game.control.styles_count - 1; i >= 0; i--) {
-    style_style = TRI_MAYBE;
+  for (i = game.control.num_city_styles - 1; i >= 0; i--) {
+    enum fc_tristate style_style = TRI_MAYBE;
 
     requirement_vector_iterate(&city_styles[i].reqs, preq) {
       if (preq->source.kind == VUT_STYLE
@@ -230,12 +228,8 @@ int basic_city_style_for_style(struct nation_style *pstyle)
     } requirement_vector_iterate_end;
 
     if (style_style == TRI_YES) {
-      break;
+      return i;
     }
-  }
-
-  if (style_style == TRI_YES) {
-    return i;
   }
 
   return -1;
@@ -247,11 +241,14 @@ int basic_city_style_for_style(struct nation_style *pstyle)
 int city_style(struct city *pcity)
 {
   int i;
-  struct player *plr = city_owner(pcity);
+  const struct req_context context = {
+    .player = city_owner(pcity),
+    .city = pcity,
+    .tile = city_tile(pcity),
+  };
 
-  for (i = game.control.styles_count - 1; i >= 0; i--) {
-    if (are_reqs_active(plr, NULL, pcity, NULL, city_tile(pcity),
-                        NULL, NULL, NULL, NULL, NULL,
+  for (i = game.control.num_city_styles - 1; i >= 0; i--) {
+    if (are_reqs_active(&context, NULL,
                         &city_styles[i].reqs, RPT_CERTAIN)) {
       return i;
     }

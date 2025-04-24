@@ -25,31 +25,11 @@
 
 #include "graphics.h"
 
-struct sprite *intro_gfx_sprite;
-
-/************************************************************************//**
-  Return whether the client supports given view type
-****************************************************************************/
-bool gui_is_view_supported(enum ts_type type)
-{
-  /* PORTME */
-  return FALSE;
-}
-
 /************************************************************************//**
   Loading tileset of the specified type
 ****************************************************************************/
 void gui_tileset_type_set(enum ts_type type)
 {
-}
-
-/************************************************************************//**
-  Load the introductory graphics.
-****************************************************************************/
-void load_intro_gfx(void)
-{
-  /* PORTME */
-  intro_gfx_sprite = load_gfxfile(tileset_main_intro_filename(tileset));
 }
 
 /************************************************************************//**
@@ -59,15 +39,4 @@ void load_intro_gfx(void)
 void load_cursors(void)
 {
   /* PORTME */
-}
-
-/************************************************************************//**
-  Frees the introductory sprites.
-****************************************************************************/
-void gui_free_intro_radar_sprites(void)
-{
-  if (intro_gfx_sprite) {
-    free_sprite(intro_gfx_sprite);
-    intro_gfx_sprite = NULL;
-  }
 }

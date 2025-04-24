@@ -24,8 +24,9 @@
 #include "timing.h"
 
 /* common */
-#include "ai.h"
 #include "player.h"
+
+#include "ai.h"
 
 static struct ai_type ai_types[FREECIV_AI_MOD_LAST];
 
@@ -44,7 +45,7 @@ static struct ai_timer *aitimers = NULL;
 static struct ai_timer *aitimer_plrs = NULL;
 
 /*************************************************************************//**
-  Allocate memory for Start the timer for the AI of a player.
+  Allocate resources for the AI timers.
 *****************************************************************************/
 void ai_timer_init(void)
 {
@@ -56,6 +57,7 @@ void ai_timer_init(void)
   aitimers = fc_calloc(FREECIV_AI_MOD_LAST, sizeof(*aitimers));
   for (i = 0; i < FREECIV_AI_MOD_LAST; i++) {
     struct ai_timer *aitimer = aitimers + i;
+
     aitimer->count = 0;
     aitimer->timer = NULL;
   }
@@ -64,6 +66,7 @@ void ai_timer_init(void)
                            sizeof(*aitimer_plrs));
   for (i = 0; i < FREECIV_AI_MOD_LAST * MAX_NUM_PLAYER_SLOTS; i++) {
     struct ai_timer *aitimer = aitimer_plrs + i;
+
     aitimer->count = 0;
     aitimer->timer = NULL;
   }
@@ -113,13 +116,15 @@ static struct ai_timer *ai_timer_get(const struct ai_type *ai)
   struct ai_timer *aitimer;
 
   fc_assert_ret_val(ai != NULL, NULL);
-
   fc_assert_ret_val(aitimers != NULL, NULL);
 
   aitimer = aitimers + ai_type_number(ai);
 
   if (!aitimer->timer) {
-    aitimer->timer = timer_new(TIMER_CPU, TIMER_DEBUG);
+    char buf[512];
+
+    fc_snprintf(buf, sizeof(buf), "AI type timer %s", ai_type_name(ai));
+    aitimer->timer = timer_new(TIMER_CPU, TIMER_DEBUG, buf);
   }
 
   return aitimer;
@@ -134,14 +139,16 @@ static struct ai_timer *ai_timer_player_get(const struct player *pplayer)
 
   fc_assert_ret_val(pplayer != NULL, NULL);
   fc_assert_ret_val(pplayer->ai != NULL, NULL);
-
   fc_assert_ret_val(aitimer_plrs != NULL, NULL);
 
   aitimer = aitimer_plrs + (player_index(pplayer) * FREECIV_AI_MOD_LAST
                             + ai_type_number(pplayer->ai));
 
   if (!aitimer->timer) {
-    aitimer->timer = timer_new(TIMER_CPU, TIMER_DEBUG);
+    char buf[512];
+
+    fc_snprintf(buf, sizeof(buf), "AI plr timer for %s", pplayer_name(pplayer));
+    aitimer->timer = timer_new(TIMER_CPU, TIMER_DEBUG, buf);
   }
 
   return aitimer;
@@ -346,7 +353,8 @@ const char *ai_type_name_or_fallback(const char *orig_name)
     return orig_name;
   }
 
-  if (!strcmp("threaded", orig_name)) {
+  if (!strcmp("tex", orig_name)
+      || !strcmp("threaded", orig_name)) {
     struct ai_type *fb;
 
     fb = ai_type_by_name("classic");
@@ -358,4 +366,20 @@ const char *ai_type_name_or_fallback(const char *orig_name)
   }
 
   return NULL;
+}
+
+/*************************************************************************//**
+  Return AI level name legal in current build best matching the old name.
+*****************************************************************************/
+const char *ai_level_name_update_cb(const char *old)
+{
+#ifndef FREECIV_DEBUG
+  /* No experimental level in !FREECIV_DEBUG build */
+  if (!fc_strcasecmp("Experimental", old)) {
+    /* Convert it to hard */
+    return ai_level_name(AI_LEVEL_HARD);
+  }
+#endif /* FREECIV_DEBUG */
+
+  return old;
 }

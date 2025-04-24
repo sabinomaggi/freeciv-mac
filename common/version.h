@@ -18,7 +18,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 #if !defined(FC__FREECIV_CONFIG_H) && !defined(FC_CONFIG_H)
-#error Files including versions.h should also include freeciv_config.h directly
+#error Files including version.h should also include freeciv_config.h directly
 #endif
 
 /* This is only used in version.c, and only if IS_BETA_VERSION is true.
@@ -39,6 +39,8 @@ const char *freeciv_motto(void);
 
 /* If returns NULL, not a beta version. */
 const char *beta_message(void);
+const char *alpha_message(void);
+const char *unstable_message(void);
 
 #ifdef __cplusplus
 }

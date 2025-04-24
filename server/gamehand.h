@@ -1,4 +1,4 @@
-/**********************************************************************
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,14 +24,14 @@ void send_game_info(struct conn_list *dest);
 void send_scenario_info(struct conn_list *dest);
 void send_scenario_description(struct conn_list *dest);
 
+void cache_rulesets(void);
+
 enum unit_role_id crole_to_role_id(char crole);
-struct unit_type *crole_to_unit_type(char crole,struct player *pplayer);
+struct unit_type *crole_to_unit_type(char crole, struct player *pplayer);
 
 int update_timeout(void);
 void increase_timeout_because_unit_moved(void);
 
 const char *new_challenge_filename(struct connection *pc);
 
-void ruleset_choices_free(void);
-
-#endif  /* FC__GAMEHAND_H */
+#endif /* FC__GAMEHAND_H */

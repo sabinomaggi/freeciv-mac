@@ -54,9 +54,9 @@
 
 /* ------------------------------ */
 
-struct main Main;
+struct sdl2_data main_data;
 
-static SDL_Surface *main_surface;
+static SDL_Surface *main_surface = NULL;
 
 static bool render_dirty = TRUE;
 
@@ -91,9 +91,9 @@ struct gui_layer *get_gui_layer(SDL_Surface *surface)
 {
   int i = 0;
 
-  while ((i < Main.guis_count) && Main.guis[i]) {
-    if (Main.guis[i]->surface == surface) {
-      return Main.guis[i];
+  while ((i < main_data.guis_count) && main_data.guis[i]) {
+    if (main_data.guis[i]->surface == surface) {
+      return main_data.guis[i];
     }
     i++;
   }
@@ -103,38 +103,39 @@ struct gui_layer *get_gui_layer(SDL_Surface *surface)
 
 /**********************************************************************//**
   Buffer allocation function.
-  This function is call by "create_window(...)" function and allocate 
+  This function is call by "create_window(...)" function and allocate
   buffer layer for this function.
 
-  Pointer for this buffer is put in buffer array on last position that 
+  Pointer for this buffer is put in buffer array on last position that
   flush functions will draw this layer last.
 **************************************************************************/
 struct gui_layer *add_gui_layer(int width, int height)
 {
   struct gui_layer *gui_layer = NULL;
-  SDL_Surface *pBuffer;
+  SDL_Surface *buffer;
 
-  pBuffer = create_surf(width, height, SDL_SWSURFACE);
-  gui_layer = gui_layer_new(0, 0, pBuffer);
+  buffer = create_surf(width, height, SDL_SWSURFACE);
+  gui_layer = gui_layer_new(0, 0, buffer);
 
   /* add to buffers array */
-  if (Main.guis) {
+  if (main_data.guis) {
     int i;
 
     /* find NULL element */
-    for (i = 0; i < Main.guis_count; i++) {
-      if (!Main.guis[i]) {
-        Main.guis[i] = gui_layer;
+    for (i = 0; i < main_data.guis_count; i++) {
+      if (!main_data.guis[i]) {
+        main_data.guis[i] = gui_layer;
         return gui_layer;
       }
     }
-    Main.guis_count++;
-    Main.guis = fc_realloc(Main.guis, Main.guis_count * sizeof(struct gui_layer *));
-    Main.guis[Main.guis_count - 1] = gui_layer;
+    main_data.guis_count++;
+    main_data.guis = fc_realloc(main_data.guis,
+                                main_data.guis_count * sizeof(struct gui_layer *));
+    main_data.guis[main_data.guis_count - 1] = gui_layer;
   } else {
-    Main.guis = fc_calloc(1, sizeof(struct gui_layer *));
-    Main.guis[0] = gui_layer;
-    Main.guis_count = 1;
+    main_data.guis = fc_calloc(1, sizeof(struct gui_layer *));
+    main_data.guis[0] = gui_layer;
+    main_data.guis_count = 1;
   }
 
   return gui_layer;
@@ -148,26 +149,26 @@ void remove_gui_layer(struct gui_layer *gui_layer)
 {
   int i;
 
-  for (i = 0; i < Main.guis_count - 1; i++) {
-    if (Main.guis[i] && (Main.guis[i] == gui_layer)) {
-      gui_layer_destroy(&Main.guis[i]);
-      Main.guis[i] = Main.guis[i + 1];
-      Main.guis[i + 1] = NULL;
+  for (i = 0; i < main_data.guis_count - 1; i++) {
+    if (main_data.guis[i] && (main_data.guis[i] == gui_layer)) {
+      gui_layer_destroy(&main_data.guis[i]);
+      main_data.guis[i] = main_data.guis[i + 1];
+      main_data.guis[i + 1] = NULL;
     } else {
-      if (!Main.guis[i]) {
-        Main.guis[i] = Main.guis[i + 1];
-        Main.guis[i + 1] = NULL;
+      if (!main_data.guis[i]) {
+        main_data.guis[i] = main_data.guis[i + 1];
+        main_data.guis[i + 1] = NULL;
       }
     }
   }
 
-  if (Main.guis[Main.guis_count - 1]) {
-    gui_layer_destroy(&Main.guis[Main.guis_count - 1]);
+  if (main_data.guis[main_data.guis_count - 1]) {
+    gui_layer_destroy(&main_data.guis[main_data.guis_count - 1]);
   }
 }
 
 /**********************************************************************//**
-  Adjust dest_rect according to gui_layer.
+  Translate dest_rect from global screen to gui_layer's coordinates.
 **************************************************************************/
 void screen_rect_to_layer_rect(struct gui_layer *gui_layer,
                                SDL_Rect *dest_rect)
@@ -175,6 +176,18 @@ void screen_rect_to_layer_rect(struct gui_layer *gui_layer,
   if (gui_layer) {
     dest_rect->x = dest_rect->x - gui_layer->dest_rect.x;
     dest_rect->y = dest_rect->y - gui_layer->dest_rect.y;
+  }
+}
+
+/**********************************************************************//**
+  Translate dest_rect from gui_layer's to global screen coordinates.
+**************************************************************************/
+void layer_rect_to_screen_rect(struct gui_layer *gui_layer,
+                               SDL_Rect *dest_rect)
+{
+  if (gui_layer) {
+    dest_rect->x = dest_rect->x + gui_layer->dest_rect.x;
+    dest_rect->y = dest_rect->y + gui_layer->dest_rect.y;
   }
 }
 
@@ -211,29 +224,30 @@ int screen_blit(SDL_Surface *src, SDL_Rect *srcrect, SDL_Rect *dstrect,
                 unsigned char alpha_mod)
 {
   render_dirty = TRUE;
+
   return alphablit(src, srcrect, main_surface, dstrect, alpha_mod);
 }
 
 /**********************************************************************//**
-  Create new surface (pRect->w x pRect->h size) and copy pRect area of
-  pSource.
-  if pRect == NULL then create copy of entire pSource.
+  Create new surface (prect->w x prect->h size) and copy prect area of
+  psource.
+  if prect == NULL then create copy of entire psource.
 **************************************************************************/
-SDL_Surface *crop_rect_from_surface(SDL_Surface *pSource,
-                                    SDL_Rect *pRect)
+SDL_Surface *crop_rect_from_surface(SDL_Surface *psource,
+                                    SDL_Rect *prect)
 {
-  SDL_Surface *pNew = create_surf_with_format(pSource->format,
-                                              pRect ? pRect->w : pSource->w,
-                                              pRect ? pRect->h : pSource->h,
+  SDL_Surface *new_surf = create_surf_with_format(psource->format,
+                                              prect ? prect->w : psource->w,
+                                              prect ? prect->h : psource->h,
                                               SDL_SWSURFACE);
 
-  if (alphablit(pSource, pRect, pNew, NULL, 255) != 0) {
-    FREESURFACE(pNew);
+  if (alphablit(psource, prect, new_surf, NULL, 255) != 0) {
+    FREESURFACE(new_surf);
 
     return NULL;
   }
 
-  return pNew;
+  return new_surf;
 }
 
 /**********************************************************************//**
@@ -241,70 +255,70 @@ SDL_Surface *crop_rect_from_surface(SDL_Surface *pSource,
   Thus if the mask has 50% alpha the final image will be reduced by 50% alpha.
 
   mask_offset_x, mask_offset_y is the offset of the mask relative to the
-  origin of the source image.  The pixel at (mask_offset_x,mask_offset_y)
-  in the mask image will be used to clip pixel (0,0) in the source image
-  which is pixel (-x,-y) in the new image.
+  origin of the source image.  The pixel at (mask_offset_x, mask_offset_y)
+  in the mask image will be used to clip pixel (0, 0) in the source image
+  which is pixel (-x, -y) in the new image.
 **************************************************************************/
-SDL_Surface *mask_surface(SDL_Surface *pSrc, SDL_Surface *pMask,
+SDL_Surface *mask_surface(SDL_Surface *src, SDL_Surface *mask,
                           int mask_offset_x, int mask_offset_y)
 {
-  SDL_Surface *pDest = NULL;
+  SDL_Surface *dest = NULL;
   int row, col;
-  Uint32 *pSrc_Pixel = NULL;
-  Uint32 *pDest_Pixel = NULL;
-  Uint32 *pMask_Pixel = NULL;
+  Uint32 *src_pixel = NULL;
+  Uint32 *dest_pixel = NULL;
+  Uint32 *mask_pixel = NULL;
   unsigned char src_alpha, mask_alpha;
 
-  pDest = copy_surface(pSrc);
+  dest = copy_surface(src);
 
-  lock_surf(pSrc);
-  lock_surf(pMask);
-  lock_surf(pDest);
+  lock_surf(src);
+  lock_surf(mask);
+  lock_surf(dest);
 
-  pSrc_Pixel = (Uint32 *)pSrc->pixels;
-  pDest_Pixel = (Uint32 *)pDest->pixels;
+  src_pixel = (Uint32 *)src->pixels;
+  dest_pixel = (Uint32 *)dest->pixels;
 
-  for (row = 0; row < pSrc->h; row++) {
-    pMask_Pixel = (Uint32 *)pMask->pixels
-                  + pMask->w * (row + mask_offset_y)
-                  + mask_offset_x;
+  for (row = 0; row < src->h; row++) {
+    mask_pixel = (Uint32 *)mask->pixels
+                 + mask->w * (row + mask_offset_y)
+                 + mask_offset_x;
 
-    for (col = 0; col < pSrc->w; col++) {
-      src_alpha = (*pSrc_Pixel & pSrc->format->Amask) >> pSrc->format->Ashift;
-      mask_alpha = (*pMask_Pixel & pMask->format->Amask) >> pMask->format->Ashift;
+    for (col = 0; col < src->w; col++) {
+      src_alpha = (*src_pixel & src->format->Amask) >> src->format->Ashift;
+      mask_alpha = (*mask_pixel & mask->format->Amask) >> mask->format->Ashift;
 
-      *pDest_Pixel = (*pSrc_Pixel & ~pSrc->format->Amask)
-        | (((src_alpha * mask_alpha) / 255) << pDest->format->Ashift);
+      *dest_pixel = (*src_pixel & ~src->format->Amask)
+        | (((src_alpha * mask_alpha) / 255) << dest->format->Ashift);
 
-      pSrc_Pixel++; pDest_Pixel++; pMask_Pixel++;
+      src_pixel++; dest_pixel++; mask_pixel++;
     }
   }
 
-  unlock_surf(pDest);
-  unlock_surf(pMask);
-  unlock_surf(pSrc);
+  unlock_surf(dest);
+  unlock_surf(mask);
+  unlock_surf(src);
 
-  return pDest;
+  return dest;
 }
 
 /**********************************************************************//**
   Load a surface from file putting it in software mem.
 **************************************************************************/
-SDL_Surface *load_surf(const char *pFname)
+SDL_Surface *load_surf(const char *fname)
 {
-  SDL_Surface *pBuf;
+  SDL_Surface *buf;
 
-  if (!pFname) {
+  if (!fname) {
     return NULL;
   }
 
-  if ((pBuf = IMG_Load(pFname)) == NULL) {
-    log_error(_("load_surf: Failed to load graphic file %s!"), pFname);
+  if ((buf = IMG_Load(fname)) == NULL) {
+    log_error(_("load_surf: Failed to load graphic file %s!"), fname);
 
     return NULL;
   }
 
-  return pBuf;
+  return buf;
 }
 
 /**********************************************************************//**
@@ -349,63 +363,63 @@ SDL_Surface *convert_surf(SDL_Surface *surf_in)
 
 /**********************************************************************//**
   Create an surface with screen format and fill with color.
-  If pColor == NULL surface is filled with transparent white A = 128
+  If pcolor == NULL surface is filled with transparent white A = 128
 **************************************************************************/
-SDL_Surface *create_filled_surface(Uint16 w, Uint16 h, Uint32 iFlags,
-                                   SDL_Color *pColor)
+SDL_Surface *create_filled_surface(Uint16 w, Uint16 h, Uint32 flags,
+                                   SDL_Color *pcolor)
 {
-  SDL_Surface *pNew;
+  SDL_Surface *new_surf;
   SDL_Color color = {255, 255, 255, 128};
 
-  pNew = create_surf(w, h, iFlags);
+  new_surf = create_surf(w, h, flags);
 
-  if (!pNew) {
+  if (!new_surf) {
     return NULL;
   }
 
-  if (!pColor) {
-    /* pColor->unused == ALPHA */
-    pColor = &color;
+  if (!pcolor) {
+    /* pcolor->unused == ALPHA */
+    pcolor = &color;
   }
 
-  SDL_FillRect(pNew, NULL,
-               SDL_MapRGBA(pNew->format, pColor->r, pColor->g, pColor->b,
-                           pColor->a));
+  SDL_FillRect(new_surf, NULL,
+               SDL_MapRGBA(new_surf->format, pcolor->r, pcolor->g, pcolor->b,
+                           pcolor->a));
 
-  if (pColor->a != 255) {
-    SDL_SetSurfaceAlphaMod(pNew, pColor->a);
+  if (pcolor->a != 255) {
+    SDL_SetSurfaceAlphaMod(new_surf, pcolor->a);
   }
 
-  return pNew;
+  return new_surf;
 }
 
 /**********************************************************************//**
   Fill surface with (0, 0, 0, 0), so the next blitting operation can set
   the per pixel alpha
 **************************************************************************/
-int clear_surface(SDL_Surface *pSurf, SDL_Rect *dstrect)
+int clear_surface(SDL_Surface *surf, SDL_Rect *dstrect)
 {
   /* SDL_FillRect might change the rectangle, so we create a copy */
   if (dstrect) {
     SDL_Rect _dstrect = *dstrect;
 
-    return SDL_FillRect(pSurf, &_dstrect, SDL_MapRGBA(pSurf->format, 0, 0, 0, 0));
+    return SDL_FillRect(surf, &_dstrect, SDL_MapRGBA(surf->format, 0, 0, 0, 0));
   } else {
-    return SDL_FillRect(pSurf, NULL, SDL_MapRGBA(pSurf->format, 0, 0, 0, 0));
+    return SDL_FillRect(surf, NULL, SDL_MapRGBA(surf->format, 0, 0, 0, 0));
   }
 }
 
 /**********************************************************************//**
   Blit entire src [SOURCE] surface to destination [DEST] surface
-  on position : [iDest_x],[iDest_y] using it's actual alpha and
+  on position : [dest_x],[dest_y] using it's actual alpha and
   color key settings.
 **************************************************************************/
-int blit_entire_src(SDL_Surface *pSrc, SDL_Surface *pDest,
-                    Sint16 iDest_x, Sint16 iDest_y)
+int blit_entire_src(SDL_Surface *psrc, SDL_Surface *pdest,
+                    Sint16 dest_x, Sint16 dest_y)
 {
-  SDL_Rect dest_rect = { iDest_x, iDest_y, 0, 0 };
+  SDL_Rect dest_rect = { dest_x, dest_y, 0, 0 };
 
-  return alphablit(pSrc, NULL, pDest, &dest_rect, 255);
+  return alphablit(psrc, NULL, pdest, &dest_rect, 255);
 }
 
 /**********************************************************************//**
@@ -413,24 +427,24 @@ int blit_entire_src(SDL_Surface *pSrc, SDL_Surface *pDest,
   Return the pixel value at (x, y)
   NOTE: The surface must be locked before calling this!
 **************************************************************************/
-Uint32 getpixel(SDL_Surface *pSurface, Sint16 x, Sint16 y)
+Uint32 get_pixel(SDL_Surface *surf, Sint16 x, Sint16 y)
 {
-  if (!pSurface) {
+  if (!surf) {
     return 0x0;
   }
 
-  switch (pSurface->format->BytesPerPixel) {
+  switch (surf->format->BytesPerPixel) {
   case 1:
-    return *(Uint8 *) ((Uint8 *) pSurface->pixels + y * pSurface->pitch + x);
+    return *(Uint8 *) ((Uint8 *) surf->pixels + y * surf->pitch + x);
 
   case 2:
-    return *((Uint16 *)pSurface->pixels + y * pSurface->pitch / sizeof(Uint16) + x);
+    return *((Uint16 *)surf->pixels + y * surf->pitch / sizeof(Uint16) + x);
 
   case 3:
     {
       /* Here ptr is the address to the pixel we want to retrieve */
       Uint8 *ptr =
-        (Uint8 *) pSurface->pixels + y * pSurface->pitch + x * 3;
+        (Uint8 *) surf->pixels + y * surf->pitch + x * 3;
 
       if (is_bigendian()) {
         return ptr[0] << 16 | ptr[1] << 8 | ptr[2];
@@ -439,10 +453,10 @@ Uint32 getpixel(SDL_Surface *pSurface, Sint16 x, Sint16 y)
       }
     }
   case 4:
-    return *((Uint32 *)pSurface->pixels + y * pSurface->pitch / sizeof(Uint32) + x);
+    return *((Uint32 *)surf->pixels + y * surf->pitch / sizeof(Uint32) + x);
 
   default:
-    return 0; /* shouldn't happen, but avoids warnings */
+    return 0; /* Shouldn't happen, but avoids warnings */
   }
 }
 
@@ -451,33 +465,33 @@ Uint32 getpixel(SDL_Surface *pSurface, Sint16 x, Sint16 y)
   Return the pixel value at (0, 0)
   NOTE: The surface must be locked before calling this!
 **************************************************************************/
-Uint32 get_first_pixel(SDL_Surface *pSurface)
+Uint32 get_first_pixel(SDL_Surface *surf)
 {
-  if (!pSurface) {
+  if (!surf) {
     return 0;
   }
 
-  switch (pSurface->format->BytesPerPixel) {
+  switch (surf->format->BytesPerPixel) {
   case 1:
-    return *((Uint8 *)pSurface->pixels);
+    return *((Uint8 *)surf->pixels);
 
   case 2:
-    return *((Uint16 *)pSurface->pixels);
+    return *((Uint16 *)surf->pixels);
 
   case 3:
     {
       if (is_bigendian()) {
-        return (((Uint8 *)pSurface->pixels)[0] << 16)
-          | (((Uint8 *)pSurface->pixels)[1] << 8)
-          | ((Uint8 *)pSurface->pixels)[2];
+        return (((Uint8 *)surf->pixels)[0] << 16)
+          | (((Uint8 *)surf->pixels)[1] << 8)
+          | ((Uint8 *)surf->pixels)[2];
       } else {
-        return ((Uint8 *)pSurface->pixels)[0]
-          | (((Uint8 *)pSurface->pixels)[1] << 8)
-          | (((Uint8 *)pSurface->pixels)[2] << 16);
+        return ((Uint8 *)surf->pixels)[0]
+          | (((Uint8 *)surf->pixels)[1] << 8)
+          | (((Uint8 *)surf->pixels)[2] << 16);
       }
     }
   case 4:
-    return *((Uint32 *)pSurface->pixels);
+    return *((Uint32 *)surf->pixels);
 
   default:
     return 0; /* shouldn't happen, but avoids warnings */
@@ -489,22 +503,23 @@ Uint32 get_first_pixel(SDL_Surface *pSurface)
 /**********************************************************************//**
   Initialize sdl with Flags
 **************************************************************************/
-void init_sdl(int iFlags)
+void init_sdl(int flags)
 {
   bool error;
 
-  Main.screen = NULL;
-  Main.guis = NULL;
-  Main.gui = NULL;
-  Main.map = NULL;
-  Main.dummy = NULL; /* can't create yet -- hope we don't need it */
-  Main.rects_count = 0;
-  Main.guis_count = 0;
+  main_data.screen = NULL;
+  main_data.guis = NULL;
+  main_data.gui = NULL;
+  main_data.map = NULL;
+  main_data.dummy = NULL; /* Can't create yet -- hope we don't need it */
+  main_data.renderer = NULL;
+  main_data.rects_count = 0;
+  main_data.guis_count = 0;
 
   if (SDL_WasInit(SDL_INIT_AUDIO)) {
-    error = (SDL_InitSubSystem(iFlags) < 0);
+    error = (SDL_InitSubSystem(flags) < 0);
   } else {
-    error = (SDL_Init(iFlags) < 0);
+    error = (SDL_Init(flags) < 0);
   }
   if (error) {
     log_fatal(_("Unable to initialize SDL2 library: %s"), SDL_GetError());
@@ -523,82 +538,129 @@ void init_sdl(int iFlags)
 }
 
 /**********************************************************************//**
-  Free screen buffers
+  Free existing surfaces
 **************************************************************************/
-void quit_sdl(void)
+static void free_surfaces(void)
 {
-  FC_FREE(Main.guis);
-  gui_layer_destroy(&Main.gui);
-  FREESURFACE(Main.map);
-  FREESURFACE(Main.dummy);
+  if (main_data.renderer != NULL) {
+    SDL_DestroyRenderer(main_data.renderer);
+    main_data.renderer = NULL;
+
+    FREESURFACE(main_surface);
+  }
 }
 
 /**********************************************************************//**
-  Switch to passed video mode.
+  Create new main window surfaces.
 **************************************************************************/
-int set_video_mode(int iWidth, int iHeight, int iFlags)
+bool create_surfaces(int width, int height)
 {
-  unsigned int flags;
+  unsigned flags;
 
-  Main.screen = SDL_CreateWindow(_("SDL2 Client for Freeciv"),
-                                 SDL_WINDOWPOS_UNDEFINED,
-                                 SDL_WINDOWPOS_UNDEFINED,
-                                 iWidth, iHeight,
-                                 0);
-
-  if (iFlags & SDL_WINDOW_FULLSCREEN) {
-    SDL_DisplayMode mode;
-
-    /* Use SDL_WINDOW_FULLSCREEN_DESKTOP instead of real SDL_WINDOW_FULLSCREEN */
-    SDL_SetWindowFullscreen(Main.screen, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    SDL_GetWindowDisplayMode(Main.screen, &mode);
-    iWidth = mode.w;
-    iHeight = mode.h;
-  }
+  free_surfaces();
 
   if (is_bigendian()) {
-      main_surface = SDL_CreateRGBSurface(0, iWidth, iHeight, 32,
-                                          0x0000FF00, 0x00FF0000,
-                                          0xFF000000, 0x000000FF);
+    main_surface = SDL_CreateRGBSurface(0, width, height, 32,
+                                        0x0000FF00, 0x00FF0000,
+                                        0xFF000000, 0x000000FF);
+    main_data.map = SDL_CreateRGBSurface(0, width, height, 32,
+                                         0x0000FF00, 0x00FF0000,
+                                         0xFF000000, 0x000000FF);
   } else {
-    main_surface = SDL_CreateRGBSurface(0, iWidth, iHeight, 32,
+    main_surface = SDL_CreateRGBSurface(0, width, height, 32,
                                         0x00FF0000, 0x0000FF00,
                                         0x000000FF, 0xFF000000);
+    main_data.map = SDL_CreateRGBSurface(0, width, height, 32,
+                                         0x00FF0000, 0x0000FF00,
+                                         0x000000FF, 0xFF000000);
   }
 
-  if (is_bigendian()) {
-    Main.map = SDL_CreateRGBSurface(0, iWidth, iHeight, 32,
-                                    0x0000FF00, 0x00FF0000,
-                                    0xFF000000, 0x000000FF);
-  } else {
-    Main.map = SDL_CreateRGBSurface(0, iWidth, iHeight, 32,
-                                    0x00FF0000, 0x0000FF00,
-                                    0x000000FF, 0xFF000000);
+  if (main_surface == NULL || main_data.map == NULL) {
+    log_fatal(_("Failed to create RGB surface: %s"), SDL_GetError());
+    return FALSE;
   }
 
-  if (gui_options.gui_sdl2_swrenderer) {
+  if (GUI_SDL_OPTION(swrenderer)
+      || (sdl2_client_flags & CF_SWRENDERER)) {
     flags = SDL_RENDERER_SOFTWARE;
   } else {
     flags = 0;
   }
 
-  Main.renderer = SDL_CreateRenderer(Main.screen, -1, flags);
+  main_data.renderer = SDL_CreateRenderer(main_data.screen, -1, flags);
 
-  Main.maintext = SDL_CreateTexture(Main.renderer,
-                                    SDL_PIXELFORMAT_ARGB8888,
-                                    SDL_TEXTUREACCESS_STREAMING,
-                                    iWidth, iHeight);
-
-  if (Main.gui) {
-    FREESURFACE(Main.gui->surface);
-    Main.gui->surface = create_surf(iWidth, iHeight, SDL_SWSURFACE);
-  } else {
-    Main.gui = add_gui_layer(iWidth, iHeight);
+  if (main_data.renderer == NULL) {
+    log_fatal(_("Failed to create renderer: %s"), SDL_GetError());
+    return FALSE;
   }
 
-  clear_surface(Main.gui->surface, NULL);
+  main_data.maintext = SDL_CreateTexture(main_data.renderer,
+                                         SDL_PIXELFORMAT_ARGB8888,
+                                         SDL_TEXTUREACCESS_STREAMING,
+                                         width, height);
 
-  return 0;
+  if (main_data.maintext == NULL) {
+    log_fatal(_("Failed to create texture: %s"), SDL_GetError());
+    return FALSE;
+  }
+
+  if (main_data.gui) {
+    FREESURFACE(main_data.gui->surface);
+    main_data.gui->surface = create_surf(width, height, SDL_SWSURFACE);
+  } else {
+    main_data.gui = add_gui_layer(width, height);
+  }
+
+  clear_surface(main_data.gui->surface, NULL);
+
+  return TRUE;
+}
+
+/**********************************************************************//**
+  Free screen buffers
+**************************************************************************/
+void quit_sdl(void)
+{
+  FC_FREE(main_data.guis);
+  gui_layer_destroy(&main_data.gui);
+  FREESURFACE(main_data.map);
+  FREESURFACE(main_data.dummy);
+  SDL_DestroyTexture(main_data.maintext);
+
+  free_surfaces();
+}
+
+/**********************************************************************//**
+  Switch to given video mode.
+**************************************************************************/
+bool set_video_mode(unsigned width, unsigned height, unsigned flags_in)
+{
+  main_data.screen = SDL_CreateWindow(_("SDL2 Client for Freeciv"),
+                                      SDL_WINDOWPOS_UNDEFINED,
+                                      SDL_WINDOWPOS_UNDEFINED,
+                                      width, height,
+                                      0);
+
+  if (main_data.screen == NULL) {
+    log_fatal(_("Failed to create main window: %s"), SDL_GetError());
+    return FALSE;
+  }
+
+  if (flags_in & SDL_WINDOW_FULLSCREEN) {
+    SDL_DisplayMode mode;
+
+    /* Use SDL_WINDOW_FULLSCREEN_DESKTOP instead of real SDL_WINDOW_FULLSCREEN */
+    SDL_SetWindowFullscreen(main_data.screen, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    SDL_GetWindowDisplayMode(main_data.screen, &mode);
+    width = mode.w;
+    height = mode.h;
+  }
+
+  if (!create_surfaces(width, height)) {
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 /**********************************************************************//**
@@ -607,11 +669,11 @@ int set_video_mode(int iWidth, int iHeight, int iFlags)
 void update_main_screen(void)
 {
   if (render_dirty) {
-    SDL_UpdateTexture(Main.maintext, NULL,
+    SDL_UpdateTexture(main_data.maintext, NULL,
                       main_surface->pixels, main_surface->pitch);
-    SDL_RenderClear(Main.renderer);
-    SDL_RenderCopy(Main.renderer, Main.maintext, NULL, NULL);
-    SDL_RenderPresent(Main.renderer);
+    SDL_RenderClear(main_data.renderer);
+    SDL_RenderCopy(main_data.renderer, main_data.maintext, NULL, NULL);
+    SDL_RenderPresent(main_data.renderer);
 
     render_dirty = FALSE;
   }
@@ -648,253 +710,26 @@ int main_window_height(void)
         ( s & d & ( ~(mask | mask << 16))))
 
 /**********************************************************************//**
-  Fill rectangle for "565" format surface
-**************************************************************************/
-static int __FillRectAlpha565(SDL_Surface *pSurface, SDL_Rect *pRect,
-                              SDL_Color *pColor)
-{
-  Uint32 y, end;
-  Uint32 *start;
-  Uint32 *pixel;
-  register Uint32 D, S =
-      SDL_MapRGB(pSurface->format, pColor->r, pColor->g, pColor->b);
-  register Uint32 A = pColor->a >> 3;
-
-  S &= 0xFFFF;
-
-  lock_surf(pSurface);
-  if (pRect == NULL) {
-    end = pSurface->w * pSurface->h;
-    pixel = pSurface->pixels;
-    if (A == 16) { /* A == 128 >> 3 */
-      /* this code don't work (A == 128) */
-      if (end & 0x1) { /* end % 2 */
-        D = *pixel;
-        *pixel++ = BLEND16_50(D, S, MASK565);
-        end--;
-      }
-
-      S = S | S << 16;
-      for (y = 0; y < end; y += 2) {
-        D = *(Uint32 *) pixel;
-        *(Uint32 *) pixel = BLEND2x16_50(D, S, MASK565);
-        pixel += 2;
-      }
-    } else {
-      S = (S | S << 16) & 0x07e0f81f;
-      DUFFS_LOOP8(
-      {
-        D = *pixel;
-        D = (D | D << 16) & 0x07e0f81f;
-        D += (S - D) * A >> 5;
-        D &= 0x07e0f81f;
-        *pixel++ = (D | (D >> 16)) & 0xFFFF;
-      }, end);
-    }
-  } else {
-    /* correct pRect size */
-    if (pRect->x < 0) {
-      pRect->w += pRect->x;
-      pRect->x = 0;
-    } else {
-      if (pRect->x >= pSurface->w - pRect->w) {
-        pRect->w = pSurface->w - pRect->x;
-      }
-    }
-
-    if (pRect->y < 0) {
-      pRect->h += pRect->y;
-      pRect->y = 0;
-    } else {
-      if (pRect->y >= pSurface->h - pRect->h) {
-        pRect->h = pSurface->h - pRect->y;
-      }
-    }
-
-    start = pixel = (Uint32 *) pSurface->pixels +
-      (pRect->y * pSurface->pitch) + pRect->x / 2;
-
-    if (A == 16) { /* A == 128 >> 3 */
-      /* this code don't work (A == 128) */
-      S = S | S << 16;
-      for (y = 0; y < pRect->h; y++) {
-        end = 0;
-
-        if (pRect->w & 0x1) {
-          D = *pixel;
-          *pixel++ = BLEND16_50(D, (S & 0xFFFF), MASK565);
-          end++;
-        }
-
-        for (; end < pRect->w; end += 2) {
-          D = *(Uint32 *) pixel;
-          *(Uint32 *) pixel = BLEND2x16_50(D, S, MASK565);
-          pixel += 2;
-        }
-
-        pixel = start + pSurface->pitch;
-        start = pixel;
-      }
-    } else {
-      y = 0;
-      S = (S | S << 16) & 0x07e0f81f;
-      y = pRect->h;
-      end = pRect->w;
-
-      while (y--) {
-        DUFFS_LOOP8(
-        {
-          D = *pixel;
-          D = (D | D << 16) & 0x07e0f81f;
-          D += (S - D) * A >> 5;
-          D &= 0x07e0f81f;
-          *pixel++ = (D | (D >> 16)) & 0xFFFF;
-        }, end);
-
-        pixel = start + pSurface->pitch;
-        start = pixel;
-      } /* while */
-    }
-
-  }
-  
-  unlock_surf(pSurface);
-  return 0;
-}
-
-/**********************************************************************//**
-  Fill rectangle for "555" format surface
-**************************************************************************/
-static int __FillRectAlpha555(SDL_Surface *pSurface, SDL_Rect *pRect,
-                              SDL_Color *pColor)
-{
-  Uint32 y, end;
-  Uint32 *start, *pixel;
-  register Uint32 D, S =
-      SDL_MapRGB(pSurface->format, pColor->r, pColor->g, pColor->b);
-  register Uint32 A = pColor->a >> 3;
-
-  S &= 0xFFFF;
-
-  lock_surf(pSurface);
-
-  if (pRect == NULL) {
-    end = pSurface->w * pSurface->h;
-    pixel = pSurface->pixels;
-    if (A == 16) { /* A == 128 >> 3 */
-      if (end & 0x1) {
-        D = *pixel;
-        *pixel++ = BLEND16_50(D, S, MASK555);
-        end--;
-      }
-
-      S = S | S << 16;
-      for (y = 0; y < end; y += 2) {
-        D = *pixel;
-        *pixel = BLEND2x16_50(D, S, MASK555);
-        pixel += 2;
-      }
-    } else {
-      S = (S | S << 16) & 0x03e07c1f;
-      DUFFS_LOOP8(
-      {
-        D = *pixel;
-        D = (D | D << 16) & 0x03e07c1f;
-        D += (S - D) * A >> 5;
-        D &= 0x03e07c1f;
-        *pixel++ = (D | (D >> 16)) & 0xFFFF;
-      }, end);
-    }
-  } else {
-    /* correct pRect size */
-    if (pRect->x < 0) {
-      pRect->w += pRect->x;
-      pRect->x = 0;
-    } else {
-      if (pRect->x >= pSurface->w - pRect->w) {
-        pRect->w = pSurface->w - pRect->x;
-      }
-    }
-
-    if (pRect->y < 0) {
-      pRect->h += pRect->y;
-      pRect->y = 0;
-    } else {
-      if (pRect->y >= pSurface->h - pRect->h) {
-        pRect->h = pSurface->h - pRect->y;
-      }
-    }
-
-    start = pixel = (Uint32 *) pSurface->pixels +
-      (pRect->y * pSurface->pitch) + pRect->x / 2;
-
-    if (A == 16) { /* A == 128 >> 3 */
-      S = S | S << 16;
-      for (y = 0; y < pRect->h; y++) {
-        end = 0;
-
-        if (pRect->w & 0x1) {
-          D = *pixel;
-          *pixel++ = BLEND16_50(D, (S & 0xFFFF), MASK555);
-          end++;
-        }
-
-        for (; end < pRect->w; end += 2) {
-          D = *(Uint32 *) pixel;
-          *(Uint32 *) pixel = BLEND2x16_50(D, S, MASK555);
-          pixel += 2;
-        }
-
-        pixel = start + pSurface->pitch;
-        start = pixel;
-      }
-    } else {
-      
-      S = (S | S << 16) & 0x03e07c1f;
-      y = pRect->h;
-      end = pRect->w;
-
-      while (y--) {
-        DUFFS_LOOP8(
-        {
-          D = *pixel;
-          D = (D | D << 16) & 0x03e07c1f;
-          D += (S - D) * A >> 5;
-          D &= 0x03e07c1f;
-          *pixel++ = (D | (D >> 16)) & 0xFFFF;
-        }, end);
-
-        pixel = start + pSurface->pitch;
-        start = pixel;
-      } /* while */
-    }
-  }
-  
-  unlock_surf(pSurface);
-  return 0;
-}
-
-/**********************************************************************//**
   Fill rectangle for 32bit "8888" format surface
 **************************************************************************/
-static int __FillRectAlpha8888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
-                                     SDL_Color *pColor)
+static int __FillRectAlpha8888_32bit(SDL_Surface *surf, SDL_Rect *prect,
+                                     SDL_Color *pcolor)
 {
-  register Uint32 A = pColor->a;
+  register Uint32 A = pcolor->a;
   register Uint32 dSIMD1, dSIMD2;
-  register Uint32 sSIMD1, sSIMD2 = SDL_MapRGB(pSurface->format,
-                                              pColor->r, pColor->g,
-                                              pColor->b);
-  Uint32 y, end, A_Dst, A_Mask = pSurface->format->Amask;
+  register Uint32 sSIMD1, sSIMD2 = SDL_MapRGB(surf->format,
+                                              pcolor->r, pcolor->g,
+                                              pcolor->b);
+  Uint32 y, end, A_Dst, A_Mask = surf->format->Amask;
   Uint32 *start, *pixel;
 
   sSIMD1 = sSIMD2 & 0x00FF00FF;
 
-  lock_surf(pSurface);
+  lock_surf(surf);
 
-  if (pRect == NULL) {
-    end = pSurface->w * pSurface->h;
-    pixel = (Uint32 *) pSurface->pixels;
+  if (prect == NULL) {
+    end = surf->w * surf->h;
+    pixel = (Uint32 *) surf->pixels;
     if (A == 128) { /* 50% A */
       DUFFS_LOOP8(
       {
@@ -917,7 +752,7 @@ static int __FillRectAlpha8888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
           dSIMD2 += (((sSIMD2 << 8) & 0xFF00) - dSIMD2) * A >> 8;
           dSIMD2 &= 0xFF00;
           *pixel++ = dSIMD1 | dSIMD2 | A_Dst;
-      },{
+      }, {
           dSIMD1 = *pixel;
           A_Dst = dSIMD1 & A_Mask;
           dSIMD1 &= 0x00FF00FF;
@@ -940,31 +775,27 @@ static int __FillRectAlpha8888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
       }, end);
     }
   } else {
-    /* correct pRect size */
-    if (pRect->x < 0) {
-      pRect->w += pRect->x;
-      pRect->x = 0;
-    } else {
-      if (pRect->x >= pSurface->w - pRect->w) {
-        pRect->w = pSurface->w - pRect->x;
-      }
+    /* Correct prect size */
+    if (prect->x < 0) {
+      prect->w += prect->x;
+      prect->x = 0;
+    } else if (prect->x >= surf->w - prect->w) {
+      prect->w = surf->w - prect->x;
     }
 
-    if (pRect->y < 0) {
-      pRect->h += pRect->y;
-      pRect->y = 0;
-    } else {
-      if (pRect->y >= pSurface->h - pRect->h) {
-        pRect->h = pSurface->h - pRect->y;
-      }
+    if (prect->y < 0) {
+      prect->h += prect->y;
+      prect->y = 0;
+    } else if (prect->y >= surf->h - prect->h) {
+      prect->h = surf->h - prect->y;
     }
 
-    start = pixel = (Uint32 *) pSurface->pixels +
-      (pRect->y * (pSurface->pitch >> 2)) + pRect->x;
+    start = pixel = (Uint32 *) surf->pixels +
+      (prect->y * (surf->pitch >> 2)) + prect->x;
 
     if (A == 128) { /* 50% A */
-      y = pRect->h;
-      end = pRect->w;
+      y = prect->h;
+      end = prect->w;
       while (y--) {
         DUFFS_LOOP4(
         {
@@ -973,13 +804,13 @@ static int __FillRectAlpha8888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
           *pixel++ = ((((sSIMD2 & 0x00fefefe) + (dSIMD2 & 0x00fefefe)) >> 1)
                       + (sSIMD2 & dSIMD2 & 0x00010101)) | A_Dst;
         }, end);
-        pixel = start + (pSurface->pitch >> 2);
+        pixel = start + (surf->pitch >> 2);
         start = pixel;
       }
     } else {
-      y = pRect->h;
-      end = pRect->w;
-      
+      y = prect->h;
+      end = prect->w;
+
       sSIMD2 &= 0xFF00;
       sSIMD2 = sSIMD2 >> 8 | sSIMD2 << 8;
 
@@ -995,7 +826,7 @@ static int __FillRectAlpha8888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
           dSIMD2 += (((sSIMD2 << 8) & 0xFF00) - dSIMD2) * A >> 8;
           dSIMD2 &= 0xFF00;
           *pixel++ = dSIMD1 | dSIMD2 | A_Dst;
-        },{
+        }, {
           dSIMD1 = *pixel;
           A_Dst = dSIMD1 & A_Mask;
           dSIMD1 &= 0x00FF00FF;
@@ -1017,257 +848,13 @@ static int __FillRectAlpha8888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
           *pixel++ = dSIMD1 | ((dSIMD2 >> 8) & 0xFF00) | A_Dst;
         }, end);
 
-        pixel = start + (pSurface->pitch >> 2);
+        pixel = start + (surf->pitch >> 2);
         start = pixel;
       } /* while */
     }
   }
 
-  unlock_surf(pSurface);
-  return 0;
-}
-
-/**********************************************************************//**
-  Fill rectangle for 32bit "888" format surface
-**************************************************************************/
-static int __FillRectAlpha888_32bit(SDL_Surface *pSurface, SDL_Rect *pRect,
-                                    SDL_Color *pColor)
-{
-  register Uint32 A = pColor->a;
-  register Uint32 dSIMD1, dSIMD2;
-  register Uint32 sSIMD1, sSIMD2 = SDL_MapRGB(pSurface->format,
-                                              pColor->r, pColor->g,
-                                              pColor->b);
-  Uint32 y, end;
-  Uint32 *start, *pixel;
-
-  sSIMD1 = sSIMD2 & 0x00FF00FF;
-
-  lock_surf(pSurface);
-
-  if (pRect == NULL) {
-    end = pSurface->w * pSurface->h;
-    pixel = (Uint32 *) pSurface->pixels;
-    if (A == 128) { /* 50% A */
-      for (y = 0; y < end; y++) {
-        dSIMD2 = *pixel;
-        *pixel++ = ((((sSIMD2 & 0x00fefefe) + (dSIMD2 & 0x00fefefe)) >> 1)
-                    + (sSIMD2 & dSIMD2 & 0x00010101)) | 0xFF000000;
-      }
-    } else {
-      sSIMD2 &= 0xFF00;
-      sSIMD2 = sSIMD2 >> 8 | sSIMD2 << 8;
-      DUFFS_LOOP_DOUBLE2(
-        {
-          dSIMD2 = *pixel;
-          dSIMD1 = dSIMD2 & 0x00FF00FF;
-          dSIMD1 += (sSIMD1 - dSIMD1) * A >> 8;
-          dSIMD1 &= 0x00FF00FF;
-          dSIMD2 &= 0xFF00;
-          dSIMD2 += (((sSIMD2 << 8) & 0xFF00) - dSIMD2) * A >> 8;
-          dSIMD2 &= 0xFF00;
-          *pixel++ = dSIMD1 | dSIMD2 | 0xFF000000;
-      },{
-          dSIMD1 = *pixel & 0x00FF00FF;
-          dSIMD1 += (sSIMD1 - dSIMD1) * A >> 8;
-          dSIMD1 &= 0x00FF00FF;
-
-          dSIMD2 = ((*pixel & 0xFF00) >> 8)| ((pixel[1] & 0xFF00) << 8);
-          dSIMD2 += (sSIMD2 - dSIMD2) * A >> 8;
-          dSIMD2 &= 0x00FF00FF;
-
-          *pixel++ = dSIMD1 | ((dSIMD2 << 8) & 0xFF00) | 0xFF000000;
-
-          dSIMD1 = *pixel & 0x00FF00FF;
-          dSIMD1 += (sSIMD1 - dSIMD1) * A >> 8;
-          dSIMD1 &= 0x00FF00FF;
-
-          *pixel++ = dSIMD1 | ((dSIMD2 >> 8) & 0xFF00) | 0xFF000000;
-      }, end);
-    }
-  } else {
-    /* correct pRect size */
-    if (pRect->x < 0) {
-      pRect->w += pRect->x;
-      pRect->x = 0;
-    } else {
-      if (pRect->x >= pSurface->w - pRect->w) {
-        pRect->w = pSurface->w - pRect->x;
-      }
-    }
-
-    if (pRect->y < 0) {
-      pRect->h += pRect->y;
-      pRect->y = 0;
-    } else {
-      if (pRect->y >= pSurface->h - pRect->h) {
-        pRect->h = pSurface->h - pRect->y;
-      }
-    }
-
-    start = pixel = (Uint32 *) pSurface->pixels +
-        (pRect->y * (pSurface->pitch >> 2)) + pRect->x;
-
-    if (A == 128) { /* 50% A */
-
-      for (y = 0; y < pRect->h; y++) {
-
-        for (end = 0; end < pRect->w; end++) {
-          dSIMD2 = *pixel;
-          *pixel++ = ((((sSIMD2 & 0x00fefefe) + (dSIMD2 & 0x00fefefe)) >> 1)
-                      + (sSIMD2 & dSIMD2 & 0x00010101)) | 0xFF000000;
-        }
-
-        pixel = start + (pSurface->pitch >> 2);
-        start = pixel;
-      }
-    } else {
-      y = pRect->h;
-      end = pRect->w;
-
-      sSIMD2 &= 0xFF00;
-      sSIMD2 = sSIMD2 >> 8 | sSIMD2 << 8;
-
-      while (y--) {
-        DUFFS_LOOP_DOUBLE2(
-        {
-          dSIMD2 = *pixel;
-          dSIMD1 = dSIMD2 & 0x00FF00FF;
-          dSIMD1 += (sSIMD1 - dSIMD1) * A >> 8;
-          dSIMD1 &= 0x00FF00FF;
-          dSIMD2 &= 0xFF00;
-          dSIMD2 += (((sSIMD2 << 8) & 0xFF00) - dSIMD2) * A >> 8;
-          dSIMD2 &= 0xFF00;
-          *pixel++ = dSIMD1 | dSIMD2 | 0xFF000000;
-        },{
-          dSIMD1 = *pixel & 0x00FF00FF;
-          dSIMD1 += (sSIMD1 - dSIMD1) * A >> 8;
-          dSIMD1 &= 0x00FF00FF;
-
-          dSIMD2 = ((*pixel & 0xFF00) >> 8)| ((pixel[1] & 0xFF00) << 8);
-          dSIMD2 += (sSIMD2 - dSIMD2) * A >> 8;
-          dSIMD2 &= 0x00FF00FF;
-
-          *pixel++ = dSIMD1 | ((dSIMD2 << 8) & 0xFF00) | 0xFF000000;
-
-          dSIMD1 = *pixel & 0x00FF00FF;
-          dSIMD1 += (sSIMD1 - dSIMD1) * A >> 8;
-          dSIMD1 &= 0x00FF00FF;
-
-          *pixel++ = dSIMD1 | ((dSIMD2 >> 8) & 0xFF00) | 0xFF000000;
-        }, end);
-
-        pixel = start + (pSurface->pitch >> 2);
-        start = pixel;
-
-      } /* while */
-    }
-  }
-
-  unlock_surf(pSurface);
-  return 0;
-}
-
-/**********************************************************************//**
-  Fill rectangle for 24bit "888" format surface
-**************************************************************************/
-static int __FillRectAlpha888_24bit(SDL_Surface *pSurface, SDL_Rect *pRect,
-                                    SDL_Color *pColor)
-{
-  Uint32 y, end;
-  Uint8 *start, *pixel;
-  register Uint32 P, D, S1, S2 = SDL_MapRGB(pSurface->format,
-                                            pColor->r, pColor->g,
-                                            pColor->b);
-  register Uint32 A = pColor->a;
-
-  S1 = S2 & 0x00FF00FF;
-
-  S2 &= 0xFF00;
-
-  lock_surf(pSurface);
-
-  if (pRect == NULL) {
-    end = pSurface->w * pSurface->h;
-    pixel = (Uint8 *) pSurface->pixels;
-
-    for (y = 0; y < end; y++) {
-      D = (pixel[0] << 16) + (pixel[1] << 8) + pixel[2];
-
-      P = D & 0x00FF00FF;
-      P += (S1 - P) * A >> 8;
-      P &= 0x00ff00ff;
-
-      D = (D & 0xFF00);
-      D += (S2 - D) * A >> 8;
-      D &= 0xFF00;
-
-      P = P | D;
-
-      /* Fix me to little - big EDIAN */
-
-      pixel[0] = P & 0xff;
-      pixel[1] = (P >> 8) & 0xff;
-      pixel[2] = (P >> 16) & 0xff;
-
-      pixel += 3;
-    }
-
-  } else {
-    /* correct pRect size */
-    if (pRect->x < 0) {
-      pRect->w += pRect->x;
-      pRect->x = 0;
-    } else {
-      if (pRect->x >= pSurface->w - pRect->w) {
-        pRect->w = pSurface->w - pRect->x;
-      }
-    }
-
-    if (pRect->y < 0) {
-      pRect->h += pRect->y;
-      pRect->y = 0;
-    } else {
-      if (pRect->y >= pSurface->h - pRect->h) {
-        pRect->h = pSurface->h - pRect->y;
-      }
-    }
-
-    end = pRect->w * pRect->h;
-    start = pixel = (Uint8 *) pSurface->pixels +
-      (pRect->y * pSurface->pitch) + pRect->x * 3;
-
-    y = 0;
-    while (y != pRect->h) {
-      D = (pixel[0] << 16) + (pixel[1] << 8) + pixel[2];
-
-      P = D & 0x00FF00FF;
-      P += (S1 - P) * A >> 8;
-      P &= 0x00ff00ff;
-
-      D = (D & 0xFF00);
-      D += (S2 - D) * A >> 8;
-      D &= 0xFF00;
-
-      P = P | D;
-
-      /* Fix me to little - big EDIAN */
-
-      pixel[0] = P & 0xff;
-      pixel[1] = (P >> 8) & 0xff;
-      pixel[2] = (P >> 16) & 0xff;
-
-      if ((pixel - start) == (pRect->w * 3)) {
-        pixel = start + pSurface->pitch;
-        start = pixel;
-        y++;
-      } else {
-        pixel += 3;
-      }
-    }
-  }
-
-  unlock_surf(pSurface);
+  unlock_surf(surf);
 
   return 0;
 }
@@ -1275,86 +862,58 @@ static int __FillRectAlpha888_24bit(SDL_Surface *pSurface, SDL_Rect *pRect,
 /**********************************************************************//**
   Fill rectangle with color with alpha channel.
 **************************************************************************/
-int fill_rect_alpha(SDL_Surface *pSurface, SDL_Rect *pRect,
-                    SDL_Color *pColor)
+int fill_rect_alpha(SDL_Surface *surf, SDL_Rect *prect,
+                    SDL_Color *pcolor)
 {
-  if (pRect && (pRect->x < - pRect->w || pRect->x >= pSurface->w
-                || pRect->y < - pRect->h || pRect->y >= pSurface->h)) {
+  if (prect && (prect->x < - prect->w || prect->x >= surf->w
+                || prect->y < - prect->h || prect->y >= surf->h)) {
     return -2;
   }
 
-  if (pColor->a == 255) {
-    return SDL_FillRect(pSurface, pRect,
-                        SDL_MapRGB(pSurface->format, pColor->r, pColor->g, pColor->b));
+  if (pcolor->a == 255) {
+    return SDL_FillRect(surf, prect,
+                        SDL_MapRGB(surf->format, pcolor->r, pcolor->g, pcolor->b));
   }
 
-  if (!pColor->a) {
+  if (!pcolor->a) {
     return -3;
   }
 
-  switch (pSurface->format->BytesPerPixel) {
-  case 1:
-    /* PORT ME */
-    return -1;
-
-  case 2:
-    if (pSurface->format->Gmask == 0x7E0) {
-      return __FillRectAlpha565(pSurface, pRect, pColor);
-    } else {
-      if (pSurface->format->Gmask == 0x3E0) {
-        return __FillRectAlpha555(pSurface, pRect, pColor);
-      } else {
-        return -1;
-      }
-    }
-    break;
-
-  case 3:
-    return __FillRectAlpha888_24bit(pSurface, pRect, pColor);
-
-  case 4:
-    if (pSurface->format->Amask) {
-      return __FillRectAlpha8888_32bit(pSurface, pRect, pColor);
-    } else {
-      return __FillRectAlpha888_32bit(pSurface, pRect, pColor);
-    }
-  }
-
-  return -1;
+  return __FillRectAlpha8888_32bit(surf, prect, pcolor);
 }
 
 /**********************************************************************//**
   Make rectangle region sane. Return TRUE if result is sane.
 **************************************************************************/
-bool correct_rect_region(SDL_Rect *pRect)
+bool correct_rect_region(SDL_Rect *prect)
 {
-  int ww = pRect->w, hh = pRect->h;
+  int ww = prect->w, hh = prect->h;
 
-  if (pRect->x < 0) {
-    ww += pRect->x;
-    pRect->x = 0;
+  if (prect->x < 0) {
+    ww += prect->x;
+    prect->x = 0;
   }
 
-  if (pRect->y < 0) {
-    hh += pRect->y;
-    pRect->y = 0;
+  if (prect->y < 0) {
+    hh += prect->y;
+    prect->y = 0;
   }
 
-  if (pRect->x + ww > main_window_width()) {
-    ww = main_window_width() - pRect->x;
+  if (prect->x + ww > main_window_width()) {
+    ww = main_window_width() - prect->x;
   }
 
-  if (pRect->y + hh > main_window_height()) {
-    hh = main_window_height() - pRect->y;
+  if (prect->y + hh > main_window_height()) {
+    hh = main_window_height() - prect->y;
   }
 
   /* End Correction */
 
   if (ww <= 0 || hh <= 0) {
-    return FALSE; /* suprise :) */
+    return FALSE; /* surprise :) */
   } else {
-    pRect->w = ww;
-    pRect->h = hh;
+    prect->w = ww;
+    prect->h = hh;
   }
 
   return TRUE;
@@ -1363,10 +922,10 @@ bool correct_rect_region(SDL_Rect *pRect)
 /**********************************************************************//**
   Return whether coordinates are in rectangle.
 **************************************************************************/
-bool is_in_rect_area(int x, int y, SDL_Rect rect)
+bool is_in_rect_area(int x, int y, const SDL_Rect *rect)
 {
-  return ((x >= rect.x) && (x < rect.x + rect.w)
-          && (y >= rect.y) && (y < rect.y + rect.h));
+  return ((x >= rect->x) && (x < rect->x + rect->w)
+          && (y >= rect->y) && (y < rect->y + rect->h));
 }
 
 /* ===================================================================== */
@@ -1374,308 +933,317 @@ bool is_in_rect_area(int x, int y, SDL_Rect rect)
 /**********************************************************************//**
   Get visible rectangle from surface.
 **************************************************************************/
-SDL_Rect get_smaller_surface_rect(SDL_Surface *pSurface)
+void get_smaller_surface_rect(SDL_Surface *surf, SDL_Rect *rect)
 {
-  SDL_Rect src;
   int w, h, x, y;
   Uint16 minX, maxX, minY, maxY;
   Uint32 colorkey;
+  Uint32 mask;
 
-  fc_assert(pSurface != NULL);
+  fc_assert(surf != NULL);
+  fc_assert(rect != NULL);
 
-  minX = pSurface->w;
+  minX = surf->w;
   maxX = 0;
-  minY = pSurface->h;
+  minY = surf->h;
   maxY = 0;
-  SDL_GetColorKey(pSurface, &colorkey);
 
-  lock_surf(pSurface);
+  if (SDL_GetColorKey(surf, &colorkey) < 0) {
+    /* Use alpha instead of colorkey */
+    mask = surf->format->Amask;
+    colorkey = 0;
+  } else {
+    mask = 0xffffffff;
+  }
 
-  switch(pSurface->format->BytesPerPixel) {
-    case 1:
-    {
-      Uint8 *pixel = (Uint8 *)pSurface->pixels;
-      Uint8 *start = pixel;
+  lock_surf(surf);
+
+  switch (surf->format->BytesPerPixel) {
+  case 1:
+  {
+    Uint8 *pixel = (Uint8 *)surf->pixels;
+    Uint8 *start = pixel;
+
+    x = 0;
+    y = 0;
+    w = surf->w;
+    h = surf->h;
+    while (h--) {
+      do {
+        if (*pixel != colorkey) {
+          if (minY > y) {
+            minY = y;
+          }
+
+          if (minX > x) {
+            minX = x;
+          }
+          break;
+        }
+        pixel++;
+        x++;
+      } while (--w > 0);
+      w = surf->w;
       x = 0;
-      y = 0;
-      w = pSurface->w;
-      h = pSurface->h;
-      while (h--) {
-        do {
-          if (*pixel != colorkey) {
-            if (minY > y) {
-              minY = y;
-            }
-
-            if (minX > x) {
-              minX = x;
-            }
-            break;
-          }
-          pixel++;
-          x++;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = 0;
-        y++;
-        pixel = start + pSurface->pitch;
-        start = pixel;
-      }
-
-      w = pSurface->w;
-      h = pSurface->h;
-      x = w - 1;
-      y = h - 1;
-      pixel = (Uint8 *)((Uint8 *)pSurface->pixels + (y * pSurface->pitch) + x);
+      y++;
+      pixel = start + surf->pitch;
       start = pixel;
-      while (h--) {
-        do {
-          if (*pixel != colorkey) {
-            if (maxY < y) {
-              maxY = y;
-            }
-
-            if (maxX < x) {
-              maxX = x;
-            }
-            break;
-          }
-          pixel--;
-          x--;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = w - 1;
-        y--;
-        pixel = start - pSurface->pitch;
-        start = pixel;
-      }
     }
-    break;
-    case 2:
-    {
-      Uint16 *pixel = (Uint16 *)pSurface->pixels;
-      Uint16 *start = pixel;
 
-      x = 0;
-      y = 0;
-      w = pSurface->w;
-      h = pSurface->h;
-      while (h--) {
-        do {
-          if (*pixel != colorkey) {
-            if (minY > y) {
-              minY = y;
-            }
-
-            if (minX > x) {
-              minX = x;
-            }
-            break;
+    w = surf->w;
+    h = surf->h;
+    x = w - 1;
+    y = h - 1;
+    pixel = (Uint8 *)((Uint8 *)surf->pixels + (y * surf->pitch) + x);
+    start = pixel;
+    while (h--) {
+      do {
+        if (*pixel != colorkey) {
+          if (maxY < y) {
+            maxY = y;
           }
-          pixel++;
-          x++;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = 0;
-        y++;
-        pixel = start + pSurface->pitch / 2;
-        start = pixel;
-     }
 
-      w = pSurface->w;
-      h = pSurface->h;
+          if (maxX < x) {
+            maxX = x;
+          }
+          break;
+        }
+        pixel--;
+        x--;
+      } while (--w > 0);
+      w = surf->w;
       x = w - 1;
-      y = h - 1;
-      pixel = ((Uint16 *)pSurface->pixels + (y * pSurface->pitch / 2) + x);
+      y--;
+      pixel = start - surf->pitch;
       start = pixel;
-      while (h--) {
-        do {
-          if (*pixel != colorkey) {
-            if (maxY < y) {
-              maxY = y;
-            }
-
-            if (maxX < x) {
-              maxX = x;
-            }
-            break;
-          }
-          pixel--;
-          x--;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = w - 1;
-        y--;
-        pixel = start - pSurface->pitch / 2;
-        start = pixel;
-      }
-    }
-    break;
-    case 3:
-    {
-      Uint8 *pixel = (Uint8 *)pSurface->pixels;
-      Uint8 *start = pixel;
-      Uint32 color;
-
-      x = 0;
-      y = 0;
-      w = pSurface->w;
-      h = pSurface->h;
-      while (h--) {
-        do {
-          if (is_bigendian()) {
-            color = (pixel[0] << 16 | pixel[1] << 8 | pixel[2]);
-          } else {
-            color = (pixel[0] | pixel[1] << 8 | pixel[2] << 16);
-          }
-          if (color != colorkey) {
-            if (minY > y) {
-              minY = y;
-            }
-
-            if (minX > x) {
-              minX = x;
-            }
-            break;
-          }
-          pixel += 3;
-          x++;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = 0;
-        y++;
-        pixel = start + pSurface->pitch / 3;
-        start = pixel;
-      }
-
-      w = pSurface->w;
-      h = pSurface->h;
-      x = w - 1;
-      y = h - 1;
-      pixel = (Uint8 *)((Uint8 *)pSurface->pixels + (y * pSurface->pitch) + x * 3);
-      start = pixel;
-      while (h--) {
-        do {
-          if (is_bigendian()) {
-            color = (pixel[0] << 16 | pixel[1] << 8 | pixel[2]);
-          } else {
-            color = (pixel[0] | pixel[1] << 8 | pixel[2] << 16);
-          }
-          if (color != colorkey) {
-            if (maxY < y) {
-              maxY = y;
-            }
-
-            if (maxX < x) {
-              maxX = x;
-            }
-            break;
-          }
-          pixel -= 3;
-          x--;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = w - 1;
-        y--;
-        pixel = start - pSurface->pitch / 3;
-        start = pixel;
-     }
-    }
-    break;
-    case 4:
-    {
-      Uint32 *pixel = (Uint32 *)pSurface->pixels;
-      Uint32 *start = pixel;
-
-      x = 0;
-      y = 0;
-      w = pSurface->w;
-      h = pSurface->h;
-      while (h--) {
-        do {
-          if (*pixel != colorkey) {
-            if (minY > y) {
-              minY = y;
-            }
-
-            if (minX > x) {
-              minX = x;
-            }
-            break;
-          }
-          pixel++;
-          x++;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = 0;
-        y++;
-        pixel = start + pSurface->pitch / 4;
-        start = pixel;
-      }
-
-      w = pSurface->w;
-      h = pSurface->h;
-      x = w - 1;
-      y = h - 1;
-      pixel = ((Uint32 *)pSurface->pixels + (y * pSurface->pitch / 4) + x);
-      start = pixel;
-      while (h--) {
-        do {
-          if (*pixel != colorkey) {
-            if (maxY < y) {
-              maxY = y;
-            }
-
-            if (maxX < x) {
-              maxX = x;
-            }
-            break;
-          }
-          pixel--;
-          x--;
-        } while (--w > 0);
-        w = pSurface->w;
-        x = w - 1;
-        y--;
-        pixel = start - pSurface->pitch / 4;
-        start = pixel;
-      }
     }
     break;
   }
+  case 2:
+  {
+    Uint16 *pixel = (Uint16 *)surf->pixels;
+    Uint16 *start = pixel;
 
-  unlock_surf(pSurface);
-  src.x = minX;
-  src.y = minY;
-  src.w = maxX - minX + 1;
-  src.h = maxY - minY + 1;
+    x = 0;
+    y = 0;
+    w = surf->w;
+    h = surf->h;
+    while (h--) {
+      do {
+        if (*pixel != colorkey) {
+          if (minY > y) {
+            minY = y;
+          }
 
-  return src;
+          if (minX > x) {
+            minX = x;
+          }
+          break;
+        }
+        pixel++;
+        x++;
+      } while (--w > 0);
+      w = surf->w;
+      x = 0;
+      y++;
+      pixel = start + surf->pitch / 2;
+      start = pixel;
+    }
+
+    w = surf->w;
+    h = surf->h;
+    x = w - 1;
+    y = h - 1;
+    pixel = ((Uint16 *)surf->pixels + (y * surf->pitch / 2) + x);
+    start = pixel;
+    while (h--) {
+      do {
+        if (*pixel != colorkey) {
+          if (maxY < y) {
+            maxY = y;
+          }
+
+          if (maxX < x) {
+            maxX = x;
+          }
+          break;
+        }
+        pixel--;
+        x--;
+      } while (--w > 0);
+      w = surf->w;
+      x = w - 1;
+      y--;
+      pixel = start - surf->pitch / 2;
+      start = pixel;
+    }
+    break;
+  }
+  case 3:
+  {
+    Uint8 *pixel = (Uint8 *)surf->pixels;
+    Uint8 *start = pixel;
+    Uint32 color;
+
+    x = 0;
+    y = 0;
+    w = surf->w;
+    h = surf->h;
+    while (h--) {
+      do {
+        if (is_bigendian()) {
+          color = (pixel[0] << 16 | pixel[1] << 8 | pixel[2]);
+        } else {
+          color = (pixel[0] | pixel[1] << 8 | pixel[2] << 16);
+        }
+        if (color != colorkey) {
+          if (minY > y) {
+            minY = y;
+          }
+
+          if (minX > x) {
+            minX = x;
+          }
+          break;
+        }
+        pixel += 3;
+        x++;
+      } while (--w > 0);
+      w = surf->w;
+      x = 0;
+      y++;
+      pixel = start + surf->pitch / 3;
+      start = pixel;
+    }
+
+    w = surf->w;
+    h = surf->h;
+    x = w - 1;
+    y = h - 1;
+    pixel = (Uint8 *)((Uint8 *)surf->pixels + (y * surf->pitch) + x * 3);
+    start = pixel;
+    while (h--) {
+      do {
+        if (is_bigendian()) {
+          color = (pixel[0] << 16 | pixel[1] << 8 | pixel[2]);
+        } else {
+          color = (pixel[0] | pixel[1] << 8 | pixel[2] << 16);
+        }
+        if (color != colorkey) {
+          if (maxY < y) {
+            maxY = y;
+          }
+
+          if (maxX < x) {
+            maxX = x;
+          }
+          break;
+        }
+        pixel -= 3;
+        x--;
+      } while (--w > 0);
+      w = surf->w;
+      x = w - 1;
+      y--;
+      pixel = start - surf->pitch / 3;
+      start = pixel;
+    }
+    break;
+  }
+  case 4:
+  {
+    Uint32 *pixel = (Uint32 *)surf->pixels;
+    Uint32 *start = pixel;
+
+    x = 0;
+    y = 0;
+    w = surf->w;
+    h = surf->h;
+    while (h--) {
+      do {
+        if (((*pixel) & mask) != colorkey) {
+          if (minY > y) {
+            minY = y;
+          }
+
+          if (minX > x) {
+            minX = x;
+          }
+          break;
+        }
+        pixel++;
+        x++;
+      } while (--w > 0);
+      w = surf->w;
+      x = 0;
+      y++;
+      pixel = start + surf->pitch / 4;
+      start = pixel;
+    }
+
+    w = surf->w;
+    h = surf->h;
+    x = w - 1;
+    y = h - 1;
+    pixel = ((Uint32 *)surf->pixels + (y * surf->pitch / 4) + x);
+    start = pixel;
+    while (h--) {
+      do {
+        if (((*pixel) & mask) != colorkey) {
+          if (maxY < y) {
+            maxY = y;
+          }
+
+          if (maxX < x) {
+            maxX = x;
+          }
+          break;
+        }
+        pixel--;
+        x--;
+      } while (--w > 0);
+      w = surf->w;
+      x = w - 1;
+      y--;
+      pixel = start - surf->pitch / 4;
+      start = pixel;
+    }
+    break;
+  }
+  }
+
+  unlock_surf(surf);
+  rect->x = minX;
+  rect->y = minY;
+  rect->w = maxX - minX + 1;
+  rect->h = maxY - minY + 1;
 }
 
 /**********************************************************************//**
   Create new surface that is just visible part of source surface.
 **************************************************************************/
-SDL_Surface *crop_visible_part_from_surface(SDL_Surface *pSrc)
+SDL_Surface *crop_visible_part_from_surface(SDL_Surface *psrc)
 {
-  SDL_Rect src = get_smaller_surface_rect(pSrc);
+  SDL_Rect src;
 
-  return crop_rect_from_surface(pSrc, &src);
+  get_smaller_surface_rect(psrc, &src);
+
+  return crop_rect_from_surface(psrc, &src);
 }
 
 /**********************************************************************//**
   Scale surface.
 **************************************************************************/
-SDL_Surface *ResizeSurface(const SDL_Surface *pSrc, Uint16 new_width,
-                           Uint16 new_height, int smooth)
+SDL_Surface *resize_surface(const SDL_Surface *psrc, Uint16 new_width,
+                            Uint16 new_height, int smooth)
 {
-  if (pSrc == NULL) {
+  if (psrc == NULL) {
     return NULL;
   }
 
-  return zoomSurface((SDL_Surface*)pSrc,
-                     (double)new_width / pSrc->w,
-                     (double)new_height / pSrc->h,
+  return zoomSurface((SDL_Surface*)psrc,
+                     (double)new_width / psrc->w,
+                     (double)new_height / psrc->h,
                      smooth);
 }
 
@@ -1684,34 +1252,35 @@ SDL_Surface *ResizeSurface(const SDL_Surface *pSrc, Uint16 new_width,
   'new_height'. If 'scale_up' is FALSE, a surface that already fits into
   the box will not be scaled up to the boundaries of the box.
   If 'absolute_dimensions' is TRUE, the function returns a surface with the
-  dimensions of the box and the scaled/original surface centered in it. 
+  dimensions of the box and the scaled/original surface centered in it.
 **************************************************************************/
-SDL_Surface *ResizeSurfaceBox(const SDL_Surface *pSrc,
-                              Uint16 new_width, Uint16 new_height, int smooth,
-                              bool scale_up, bool absolute_dimensions)
+SDL_Surface *resize_surface_box(const SDL_Surface *psrc,
+                                Uint16 new_width, Uint16 new_height,
+                                int smooth, bool scale_up,
+                                bool absolute_dimensions)
 {
-  SDL_Surface *tmpSurface, *result;
+  SDL_Surface *tmp_surface, *result;
 
-  if (pSrc == NULL) {
+  if (psrc == NULL) {
     return NULL;
   }
 
-  if (!((scale_up == FALSE) && ((new_width >= pSrc->w) && (new_height >= pSrc->h)))) {
-    if ((new_width - pSrc->w) <= (new_height - pSrc->h)) {
+  if (!(!scale_up && ((new_width >= psrc->w) && (new_height >= psrc->h)))) {
+    if ((new_width - psrc->w) <= (new_height - psrc->h)) {
       /* horizontal limit */
-      tmpSurface = zoomSurface((SDL_Surface*)pSrc,
-                               (double)new_width / pSrc->w,
-                               (double)new_width / pSrc->w,
+      tmp_surface = zoomSurface((SDL_Surface*)psrc,
+                               (double)new_width / psrc->w,
+                               (double)new_width / psrc->w,
                                smooth);
     } else {
       /* vertical limit */
-      tmpSurface = zoomSurface((SDL_Surface*)pSrc,
-                               (double)new_height / pSrc->h,
-                               (double)new_height / pSrc->h,
+      tmp_surface = zoomSurface((SDL_Surface*)psrc,
+                               (double)new_height / psrc->h,
+                               (double)new_height / psrc->h,
                                smooth);
     }
   } else {
-    tmpSurface = zoomSurface((SDL_Surface*)pSrc,
+    tmp_surface = zoomSurface((SDL_Surface*)psrc,
                              1.0,
                              1.0,
                              smooth);
@@ -1719,16 +1288,16 @@ SDL_Surface *ResizeSurfaceBox(const SDL_Surface *pSrc,
 
   if (absolute_dimensions) {
     SDL_Rect area = {
-      (new_width - tmpSurface->w) / 2,
-      (new_height - tmpSurface->h) / 2,
+      (new_width - tmp_surface->w) / 2,
+      (new_height - tmp_surface->h) / 2,
       0, 0
     };
 
     result = create_surf(new_width, new_height, SDL_SWSURFACE);
-    alphablit(tmpSurface, NULL, result, &area, 255);
-    FREESURFACE(tmpSurface);
+    alphablit(tmp_surface, NULL, result, &area, 255);
+    FREESURFACE(tmp_surface);
   } else {
-    result = tmpSurface;
+    result = tmp_surface;
   }
 
   return result;
@@ -1753,42 +1322,10 @@ SDL_Surface *copy_surface(SDL_Surface *src)
 /* ============ Freeciv game graphics function =========== */
 
 /**********************************************************************//**
-  Return whether the client supports given view type
-**************************************************************************/
-bool is_view_supported(enum ts_type type)
-{
-  switch (type) {
-  case TS_ISOMETRIC:
-  case TS_OVERHEAD:
-    return TRUE;
-  case TS_3D:
-    return FALSE;
-  }
-
-  return FALSE;
-}
-
-/**********************************************************************//**
   Loading tileset of the specified type
 **************************************************************************/
 void tileset_type_set(enum ts_type type)
 {
-}
-
-/**********************************************************************//**
-  Load intro sprites. Not used in SDL-client.
-**************************************************************************/
-void load_intro_gfx(void)
-{
-  /* nothing */
-}
-
-/**********************************************************************//**
-  Frees the introductory sprites.
-**************************************************************************/
-void free_intro_radar_sprites(void)
-{
-  /* nothing */
 }
 
 /**********************************************************************//**
@@ -1801,7 +1338,7 @@ void create_frame(SDL_Surface *dest, Sint16 left, Sint16 top,
   struct color gsdl2_color = { .color = pcolor };
   struct sprite *vertical = create_sprite(1, height, &gsdl2_color);
   struct sprite *horizontal = create_sprite(width, 1, &gsdl2_color);
-  SDL_Rect tmp,dst = { left, top, 0, 0 };
+  SDL_Rect tmp, dst = { .x = left, .y = top, .w = 0, .h = 0 };
 
   tmp = dst;
   alphablit(vertical->psurface, NULL, dest, &tmp, 255);
@@ -1865,7 +1402,7 @@ void create_line(SDL_Surface *dest, Sint16 x0, Sint16 y0, Sint16 x1, Sint16 y1,
   } else {
     for (i = 0; i < l; i++) {
       int cx = (xr - xl) * i / l;
-      int cy = yb - (yb - yt) * i / l;
+      int cy = yb - yt - (yb - yt) * i / l;
 
       *((Uint32 *)spr->psurface->pixels + spr->psurface->w * cy + cx)
         |= (pcolor->a << spr->psurface->format->Ashift);

@@ -36,15 +36,13 @@ void setup_gui_funcs()
 
   funcs->get_gui_type = qtg_get_gui_type;
   funcs->insert_client_build_info = qtg_insert_client_build_info;
-  funcs->adjust_default_options = qtg_adjust_default_options;
 
   funcs->version_message = qtg_version_message;
   funcs->real_output_window_append = qtg_real_output_window_append;
 
-  funcs->is_view_supported = qtg_is_view_supported;
   funcs->tileset_type_set = qtg_tileset_type_set;
-  funcs->free_intro_radar_sprites = qtg_free_intro_radar_sprites;
   funcs->load_gfxfile = qtg_load_gfxfile;
+  funcs->load_gfxnumber = qtg_load_gfxnumber;
   funcs->create_sprite = qtg_create_sprite;
   funcs->get_sprite_dimensions = qtg_get_sprite_dimensions;
   funcs->crop_sprite = qtg_crop_sprite;
@@ -57,9 +55,11 @@ void setup_gui_funcs()
   funcs->canvas_free = qtg_canvas_free;
   funcs->canvas_set_zoom = qtg_canvas_set_zoom;
   funcs->has_zoom_support = qtg_has_zoom_support;
+  funcs->canvas_mapview_init = qtg_canvas_mapview_init;
   funcs->canvas_copy = qtg_canvas_copy;
   funcs->canvas_put_sprite = qtg_canvas_put_sprite;
   funcs->canvas_put_sprite_full = qtg_canvas_put_sprite_full;
+  funcs->canvas_put_sprite_full_scaled = qtg_canvas_put_sprite_full_scaled;
   funcs->canvas_put_sprite_fogged = qtg_canvas_put_sprite_fogged;
   funcs->canvas_put_rectangle = qtg_canvas_put_rectangle;
   funcs->canvas_fill_sprite_area = qtg_canvas_fill_sprite_area;
@@ -67,6 +67,8 @@ void setup_gui_funcs()
   funcs->canvas_put_curved_line = qtg_canvas_put_curved_line;
   funcs->get_text_size = qtg_get_text_size;
   funcs->canvas_put_text = qtg_canvas_put_text;
+
+  funcs->map_canvas_size_refresh = qtg_map_canvas_size_refresh;
 
   funcs->set_rulesets = qtg_set_rulesets;
   funcs->options_extra_init = qtg_options_extra_init;
@@ -85,7 +87,6 @@ void setup_gui_funcs()
   funcs->set_unit_icons_more_arrow = qtg_set_unit_icons_more_arrow;
   funcs->real_focus_units_changed = qtg_real_focus_units_changed;
   funcs->gui_update_font = qtg_gui_update_font;
-  funcs->set_city_names_font_sizes = qtg_set_city_names_font_sizes;
 
   funcs->editgui_refresh = qtg_editgui_refresh;
   funcs->editgui_notify_object_created = qtg_editgui_notify_object_created;
@@ -96,6 +97,7 @@ void setup_gui_funcs()
 
   funcs->popup_combat_info = qtg_popup_combat_info;
   funcs->update_timeout_label = qtg_update_timeout_label;
+  funcs->start_turn = qtg_start_turn;
   funcs->real_city_dialog_popup = qtg_real_city_dialog_popup;
   funcs->real_city_dialog_refresh = qtg_real_city_dialog_refresh;
   funcs->popdown_city_dialog = qtg_popdown_city_dialog;
@@ -106,8 +108,35 @@ void setup_gui_funcs()
 
   funcs->request_transport = qtg_request_transport;
 
+  funcs->update_infra_dialog = qtg_update_infra_dialog;
+
   funcs->gui_load_theme = qtg_gui_load_theme;
   funcs->gui_clear_theme = qtg_gui_clear_theme;
-  funcs->get_gui_specific_themes_directories = qtg_get_gui_specific_themes_directories;
-  funcs->get_useable_themes_in_directory = qtg_get_useable_themes_in_directory;
+  funcs->get_gui_specific_themes_directories
+    = qtg_get_gui_specific_themes_directories;
+  funcs->get_usable_themes_in_directory = qtg_get_usable_themes_in_directory;
+
+  funcs->gui_init_meeting = qtg_init_meeting;
+  funcs->gui_recv_cancel_meeting = qtg_recv_cancel_meeting;
+  funcs->gui_prepare_clause_updt = qtg_prepare_clause_updt;
+  funcs->gui_recv_create_clause = qtg_recv_create_clause;
+  funcs->gui_recv_remove_clause = qtg_recv_remove_clause;
+  funcs->gui_recv_accept_treaty = qtg_recv_accept_treaty;
+
+  funcs->request_action_confirmation = qtg_request_action_confirmation;
+
+  funcs->real_science_report_dialog_update
+    = qtg_real_science_report_dialog_update;
+  funcs->science_report_dialog_redraw = qtg_science_report_dialog_redraw;
+  funcs->science_report_dialog_popup = qtg_science_report_dialog_popup;
+  funcs->real_economy_report_dialog_update
+    = qtg_real_economy_report_dialog_update;
+  funcs->real_units_report_dialog_update
+    = qtg_real_units_report_dialog_update;
+  funcs->endgame_report_dialog_start = qtg_endgame_report_dialog_start;
+  funcs->endgame_report_dialog_player = qtg_endgame_report_dialog_player;
+
+  funcs->popup_image = qtg_popup_image;
+
+  funcs->setup_gui_properties = qtg_setup_gui_properties;
 }

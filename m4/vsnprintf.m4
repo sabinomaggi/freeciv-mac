@@ -14,9 +14,11 @@ AC_DEFUN([FC_FUNC_VSNPRINTF],
   [ac_cv_func_working_vsnprintf],
 [AC_RUN_IFELSE([AC_LANG_SOURCE([[#include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 int
-doit(char * s, ...)
+doit(char *s, ...)
 {
   char buffer[32];
   va_list args;
@@ -28,10 +30,9 @@ doit(char * s, ...)
   r = vsnprintf(buffer, 5, s, args);
   va_end(args);
 
-  /* -1 is pre-C99, 7 is C99. */
-
-  if (r != -1 && r != 7)
+  if (r != 7) {
     exit(1);
+  }
 
   /* We deliberately do not care if the result is NUL-terminated or
      not, since this is easy to work around like this.  */
@@ -57,7 +58,7 @@ main(void)
 }]])],[ac_cv_func_working_vsnprintf=yes],[ac_cv_func_working_vsnprintf=no],[ac_cv_func_working_vsnprintf=no])])
 dnl Note that the default is to be pessimistic in the case of cross compilation.
 dnl If you know that the target has a sensible vsnprintf(), you can get around this
-dnl by setting ac_func_vsnprintf to yes, as described in the Autoconf manual.
+dnl by setting ac_cv_func_working_vsnprintf to yes, as described in the Autoconf manual.
 if test $ac_cv_func_working_vsnprintf = yes; then
   AC_DEFINE([HAVE_WORKING_VSNPRINTF], [1],
             [Define if you have a version of the 'vsnprintf' function

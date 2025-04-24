@@ -314,7 +314,7 @@ static void meswin_dialog_response_callback(struct gui_dialog *pgui_dialog,
 }
 
 /************************************************************************//**
-  Initilialize a message window dialog.
+  Initialize a message window dialog.
 ****************************************************************************/
 static void meswin_dialog_init(struct meswin_dialog *pdialog)
 {
@@ -376,7 +376,7 @@ static void meswin_dialog_init(struct meswin_dialog *pdialog)
   g_signal_connect(selection, "changed",
                    G_CALLBACK(meswin_dialog_selection_callback), pdialog);
 
-  gui_dialog_add_button(pdialog->shell, "window-close", _("Close"),
+  gui_dialog_add_button(pdialog->shell, "window-close", _("_Close"),
                         GTK_RESPONSE_CLOSE);
 
   if (GUI_GTK_OPTION(show_message_window_buttons)) {
@@ -448,7 +448,7 @@ bool meswin_dialog_is_open(void)
 /************************************************************************//**
   Update the message window dialog.
 ****************************************************************************/
-void real_meswin_dialog_update(void)
+void real_meswin_dialog_update(void *unused)
 {
   if (NULL != meswin.shell) {
     meswin_dialog_refresh(&meswin);

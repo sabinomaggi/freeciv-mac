@@ -61,14 +61,14 @@ void update_info_label(void)
 
 /************************************************************************//**
   Update the information label which gives info on the current unit
-  and the tile under the current unit, for specified unit.  Note that
+  and the tile under the current unit, for specified unit. Note that
   in practice punit is always the focus unit.
 
-  Clears label if punit is NULL.
+  Clears label if punit is nullptr.
 
   Typically also updates the cursor for the map_canvas (this is
   related because the info label may includes "select destination"
-  prompt etc).  And it may call update_unit_pix_label() to update the
+  prompt etc). And it may call update_unit_pix_label() to update the
   icons for units on this tile.
 ****************************************************************************/
 void update_unit_info_label(struct unit_list *punitlist)
@@ -92,7 +92,7 @@ void update_mouse_cursor(enum cursor_type new_cursor_type)
 void gui_update_timeout_label(void)
 {
   /* PORTME */
-    
+
   /* set some widget based on get_timeout_label_text() */
 }
 
@@ -105,7 +105,7 @@ void gui_update_timeout_label(void)
 void update_turn_done_button(bool do_restore)
 {
   static bool flip = FALSE;
-  
+
   if (!get_turn_done_button_state()) {
     return;
   }
@@ -135,22 +135,12 @@ void set_indicator_icons(struct sprite *bulb, struct sprite *sol,
 struct canvas *get_overview_window(void)
 {
   /* PORTME */
-  return NULL;
+  return nullptr;
 }
 
 /************************************************************************//**
-  Flush the given part of the canvas buffer (if there is one) to the
-  screen.
-****************************************************************************/
-void flush_mapcanvas(int canvas_x, int canvas_y,
-                     int pixel_width, int pixel_height)
-{
-  /* PORTME */
-}
-
-/************************************************************************//**
-  Mark the rectangular region as "dirty" so that we know to flush it
-  later.
+  Mark the rectangular region as "dirty" so that we know to flush
+  it later.
 ****************************************************************************/
 void dirty_rect(int canvas_x, int canvas_y,
                 int pixel_width, int pixel_height)
@@ -168,7 +158,7 @@ void dirty_all(void)
 
 /************************************************************************//**
   Flush all regions that have been previously marked as dirty.  See
-  dirty_rect and dirty_all.  This function is generally called after we've
+  dirty_rect() and dirty_all(). This function is generally called after we've
   processed a batch of drawing operations.
 ****************************************************************************/
 void flush_dirty(void)
@@ -178,7 +168,7 @@ void flush_dirty(void)
 
 /************************************************************************//**
   Do any necessary synchronization to make sure the screen is up-to-date.
-  The canvas should have already been flushed to screen via flush_dirty -
+  The canvas should have already been flushed to screen via flush_dirty() -
   all this function does is make sure the hardware has caught up.
 ****************************************************************************/
 void gui_flush(void)
@@ -227,6 +217,16 @@ void draw_selection_rectangle(int canvas_x, int canvas_y, int w, int h)
   /* PORTME */
 }
 
+/**********************************************************************//**
+  Refresh map canvas size information
+**************************************************************************/
+void gui_map_canvas_size_refresh(void)
+{
+  /* Needed only with full screen zoom mode.
+   * Not needed, nor implemented, in this client. */
+  fc_assert(FALSE);
+}
+
 /************************************************************************//**
   This function is called when the tileset is changed.
 ****************************************************************************/
@@ -265,4 +265,12 @@ void overview_size_changed(void)
 void update_overview_scroll_window_pos(int x, int y)
 {
   /* TODO: PORTME. */
+}
+
+/************************************************************************//**
+  New turn callback
+****************************************************************************/
+void gui_start_turn(void)
+{
+  /* PORTME */
 }

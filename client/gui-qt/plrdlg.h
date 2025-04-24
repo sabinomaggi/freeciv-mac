@@ -1,4 +1,4 @@
-/********************************************************************** 
+/***********************************************************************
  Freeciv - Copyright (C) 1996 - A Kjeldberg, L Gregersen, P Unold
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,7 +22,14 @@ extern "C" {
 #include "plrdlg_g.h"
 }
 
-//common
+// Qt
+#include <QAbstractListModel>
+#include <QItemDelegate>
+#include <QSortFilterProxyModel>
+#include <QTreeView>
+#include <QWidget>
+
+// common
 #include "colors.h"
 #include "player.h"
 #include "research.h"
@@ -30,16 +37,10 @@ extern "C" {
 // gui-qt
 #include "sprite.h"
 
-// Qt
-#include <QAbstractListModel>
-#include <QItemDelegate>
-#include <QTreeView>
-#include <QWidget>
 
 class QHBoxLayout;
 class QLabel;
 class QPushButton;
-class QSortFilterProxyModel;
 class QSplitter;
 class QTableWidget;
 class QVBoxLayout;
@@ -106,13 +107,30 @@ private:
 };
 
 /***************************************************************************
+  Sorter for player/nation dialog
+***************************************************************************/
+class plr_sorter: public QSortFilterProxyModel
+{
+  Q_OBJECT
+
+public:
+  plr_sorter(QObject *parent);
+  ~plr_sorter();
+
+private:
+  bool lessThan(const QModelIndex &left,
+                const QModelIndex &right) const;
+};
+
+/***************************************************************************
   Player widget to show player/nation model
 ***************************************************************************/
 class plr_widget: public QTreeView
 {
   Q_OBJECT
+
   plr_model *list_model;
-  QSortFilterProxyModel *filter_model;
+  plr_sorter *filter_model;
   plr_item_delegate *pid;
   plr_report *plr;
   QString techs_known;
@@ -126,6 +144,7 @@ public:
   QString intel_str;
   QString ally_str;
   QString tech_str;
+  QString wonder_str;
   struct player *other_player;
 public slots:
   void display_header_menu(const QPoint &);
@@ -141,16 +160,21 @@ private:
 class plr_report: public QWidget
 {
   Q_OBJECT
+
   plr_widget *plr_wdg;
   QLabel *plr_label;
   QLabel *ally_label;
   QLabel *tech_label;
+  QLabel *wonder_label;
   QSplitter *v_splitter;
   QSplitter *h_splitter;
   QPushButton *meet_but;
   QPushButton *cancel_but;
   QPushButton *withdraw_but;
   QPushButton *toggle_ai_but;
+  QPushButton *show_relations;
+  QPushButton *show_techs;
+  QPushButton *show_wonders;
   QVBoxLayout *layout;
   QHBoxLayout *hlayout;
 public:
@@ -165,14 +189,16 @@ private:
 private slots:
   void req_meeeting();
   void req_caancel_threaty(); /** somehow autoconnect feature messes
-                               *  here and names are bit odd to cheat 
+                               *  here and names are bit odd to cheat
                                *  autoconnect */
   void req_wiithdrw_vision();
   void toggle_ai_mode();
+  void show_relations_toggle();
+  void show_techs_toggle();
+  void show_wonders_toggle();
 };
 
 void popup_players_dialog(bool raise);
 void popdown_players_report(void);
 
-
-#endif /* FC__PLRDLG_H */
+#endif // FC__PLRDLG_H

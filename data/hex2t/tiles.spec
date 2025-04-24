@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -92,62 +92,64 @@ tiles = { "row", "column","tag"
   3, 3, "t.l0.jungle1"
   3, 9, "t.l1.jungle1"
 
-; more ocean in overlays
+; mMore ocean in overlays
 ;  3, 10, "t.l0.coast1"
 ;  7, 8,  "t.l0.coast2"
 ;  3, 11, "t.l0.floor1"
 
 ; Terrain special resources:
 
-  4, 0, "ts.oasis"
-  5, 0, "ts.oil"
-  4, 1, "ts.buffalo"
-  5, 1, "ts.wheat"
-  5, 2, "ts.grassland_resources", "ts.river_resources"
-  4, 3, "ts.pheasant"
-  5, 3, "ts.silk"
-  4, 4, "ts.coal"
-  5, 4, "ts.wine"
-  4, 5, "ts.gold"
-  5, 5, "ts.iron"
-  4, 6, "ts.tundra_game"
-  5, 6, "ts.furs"
-  4, 7, "ts.arctic_ivory"
-  5, 7, "ts.arctic_oil"
-  4, 8, "ts.peat"
-  5, 8, "ts.spice"
-  4, 9, "ts.gems"
-  5, 9, "ts.fruit"
-  4, 10, "ts.fish"
-  5, 10, "ts.whales"
+  4, 0, "ts.oasis:0"
+  5, 0, "ts.oil:0"
+  4, 1, "ts.buffalo:0"
+  5, 1, "ts.wheat:0"
+  5, 2, "ts.grassland_resources:0", "ts.river_resources:0"
+  4, 3, "ts.pheasant:0"
+  5, 3, "ts.silk:0"
+  4, 4, "ts.coal:0"
+  5, 4, "ts.wine:0"
+  4, 5, "ts.gold:0"
+  5, 5, "ts.iron:0"
+  4, 6, "ts.tundra_game:0"
+  5, 6, "ts.furs:0"
+  4, 7, "ts.arctic_ivory:0"
+  5, 7, "ts.arctic_oil:0"
+  4, 8, "ts.peat:0"
+  5, 8, "ts.spice:0"
+  4, 9, "ts.gems:0"
+  5, 9, "ts.fruit:0"
+  4, 10, "ts.fish:0"
+  5, 10, "ts.whales:0"
 
-  6, 7, "ts.seals"
-  6, 8, "ts.forest_game"
-  6, 9, "ts.horses"
+  6, 7, "ts.seals:0"
+  6, 8, "ts.forest_game:0"
+  6, 9, "ts.horses:0"
 
 
-; extras
+; Extras
 
-  6, 0, "tx.oil_mine"
-  6, 10, "tx.oil_rig"
-  6, 1, "tx.mine"
+  6, 0, "tx.oil_mine:0"
+  6, 10, "tx.oil_rig:0"
+  6, 1, "tx.mine:0"
   6, 2, "tx.irrigation"
   6, 3, "tx.farmland"
-  6, 4, "tx.pollution"
-  6, 5, "tx.fallout"
-  6, 6, "tx.village"
+  6, 4, "tx.pollution:0"
+  6, 5, "tx.fallout:0"
+  6, 6, "tx.village:0"
 
-; random stuff
+  7, 10, "tx.nets:0"
+
+; Random stuff
 
   7, 0, "t.dither_tile"
   7, 0, "tx.darkness"
   7, 2, "mask.tile"
   7, 3, "t.coast_color"
 
-  7, 4, "user.attention"
+  7, 4, "user.attention", "user.infratile"
   7, 5, "tx.fog"
 
-; darkness
+; Darkness
 
   8, 0, "tx.darkness_n"
   8, 1, "tx.darkness_ne"
@@ -156,11 +158,11 @@ tiles = { "row", "column","tag"
   8, 4, "tx.darkness_sw"
   8, 5, "tx.darkness_w"
 
-; goto path
+; Goto path
 
-  8, 6, "path.step"            ; turn boundary within path
-  8, 7, "path.exhausted_mp"    ; tip of path, no MP left
-  8, 8, "path.normal"          ; tip of path with MP remaining
+  8, 6, "path.step"            ; Turn boundary within path
+  8, 7, "path.exhausted_mp"    ; Tip of path, no MP left
+  8, 8, "path.normal"          ; Tip of path with MP remaining
   8, 9, "path.waypoint"
 }
 
@@ -185,8 +187,4 @@ tiles = { "row", "column","tag"
   4, 0, "upkeep.food2"
   5, 0, "upkeep.unhappy"
   6, 0, "upkeep.unhappy2"
-
 }
-
-
-

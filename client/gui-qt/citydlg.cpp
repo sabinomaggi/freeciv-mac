@@ -18,7 +18,6 @@
 // Qt
 #include <QApplication>
 #include <QCheckBox>
-#include <QDesktopWidget>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QImage>
@@ -27,9 +26,11 @@
 #include <QPainter>
 #include <QRadioButton>
 #include <QRect>
+#include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QToolTip>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidgetAction>
@@ -40,6 +41,7 @@
 // common
 #include "citizens.h"
 #include "city.h"
+#include "counters.h"
 #include "game.h"
 
 //agents
@@ -59,13 +61,13 @@
 #include "text.h"
 #include "tilespec.h"
 
-//gui-qt
+// gui-qt
 #include "citydlg.h"
 #include "colors.h"
 #include "fc_client.h"
+#include "gui_main.h"
 #include "hudwidget.h"
 
-extern QApplication *qapp;
 static bool city_dlg_created = false; /** defines if dialog for city has been
                                        * already created. It's created only
                                        * once per client
@@ -118,8 +120,8 @@ void progress_bar::set_pixmap(struct universal *target)
   QRect crop;
 
   if (VUT_UTYPE == target->kind) {
-    sprite = get_unittype_sprite(tileset, target->value.utype,
-                                 direction8_invalid());
+    sprite = get_unittype_sprite(get_tileset(), target->value.utype,
+                                 ACTIVITY_LAST, direction8_invalid());
   } else {
     sprite = get_building_sprite(tileset, target->value.building);
   }
@@ -146,7 +148,11 @@ void progress_bar::set_pixmap(int n)
 {
   struct sprite *sprite;
 
-  sprite = get_tech_sprite(tileset, n);
+  if (valid_advance_by_number(n) && !is_future_tech(n)) {
+    sprite = get_tech_sprite(tileset, n);
+  } else {
+    sprite = nullptr;
+  }
   if (pix != nullptr) {
     delete pix;
   }
@@ -159,6 +165,9 @@ void progress_bar::set_pixmap(int n)
   pix->fill(Qt::transparent);
   pixmap_copy(pix, sprite->pm, 0 , 0, 0, 0,
               sprite->pm->width(), sprite->pm->height());
+  if (isVisible()) {
+    update();
+  }
 }
 
 /************************************************************************//**
@@ -183,24 +192,30 @@ void progress_bar::paintEvent(QPaintEvent *event)
   QColor c;
   QRect r, rx, r2;
   int max;
-  int f_size;
+  int f_pixel_size;
   int pix_width = 0;
-  int point_size = sfont->pointSize();
   int pixel_size = sfont->pixelSize();
+  int pbw, pbh;
 
   if (pix != nullptr) {
     pix_width = height() - 4;
   }
-  if (point_size < 0) {
-    f_size = pixel_size;
+
+  if (pixel_size > 0) {
+    f_pixel_size = pixel_size;
   } else {
-    f_size = point_size;
+    QFontMetrics fm(*sfont);
+
+    f_pixel_size = fm.height();
   }
+
+  pbw = width();
+  pbh = height();
 
   rx.setX(0);
   rx.setY(0);
-  rx.setWidth(width());
-  rx.setHeight(height());
+  rx.setWidth(pbw);
+  rx.setHeight(pbh);
   p.begin(this);
   p.drawLine(rx.topLeft(), rx.topRight());
   p.drawLine(rx.bottomLeft(), rx.bottomRight());
@@ -211,9 +226,9 @@ void progress_bar::paintEvent(QPaintEvent *event)
     max = 1;
   }
 
-  r = QRect(0, 0, width() * value() / max, height());
+  r = QRect(0, 0, pbw * value() / max, pbh);
 
-  gx = QLinearGradient(0 , 0, 0, height());
+  gx = QLinearGradient(0 , 0, 0, pbh);
   c = QColor(palette().color(QPalette::Highlight));
   gx.setColorAt(0, c);
   gx.setColorAt(0.5, QColor(40, 40, 40));
@@ -221,7 +236,7 @@ void progress_bar::paintEvent(QPaintEvent *event)
   p.fillRect(r, QBrush(gx));
   p.setClipRegion(reg.translated(m_animate_step % 32, 0));
 
-  g = QLinearGradient(0 , 0, width(), height());
+  g = QLinearGradient(0 , 0, pbw, pbh);
   c.setAlphaF(0.1);
   g.setColorAt(0, c);
   c.setAlphaF(0.9);
@@ -229,11 +244,11 @@ void progress_bar::paintEvent(QPaintEvent *event)
   p.fillRect(r, QBrush(g));
 
   p.setClipping(false);
-  r2 = QRect(width() * value() / max, 0, width(), height());
+  r2 = QRect(pbw * value() / max, 0, pbw, pbh);
   c = palette().color(QPalette::Window);
   p.fillRect(r2, c);
 
-  /* draw icon */
+  // Draw icon
   if (pix != nullptr) {
     p.setCompositionMode(QPainter::CompositionMode_SourceOver);
     p.drawPixmap(2 , 2, pix_width
@@ -241,65 +256,67 @@ void progress_bar::paintEvent(QPaintEvent *event)
                  pix_width, *pix, 0, 0, pix->width(), pix->height());
   }
 
-  /* draw text */
+  // Draw text
   c = palette().color(QPalette::Text);
   p.setPen(c);
   sfont->setCapitalization(QFont::AllUppercase);
   sfont->setBold(true);
-  p.setFont(*sfont);
 
   if (text().contains('\n')) {
     QString s1, s2;
     int i, j;
+    QFont tmp_font = *sfont; // Don't make changes to font to be kept
 
     i = text().indexOf('\n');
     s1 = text().left(i);
-    s2 = text().right(text().count() - i);
+    s2 = text().right(text().length() - i);
 
-    if (2 * f_size >= 2 * height() / 3) {
-      if (point_size < 0) {
-        sfont->setPixelSize(height() / 4);
-      } else  {
-        sfont->setPointSize(height() / 4);
-      }
+    if (2 * f_pixel_size >= 3 * pbh / 2) {
+      tmp_font.setPixelSize(pbh / 3);
     }
 
-    j = height() - 2 * f_size;
-    p.setCompositionMode(QPainter::CompositionMode_ColorDodge);
-    QFontMetrics fm(*sfont);
+    p.setFont(tmp_font);
 
-    if (fm.width(s1) > rx.width()) {
+    j = pbh - 2 * f_pixel_size;
+    p.setCompositionMode(QPainter::CompositionMode_ColorDodge);
+    QFontMetrics fm(tmp_font);
+
+    if (fm.horizontalAdvance(s1) > rx.width()) {
       s1 = fm.elidedText(s1, Qt::ElideRight, rx.width());
     }
 
-    i = rx.width() - fm.width(s1) + pix_width;
+    i = rx.width() - fm.horizontalAdvance(s1) + pix_width;
     i = qMax(0, i);
-    p.drawText(i / 2, j / 3 + f_size, s1);
+    p.drawText(i / 2, j / 3 + f_pixel_size, s1);
 
-    if (fm.width(s2) > rx.width()) {
+    if (fm.horizontalAdvance(s2) > rx.width()) {
       s2 = fm.elidedText(s2, Qt::ElideRight, rx.width());
     }
 
-    i = rx.width() - fm.width(s2) + pix_width;
+    i = rx.width() - fm.horizontalAdvance(s2) + pix_width;
     i = qMax(0, i);
 
-    p.drawText(i / 2, height() - j / 3, s2);
+    p.drawText(i / 2, pbh - j / 3, s2);
   } else {
     QString s;
     int i, j;
+
+    p.setFont(*sfont);
+
     s = text();
-    j = height() - f_size;
+    j = pbh - f_pixel_size;
     p.setCompositionMode(QPainter::CompositionMode_ColorDodge);
     QFontMetrics fm(*sfont);
 
-    if (fm.width(s) > rx.width()) {
+    if (fm.horizontalAdvance(s) > rx.width()) {
       s = fm.elidedText(s, Qt::ElideRight, rx.width());
     }
 
-    i = rx.width() - fm.width(s) + pix_width;
+    i = rx.width() - fm.horizontalAdvance(s) + pix_width;
     i = qMax(0, i);
-    p.drawText(i / 2, j / 2 + f_size, s);
+    p.drawText(i / 2, j / 2 + f_pixel_size, s);
   }
+
   p.end();
 }
 
@@ -347,11 +364,11 @@ static void pixmap_put_x(QPixmap *pix)
 /************************************************************************//**
   Improvement item constructor
 ****************************************************************************/
-impr_item::impr_item(QWidget *parent, impr_type *building,
-                     struct city *city): QLabel(parent)
+impr_item::impr_item(QWidget *parent, const impr_type *building,
+                     struct city *pcity): QLabel(parent)
 {
   setParent(parent);
-  pcity = city;
+  dlgcity = pcity;
   impr = building;
   impr_pixmap = nullptr;
   struct sprite *sprite;
@@ -370,7 +387,7 @@ impr_item::impr_item(QWidget *parent, impr_type *building,
 
   setFixedWidth(impr_pixmap->map_pixmap.width() + 4);
   setFixedHeight(impr_pixmap->map_pixmap.height());
-  setToolTip(get_tooltip_improvement(building, city).trimmed());
+  setToolTip(get_tooltip_improvement(building, pcity, true).trimmed());
 }
 
 /************************************************************************//**
@@ -395,7 +412,7 @@ void impr_item::init_pix()
 /************************************************************************//**
   Mouse enters widget
 ****************************************************************************/
-void impr_item::enterEvent(QEvent *event)
+void impr_item::enterEvent(QEnterEvent *event)
 {
   struct sprite *sprite;
   QPainter p;
@@ -518,11 +535,13 @@ void impr_info::wheelEvent(QWheelEvent *event)
 
   p = parentWidget()->parentWidget()->pos();
   p = mapToGlobal(p);
+
   QWheelEvent new_event(QPoint(5, 5), p + QPoint(5,5), event->pixelDelta(),
                         event->angleDelta(),
-                        event->angleDelta().y(),
-                        Qt::Horizontal,  event->buttons(),
-                        event->modifiers());
+                        event->buttons(),
+                        event->modifiers(),
+                        event->phase(), false, event->source());
+
   QApplication::sendEvent(parentWidget(), &new_event);
 }
 
@@ -567,11 +586,13 @@ void impr_item::wheelEvent(QWheelEvent *event)
 
   p = parentWidget()->parentWidget()->pos();
   p = mapToGlobal(p);
+
   QWheelEvent new_event(QPoint(5, 5), p + QPoint(5,5), event->pixelDelta(),
                         event->angleDelta(),
-                        event->angleDelta().y(),
-                        Qt::Horizontal,  event->buttons(),
-                        event->modifiers());
+                        event->buttons(),
+                        event->modifiers(),
+                        event->phase(), false, event->source());
+
   QApplication::sendEvent(parentWidget()->parentWidget(),
                           &new_event);
 }
@@ -581,41 +602,42 @@ void impr_item::wheelEvent(QWheelEvent *event)
 ****************************************************************************/
 void impr_item::mouseDoubleClickEvent(QMouseEvent *event)
 {
-  hud_message_box ask(city_dlg);
-  QString s;
-  char buf[256];
-  int price;
-  int ret;
-
   if (!can_client_issue_orders()) {
     return;
   }
 
   if (event->button() == Qt::LeftButton) {
-    if (test_player_sell_building_now(client.conn.playing, pcity,
+    char buf[256];
+    int price;
+    const int impr_id = improvement_number(impr);
+    const int city_id = dlgcity->id;
+    hud_message_box *ask;
+
+    if (test_player_sell_building_now(client_player(), dlgcity,
                                       impr) != TR_SUCCESS) {
       return;
     }
+
+    ask = new hud_message_box(city_dlg);
 
     price = impr_sell_gold(impr);
     fc_snprintf(buf, ARRAY_SIZE(buf),
                 PL_("Sell %s for %d gold?",
                     "Sell %s for %d gold?", price),
-                city_improvement_name_translation(pcity, impr), price);
+                city_improvement_name_translation(dlgcity, impr), price);
 
-    s = QString(buf);
-    ask.set_text_title(s, (_("Sell improvement?")));
-    ask.setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
-    ret = ask.exec();
+    ask->set_text_title(buf, (_("Sell improvement?")));
+    ask->setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
+    ask->setAttribute(Qt::WA_DeleteOnClose);
+    connect(ask, &hud_message_box::accepted, [=]() {
+      struct city *pcity = game_city_by_number(city_id);
 
-    switch (ret) {
-    case QMessageBox::Cancel:
-      return;
-
-    case QMessageBox::Ok:
-      city_sell_improvement(pcity, improvement_number(impr));
-      break;
-    }
+      if (pcity == nullptr) {
+        return;
+      }
+      city_sell_improvement(pcity, impr_id);
+    });
+    ask->show();
   }
 }
 
@@ -631,17 +653,29 @@ unit_item::unit_item(QWidget *parent, struct unit *punit,
   QRect crop;
   qunit = punit;
   struct canvas *unit_pixmap;
+  struct tileset *tmp;
+  float isosize;
 
   setParent(parent);
   supported = supp;
 
+  tmp = nullptr;
+  if (unscaled_tileset) {
+    tmp = tileset;
+    tileset = unscaled_tileset;
+  }
+  isosize = 0.6;
+  if (tileset_hex_height(tileset) > 0 || tileset_hex_width(tileset) > 0) {
+    isosize = 0.45;
+  }
+
   if (punit) {
     if (supported) {
-      unit_pixmap = qtg_canvas_create(tileset_unit_width(tileset),
-                                      tileset_unit_with_upkeep_height(tileset));
+      unit_pixmap = qtg_canvas_create(tileset_unit_width(get_tileset()),
+                             tileset_unit_with_upkeep_height(get_tileset()));
     } else {
-      unit_pixmap = qtg_canvas_create(tileset_unit_width(tileset),
-                                      tileset_unit_height(tileset));
+      unit_pixmap = qtg_canvas_create(tileset_unit_width(get_tileset()),
+                                      tileset_unit_height(get_tileset()));
     }
 
     unit_pixmap->map_pixmap.fill(Qt::transparent);
@@ -649,7 +683,7 @@ unit_item::unit_item(QWidget *parent, struct unit *punit,
 
     if (supported) {
       put_unit_city_overlays(punit, unit_pixmap, 0,
-                             tileset_unit_layout_offset_y(tileset),
+                             tileset_unit_layout_offset_y(get_tileset()),
                              punit->upkeep, happy_cost);
     }
   } else {
@@ -660,14 +694,18 @@ unit_item::unit_item(QWidget *parent, struct unit *punit,
   img = unit_pixmap->map_pixmap.toImage();
   crop = zealous_crop_rect(img);
   cropped_img = img.copy(crop);
-  if (tileset_is_isometric(tileset) == true) {
-    unit_img = cropped_img.scaledToHeight(tileset_unit_width(tileset)
-                                          * 0.6, Qt::SmoothTransformation);
+  if (tileset_is_isometric(tileset)) {
+    unit_img = cropped_img.scaledToHeight(tileset_unit_width(get_tileset())
+                                          * isosize, Qt::SmoothTransformation);
   } else {
-    unit_img = cropped_img.scaledToHeight(tileset_unit_width(tileset),
+    unit_img = cropped_img.scaledToHeight(tileset_unit_width(get_tileset()),
                                           Qt::SmoothTransformation);
   }
   canvas_free(unit_pixmap);
+  if (tmp != nullptr) {
+    tileset = tmp;
+  }
+
   create_actions();
   setFixedWidth(unit_img.width() + 4);
   setFixedHeight(unit_img.height());
@@ -763,60 +801,60 @@ void unit_item::create_actions()
   connect(activate_and_close, &QAction::triggered, this,
           &unit_item::activate_and_close_dialog);
 
-  if (can_unit_do_activity(qunit, ACTIVITY_SENTRY)) {
+  if (can_unit_do_activity_client(qunit, ACTIVITY_SENTRY)) {
     sentry = new QAction(_("Sentry unit"), this);
     connect(sentry, &QAction::triggered, this, &unit_item::sentry_unit);
   } else {
-    sentry = NULL;
+    sentry = nullptr;
   }
 
-  if (can_unit_do_activity(qunit, ACTIVITY_FORTIFYING)) {
+  if (can_unit_do_activity_client(qunit, ACTIVITY_FORTIFYING)) {
     fortify = new QAction(_("Fortify unit"), this);
     connect(fortify, &QAction::triggered, this, &unit_item::fortify_unit);
   } else {
-    fortify = NULL;
+    fortify = nullptr;
   }
   if (unit_can_do_action(qunit, ACTION_DISBAND_UNIT)) {
     disband_action = new QAction(_("Disband unit"), this);
     connect(disband_action, &QAction::triggered, this, &unit_item::disband);
   } else {
-    disband_action = NULL;
+    disband_action = nullptr;
   }
 
-  if (can_unit_change_homecity(qunit)) {
+  if (can_unit_change_homecity(&(wld.map), qunit)) {
     change_home = new QAction(action_id_name_translation(ACTION_HOME_CITY),
                               this);
     connect(change_home, &QAction::triggered, this, &unit_item::change_homecity);
   } else {
-    change_home = NULL;
+    change_home = nullptr;
   }
 
   if (units_can_load(qunits)) {
     load = new QAction(_("Load"), this);
     connect(load, &QAction::triggered, this, &unit_item::load_unit);
   } else {
-    load = NULL;
+    load = nullptr;
   }
 
-  if (units_can_unload(qunits)) {
+  if (units_can_unload(&(wld.map), qunits)) {
     unload = new QAction(_("Unload"), this);
     connect(unload, &QAction::triggered, this, &unit_item::unload_unit);
   } else {
-    unload = NULL;
+    unload = nullptr;
   }
 
   if (units_are_occupied(qunits)) {
     unload_trans = new QAction(_("Unload All From Transporter"), this);
     connect(unload_trans, &QAction::triggered, this, &unit_item::unload_all);
   } else {
-    unload_trans = NULL;
+    unload_trans = nullptr;
   }
 
-  if (units_can_upgrade(qunits)) {
+  if (units_can_upgrade(&(wld.map), qunits)) {
     upgrade = new QAction(_("Upgrade Unit"), this);
     connect(upgrade, &QAction::triggered, this, &unit_item::upgrade_unit);
   } else {
-    upgrade = NULL;
+    upgrade = nullptr;
   }
 
   unit_list_destroy(qunits);
@@ -841,7 +879,7 @@ void unit_item::disband()
 }
 
 /************************************************************************//**
-  Loads unit into some tranport
+  Loads unit into some transport
 ****************************************************************************/
 void unit_item::load_unit()
 {
@@ -920,7 +958,7 @@ void unit_item::fortify_unit()
 /************************************************************************//**
   Mouse entered widget
 ****************************************************************************/
-void unit_item::enterEvent(QEvent *event)
+void unit_item::enterEvent(QEnterEvent *event)
 {
   QImage temp_img(unit_img.size(), QImage::Format_ARGB32_Premultiplied);
   QPainter p;
@@ -952,15 +990,16 @@ void unit_item::wheelEvent(QWheelEvent *event)
 
   p = parentWidget()->parentWidget()->pos();
   p = mapToGlobal(p);
+
   QWheelEvent new_event(QPoint(5, 5), p + QPoint(5,5), event->pixelDelta(),
                         event->angleDelta(),
-                        event->angleDelta().y(),
-                        Qt::Horizontal,  event->buttons(),
-                        event->modifiers());
+                        event->buttons(),
+                        event->modifiers(),
+                        event->phase(), false, event->source());
+
   QApplication::sendEvent(parentWidget()->parentWidget(),
                           &new_event);
 }
-
 
 /************************************************************************//**
   Mouse press event -activates unit and closes dialog
@@ -1013,7 +1052,7 @@ void unit_info::add_item(unit_item *item)
 }
 
 /************************************************************************//**
-  Initiazlizes layout ( layout needs to be changed after adding units )
+  Initializes layout ( layout needs to be changed after adding units )
 ****************************************************************************/
 void unit_info::init_layout()
 {
@@ -1033,11 +1072,13 @@ void unit_info::wheelEvent(QWheelEvent *event)
 
   p = parentWidget()->parentWidget()->pos();
   p = mapToGlobal(p);
+
   QWheelEvent new_event(QPoint(5, 5), p + QPoint(5,5), event->pixelDelta(),
                         event->angleDelta(),
-                        event->angleDelta().y(),
-                        Qt::Horizontal,  event->buttons(),
-                        event->modifiers());
+                        event->buttons(),
+                        event->modifiers(),
+                        event->phase(), false, event->source());
+
   QApplication::sendEvent(parentWidget(), &new_event);
 }
 
@@ -1049,6 +1090,7 @@ void unit_info::update_units()
   int i = unit_list.count();
   int j;
   int h;
+  float hexfix;
   unit_item *ui;
 
   setUpdatesEnabled(false);
@@ -1059,10 +1101,15 @@ void unit_info::update_units()
     layout->addWidget(ui, 0, Qt::AlignVCenter);
   }
 
+  hexfix = 1.0;
+  if (tileset_hex_height(tileset) > 0 || tileset_hex_width(tileset) > 0) {
+    hexfix = 0.75;
+  }
+
   if (tileset_is_isometric(tileset)) {
-    h = tileset_unit_width(tileset) * 0.7 + 6;
+    h = tileset_unit_width(get_tileset()) * 0.7 * hexfix + 6;
   } else {
-    h = tileset_unit_width(tileset) + 6;
+    h = tileset_unit_width(get_tileset()) + 6;
   }
   if (unit_list.count() > 0) {
     parentWidget()->parentWidget()->setFixedHeight(city_dlg->scroll_height
@@ -1119,13 +1166,13 @@ void city_label::mousePressEvent(QMouseEvent *event)
   int w = tileset_small_sprite_width(tileset) / gui()->map_scale;
   int num_citizens = pcity->size;
 
-  if (cma_is_city_under_agent(pcity, NULL)) {
+  if (cma_is_city_under_agent(pcity, nullptr)) {
     return;
   }
 
   i = 1 + (num_citizens * 5 / 200);
   w = w / i;
-  citnum = event->x() / w;
+  citnum = event->pos().x() / w;
 
   if (!can_client_issue_orders()) {
     return;
@@ -1150,10 +1197,10 @@ city_map::city_map(QWidget *parent): QWidget(parent)
   setParent(parent);
   radius = 0;
   wdth = get_citydlg_canvas_width();
-  hight = get_citydlg_canvas_height();
+  height = get_citydlg_canvas_height();
   cutted_width = wdth;
-  cutted_height = hight;
-  view = qtg_canvas_create(wdth, hight);
+  cutted_height = height;
+  view = qtg_canvas_create(wdth, height);
   view->map_pixmap.fill(Qt::black);
   miniview = qtg_canvas_create(0, 0);
   miniview->map_pixmap.fill(Qt::black);
@@ -1184,11 +1231,11 @@ void city_map::paintEvent(QPaintEvent *event)
   painter.begin(this);
   painter.drawPixmap(0, 0, zoomed_pixmap);
 
-  if (cma_is_city_under_agent(mcity, NULL)) {
+  if (cma_is_city_under_agent(mcity, nullptr)) {
     painter.fillRect(0, 0, zoomed_pixmap.width(), zoomed_pixmap.height(),
                      QBrush(QColor(60, 60 , 60 , 110)));
     painter.setPen(QColor(255, 255, 255));
-    /* TRANS: %1 is custom string choosen by player. */
+    // TRANS: %1 is a custom string chosen by player.
     str = QString(_("Governor %1"))
           .arg(cmafec_get_short_descr_of_city(mcity));
     painter.drawText(5, zoomed_pixmap.height() - 10, str);
@@ -1213,11 +1260,11 @@ void city_map::set_pixmap(struct city *pcity, float z)
     radius = r;
     qtg_canvas_free(miniview);
     cutted_width = wdth * (r + 1) / max_r;
-    cutted_height = hight * (r + 1) / max_r;
+    cutted_height = height * (r + 1) / max_r;
     cutted_width = qMin(cutted_width, wdth);
-    cutted_height = qMin(cutted_height, hight);
+    cutted_height = qMin(cutted_height, height);
     delta_x = (wdth - cutted_width) / 2;
-    delta_y = (hight - cutted_height) / 2;
+    delta_y = (height - cutted_height) / 2;
     miniview = qtg_canvas_create(cutted_width, cutted_height);
     miniview->map_pixmap.fill(Qt::black);
   }
@@ -1255,13 +1302,15 @@ QSize city_map::minimumSizeHint() const
 void city_map::mousePressEvent(QMouseEvent *event)
 {
   int canvas_x, canvas_y, city_x, city_y;
+  QPoint pos;
 
   if (!can_client_issue_orders() || event->button() != Qt::LeftButton) {
     return;
   }
 
-  canvas_x = event->x() / zoom + delta_x;
-  canvas_y = event->y() / zoom + delta_y;
+  pos = event->pos();
+  canvas_x = pos.x() / zoom + delta_x;
+  canvas_y = pos.y() / zoom + delta_y;
 
   if (canvas_to_city_pos(&city_x, &city_y, city_map_radius_sq_get(mcity),
                          canvas_x, canvas_y)) {
@@ -1275,21 +1324,21 @@ void city_map::mousePressEvent(QMouseEvent *event)
 void city_map::context_menu(QPoint point)
 {
   int canvas_x, canvas_y, city_x, city_y;
-  QAction *act;
-  QAction con_clear(_("Clear"), this);
-  QAction con_irrig_tf(_("Irrigate"), this);
-  QAction con_irrig(_("Irrigate"), this);
-  QAction con_mine_tf(_("Plant"), this);
-  QAction con_mine(_("Mine"), this);
-  QAction con_road(_("Road"), this);
-  QAction con_trfrm(_("Transform"), this);
-  QMenu con_menu(this);
+  QAction *con_cultivate = nullptr;
+  QAction *con_irrig = nullptr;
+  QAction *con_plant = nullptr;
+  QAction *con_mine = nullptr;
+  QAction *con_road = nullptr;
+  QAction *con_trfrm = nullptr;
+  QAction *con_clean = nullptr;
+  QAction *con_clear = nullptr;
+  QMenu *con_menu;
   QWidgetAction *wid_act;
-  struct packet_worker_task task;
   struct terrain *pterr;
   struct tile *ptile;
   struct universal for_terr;
   struct worker_task *ptask;
+  int city_id = mcity->id;
 
   if (!can_client_issue_orders()) {
     return;
@@ -1303,78 +1352,107 @@ void city_map::context_menu(QPoint point)
     return;
   }
 
-  ptile = city_map_to_tile(mcity->tile, city_map_radius_sq_get(mcity),
+  ptile = city_map_to_tile(&(wld.map), mcity->tile, city_map_radius_sq_get(mcity),
                            city_x, city_y);
-  task.city_id = mcity->id;
   pterr = tile_terrain(ptile);
   for_terr.kind = VUT_TERRAIN;
   for_terr.value.terrain = pterr;
   ptask = worker_task_list_get(mcity->task_reqs, 0);
 
   wid_act = new QWidgetAction(this);
-  wid_act->setDefaultWidget(new QLabel(_("Autosettler activity:")));
-  con_menu.addAction(wid_act);
+  wid_act->setDefaultWidget(new QLabel(_("Autoworker activity:")));
 
-  if (pterr->mining_result != pterr && pterr->mining_result != NULL
-      && univs_have_action_enabler(ACTION_MINE_TF, NULL, &for_terr)) {
-    con_menu.addAction(&con_mine_tf);
-  } else if (pterr->mining_result == pterr
-             && effect_cumulative_max(EFT_MINING_POSSIBLE, &for_terr) > 0) {
-    con_menu.addAction(&con_mine);
+  con_menu = new QMenu(this);
+  con_menu->addAction(wid_act);
+
+  if (pterr->plant_result != nullptr
+      && action_id_univs_not_blocking(ACTION_PLANT, nullptr, &for_terr)) {
+    con_plant = con_menu->addAction(_("Plant"));
+  }
+  if (action_id_univs_not_blocking(ACTION_MINE, nullptr, &for_terr)) {
+    con_mine = con_menu->addAction(Q_("?act:Mine"));
   }
 
-  if (pterr->irrigation_result != pterr && pterr->irrigation_result != NULL
-      && univs_have_action_enabler(ACTION_IRRIGATE_TF, NULL, &for_terr)) {
-    con_menu.addAction(&con_irrig_tf);
-  } else if (pterr->irrigation_result == pterr
-             && effect_cumulative_max(EFT_IRRIG_POSSIBLE, &for_terr) > 0) {
-    con_menu.addAction(&con_irrig);
+  if (pterr->cultivate_result != nullptr
+      && action_id_univs_not_blocking(ACTION_CULTIVATE, nullptr, &for_terr)) {
+    con_cultivate = con_menu->addAction(_("Cultivate"));
+  }
+  if (action_id_univs_not_blocking(ACTION_IRRIGATE, nullptr, &for_terr)) {
+    con_irrig = con_menu->addAction(_("Irrigate"));
   }
 
-  if (pterr->transform_result != pterr && pterr->transform_result != NULL
-      && univs_have_action_enabler(ACTION_TRANSFORM_TERRAIN, NULL, &for_terr)) {
-    con_menu.addAction(&con_trfrm);
+  if (pterr->transform_result != pterr && pterr->transform_result != nullptr
+      && action_id_univs_not_blocking(ACTION_TRANSFORM_TERRAIN,
+                                      nullptr, &for_terr)) {
+    con_trfrm = con_menu->addAction(_("Transform"));
   }
 
-  if (next_extra_for_tile(ptile, EC_ROAD, city_owner(mcity), NULL) != NULL) {
-    con_menu.addAction(&con_road);
+  if (next_extra_for_tile(ptile, EC_ROAD, city_owner(mcity), nullptr) != nullptr) {
+    con_road = con_menu->addAction(_("Road"));
   }
 
-  if (ptask != NULL) {
-    con_menu.addAction(&con_clear);
+  if (prev_extra_in_tile(ptile, ERM_CLEAN,
+                         city_owner(mcity), nullptr) != nullptr) {
+    con_clean = con_menu->addAction(_("Clean"));
   }
 
-  act = con_menu.exec(mapToGlobal(point));
+  if (ptask != nullptr) {
+    con_clear = con_menu->addAction(_("Clear"));
+  }
 
-  if (act) {
-    bool target = FALSE;
+  con_menu->setAttribute(Qt::WA_DeleteOnClose);
+  connect(con_menu, &QMenu::triggered,
+          CAPTURE_DEFAULT_THIS (QAction *act) {
+    bool target = false;
+    struct packet_worker_task task;
 
-    if (act == &con_road) {
+    if (!act) {
+      return;
+    }
+
+    task.city_id = city_id;
+
+    if (act == con_road) {
       task.activity = ACTIVITY_GEN_ROAD;
       target = TRUE;
-    } else if (act == &con_mine) {
+    } else if (act == con_mine) {
       task.activity = ACTIVITY_MINE;
       target = TRUE;
-    } else if (act == &con_mine_tf) {
-      task.activity = ACTIVITY_MINE;
-    } else if (act == &con_irrig) {
+    } else if (act == con_plant) {
+      task.activity = ACTIVITY_PLANT;
+    } else if (act == con_irrig) {
       task.activity = ACTIVITY_IRRIGATE;
       target = TRUE;
-    } else if (act == &con_irrig_tf) {
-      task.activity = ACTIVITY_IRRIGATE;
-    } else if (act == &con_trfrm) {
+    } else if (act == con_cultivate) {
+      task.activity = ACTIVITY_CULTIVATE;
+    } else if (act == con_trfrm) {
       task.activity = ACTIVITY_TRANSFORM;
+    } else if (act == con_clean) {
+      task.activity = ACTIVITY_CLEAN;
+      target = TRUE;
+    } else if (act == con_clear) {
+      task.activity = ACTIVITY_LAST;
+    } else {
+      // Closed dialog without selecting any activity entry.
+      return;
     }
 
     task.want = 100;
 
     if (target) {
       enum extra_cause cause = activity_to_extra_cause(task.activity);
+      enum extra_rmcause rmcause = activity_to_extra_rmcause(task.activity);
       struct extra_type *tgt;
 
-      tgt = next_extra_for_tile(ptile, cause, city_owner(mcity), NULL);
+      if (cause != EC_NONE) {
+        tgt = next_extra_for_tile(ptile, cause, city_owner(mcity), nullptr);
+      } else if (rmcause != ERM_NONE) {
+        tgt = prev_extra_in_tile(ptile, rmcause, city_owner(mcity), nullptr);
+      } else {
+        tgt = nullptr;
+      }
 
-      if (tgt != NULL) {
+      if (tgt != nullptr) {
         task.tgt = extra_index(tgt);
       } else {
         task.tgt = -1;
@@ -1385,7 +1463,9 @@ void city_map::context_menu(QPoint point)
 
     task.tile_id = ptile->index;
     send_packet_worker_task(&client.conn, &task);
-  }
+  });
+
+  con_menu->popup(mapToGlobal(point));
 }
 
 /************************************************************************//**
@@ -1393,8 +1473,6 @@ void city_map::context_menu(QPoint point)
 ****************************************************************************/
 city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
 {
-  int info_nr;
-  int iter;
   QFont f = QApplication::font();
   QFont *small_font;
   QFontMetrics fm(f);
@@ -1414,13 +1492,14 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   QVBoxLayout *lefttop_layout, *units_layout, *worklist_layout,
               *right_layout, *vbox, *vbox_layout, *zoom_vbox, *v_layout;
   QWidget *split_widget1, *split_widget2, *info_wdg, *curr_unit_wdg,
-          *supp_unit_wdg,  *curr_impr_wdg;;
-
+          *supp_unit_wdg, *curr_impr_wdg;
+  int list_size;
   int h = 2 * fm.height() + 2;
-  small_font = fc_font::instance()->get_font(fonts::city_label);
+
+  current_tab = common;
+  small_font = fc_font::instance()->get_font(fonts::notify_label);
   zoom = 1.0;
 
-  happines_shown = false;
   central_splitter = new QSplitter;
   central_splitter->setOpaqueResize(false);
   central_left_splitter = new QSplitter;
@@ -1430,7 +1509,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
 
   setMouseTracking(true);
   selected_row_p = -1;
-  pcity = NULL;
+  dlgcity = nullptr;
   lcity_name = new QPushButton(this);
   lcity_name->setToolTip(_("Click to change city name"));
 
@@ -1438,47 +1517,48 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   single_page_layout->setContentsMargins(0, 0 ,0 ,0);
   size_expanding_policy.setHorizontalStretch(0);
   size_expanding_policy.setVerticalStretch(0);
+  setSizePolicy(size_expanding_policy);
   current_building = 0;
 
-  /* map view */
+  // Map view
   map_box = new QGroupBox(this);
 
-  /* City information widget texts about surpluses and so on */
+  // City information widget texts about surpluses and so on
   info_wdg = new QWidget(this);
 
-  /* Fill info_wdg with labels */
+  // Fill info_wdg with labels
   info_grid_layout = new QGridLayout(parent);
-  info_list << _("Food:") << _("Prod:") << _("Trade:") << _("Gold:")
-            << _("Luxury:") << _("Science:") << _("Granary:")
-            << _("Change in:") << _("Corruption:") << _("Waste:")
-            << _("Culture:") << _("Pollution:") << _("Plague Risk:");
-  info_nr = info_list.count();
+
   info_wdg->setFont(*small_font);
   info_grid_layout->setSpacing(0);
-  info_grid_layout->setMargin(0);
+  info_grid_layout->setContentsMargins(0, 0, 0, 0);
 
-  for (iter = 0; iter < info_nr; iter++) {
-    ql = new QLabel(info_list[iter], info_wdg);
+
+  for (enum city_info info_field = city_info_begin();
+      info_field != city_info_end();
+      info_field = city_info_next(info_field)) {
+
+    ql = new QLabel(_(city_info_name(info_field)), info_wdg);
     ql->setFont(*small_font);
-    ql->setProperty(fonts::city_label, "true");
-    info_grid_layout->addWidget(ql, iter, 0);
-    qlt[iter] = new QLabel(info_wdg);
-    qlt[iter]->setFont(*small_font);
-    qlt[iter]->setProperty(fonts::city_label, "true");
-    info_grid_layout->addWidget(qlt[iter], iter, 1);
-    info_grid_layout->setRowStretch(iter, 0);
+    ql->setProperty(fonts::notify_label, "true");
+    info_grid_layout->addWidget(ql, info_field, 0);
+    qlt[info_field] = new QLabel(info_wdg);
+    qlt[info_field]->setFont(*small_font);
+    qlt[info_field]->setProperty(fonts::notify_label, "true");
+    info_grid_layout->addWidget(qlt[info_field], info_field, 1);
+    info_grid_layout->setRowStretch(info_field, 0);
   }
 
   info_wdg->setLayout(info_grid_layout);
 
-  /* Buy button */
+  // Buy button
   buy_button = new QPushButton();
   buy_button->setIcon(fc_icons::instance()->get_icon("help-donate"));
   connect(buy_button, &QAbstractButton::clicked, this, &city_dialog::buy);
 
   connect(lcity_name, &QAbstractButton::clicked, this, &city_dialog::city_rename);
   citizens_label = new city_label(FEELING_FINAL, this);
-  citizen_pixmap = NULL;
+  citizen_pixmap = nullptr;
   view = new city_map(this);
 
   zoom_vbox = new QVBoxLayout();
@@ -1497,7 +1577,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   zoom_vbox->addWidget(zoom_in_button);
   zoom_vbox->addWidget(zoom_out_button);
 
-  /* City map group box */
+  // City map group box
   vbox_layout = new QVBoxLayout;
   hbox_layout = new QHBoxLayout;
   hbox_layout->addStretch(100);
@@ -1509,24 +1589,24 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   map_box->setLayout(vbox_layout);
   map_box->setTitle(_("City map"));
 
-  /* current/supported units/improvements widgets */
+  // Current/supported units/improvements widgets
   supp_units = new QLabel();
   curr_units = new QLabel();
   curr_impr = new QLabel();
-  curr_units->setAlignment(Qt::AlignCenter);
-  curr_impr->setAlignment(Qt::AlignCenter);
-  supp_units->setAlignment(Qt::AlignCenter);
+  curr_units->setAlignment(Qt::AlignLeft);
+  curr_impr->setAlignment(Qt::AlignLeft);
+  supp_units->setAlignment(Qt::AlignLeft);
   supported_units = new unit_info(true);
   scroll = new QScrollArea;
   scroll->setWidgetResizable(true);
-  scroll->setMaximumHeight(tileset_unit_with_upkeep_height(tileset) + 6
+  scroll->setMaximumHeight(tileset_unit_with_upkeep_height(get_tileset()) + 6
                            + scroll->horizontalScrollBar()->height());
   scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scroll->setWidget(supported_units);
   current_units = new unit_info(false);
   scroll2 = new QScrollArea;
   scroll2->setWidgetResizable(true);
-  scroll2->setMaximumHeight(tileset_unit_height(tileset) + 6
+  scroll2->setMaximumHeight(tileset_unit_height(get_tileset()) + 6
                             + scroll2->horizontalScrollBar()->height());
   scroll2->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scroll2->setWidget(current_units);
@@ -1591,7 +1671,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   prod_options->setLayout(prod_option_layout);
   prod_options->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
 
-  /* prev/next and close buttons */
+  // Prev/next and close buttons
   button = new QPushButton;
   button->setIcon(fc_icons::instance()->get_icon("city-close"));
   button->setIconSize(QSize(56, 56));
@@ -1614,7 +1694,6 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   happiness_button->setIcon(fc_icons::instance()->get_icon("city-switch"));
   happiness_button->setIconSize(QSize(56, 28));
   connect(happiness_button, &QAbstractButton::clicked, this, &city_dialog::show_happiness);
-  update_happiness_button();
 
   button->setFixedSize(64, 64);
   prev_city_but->setFixedSize(64, 64);
@@ -1625,18 +1704,25 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   vbox_layout->addWidget(next_city_but);
   vbox_layout->addWidget(button);
   vbox_layout->addWidget(happiness_button, Qt::AlignHCenter);
+
+  counterss_button = new QPushButton();
+  connect(counterss_button, &QAbstractButton::clicked, this, &city_dialog::show_counters);
+  vbox_layout->addWidget(counterss_button, Qt::AlignHCenter);
+
+  update_tabs();
   hbox_layout = new QHBoxLayout;
 
   hbox_layout->addLayout(vbox_layout, Qt::AlignLeft);
   hbox_layout->addWidget(info_wdg, Qt::AlignLeft);
   hbox_layout->addWidget(map_box, Qt::AlignCenter);
 
-  /* Layout with city view and buttons */
+  // Layout with city view and buttons
   lefttop_layout->addWidget(citizens_label, Qt::AlignHCenter);
+  lefttop_layout->addStretch(0);
   lefttop_layout->addLayout(hbox_layout);
-  lefttop_layout->addStretch(1);
+  lefttop_layout->addStretch(50);
 
-  /* Layout for units/buildings */
+  // Layout for units/buildings
   curr_unit_wdg = new QWidget();
   supp_unit_wdg = new QWidget();
   curr_impr_wdg = new QWidget();
@@ -1682,7 +1768,6 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   work_but_layout->addWidget(work_next_but);
   work_but_layout->addWidget(work_prev_but);
   work_but_layout->addWidget(work_rem_but);
-  but_menu_worklist = new QPushButton;
   production_combo_p = new progress_bar(parent);
   production_combo_p->setToolTip(_("Click to change current production"));
   p_table_p = new QTableWidget;
@@ -1717,17 +1802,14 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   vbox_layout->addWidget(production_combo_p);
   vbox_layout->addLayout(work_but_layout);
   vbox_layout->addWidget(p_table_p);
+  qgbprod->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
   qgbprod->setLayout(vbox_layout);
 
-  but_menu_worklist->setText(_("Worklist menu"));
-  but_menu_worklist->setIcon(style()->standardIcon(
-                               QStyle::SP_FileLinkIcon));
   worklist_layout->setSpacing(0);
   worklist_layout->addWidget(qgbprod);
   connect(p_table_p,
           &QWidget::customContextMenuRequested, this,
           &city_dialog::display_worklist_menu);
-  connect(but_menu_worklist, &QAbstractButton::clicked, this, &city_dialog::delete_prod);
   connect(production_combo_p, &progress_bar::clicked, this, &city_dialog::show_targets);
   connect(work_add_but, &QAbstractButton::clicked, this, &city_dialog::show_targets_worklist);
   connect(work_prev_but, &QAbstractButton::clicked, this, &city_dialog::worklist_up);
@@ -1761,7 +1843,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
     gridl->addWidget(lab_table[i], i, 1, 1, 1);
     lab2 = new QLabel(this);
     lab2->setFont(*small_font);
-    lab2->setProperty(fonts::city_label, "true");
+    lab2->setProperty(fonts::notify_label, "true");
     lab2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     lab2->setText(info_list.at(i));
     gridl->addWidget(lab2, i, 0, 1, 1);
@@ -1783,6 +1865,10 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   hbox = new QHBoxLayout;
   gridl = new QGridLayout;
   slider_grid = new QGridLayout;
+
+  counterss_layout = new QVBoxLayout();
+  counterss_frame = new QFrame();
+  counterss_frame->setLayout(counterss_layout);
 
   qpush2
     = new QPushButton(style()->standardIcon(QStyle::SP_DialogSaveButton),
@@ -1819,21 +1905,25 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   hbox->addWidget(cma_info_text);
   result_box->setLayout(hbox);
   str_list << _("Food") << _("Shield") << _("Trade") << _("Gold")
-           << _("Luxury") << _("Science") << _("Celebrate");
+           << _("Luxury") << _("Science") << _("Celebrate")
+           << _("Maximize growth");
   some_label = new QLabel(_("Minimal Surplus"));
-  some_label->setAlignment(Qt::AlignCenter);
-  slider_grid->addWidget(some_label, 0, 1, 1, 2);
+  some_label->setFont(*fc_font::instance()->get_font(fonts::notify_label));
+  some_label->setAlignment(Qt::AlignRight);
+  slider_grid->addWidget(some_label, 0, 0, 1, 3);
   some_label = new QLabel(_("Priority"));
+  some_label->setFont(*fc_font::instance()->get_font(fonts::notify_label));
   some_label->setAlignment(Qt::AlignCenter);
   slider_grid->addWidget(some_label, 0, 3, 1, 2);
 
-  for (int i = 0; i < str_list.count(); i++) {
+  list_size = str_list.count();
+  for (int i = 0; i < list_size; i++) {
     some_label = new QLabel(str_list.at(i));
     slider_grid->addWidget(some_label, i + 1, 0, 1, 1);
     some_label = new QLabel("0");
     some_label->setMinimumWidth(25);
 
-    if (i != str_list.count() - 1) {
+    if (i < list_size - 2) {
       slider = new QSlider(Qt::Horizontal);
       slider->setPageStep(1);
       slider->setFocusPolicy(Qt::TabFocus);
@@ -1845,29 +1935,48 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
       slider->setProperty("FC", QVariant::fromValue((void *)some_label));
 
       connect(slider, &QAbstractSlider::valueChanged, this, &city_dialog::cma_slider);
-    } else {
+    } else if (i == list_size - 2) {
       cma_celeb_checkbox = new QCheckBox;
       slider_grid->addWidget(cma_celeb_checkbox, i + 1, 2 , 1 , 1);
+#ifdef FC_QT6X_MODE
       connect(cma_celeb_checkbox,
-              &QCheckBox::stateChanged, this, &city_dialog::cma_celebrate_changed);
+              &QCheckBox::checkStateChanged, this, &city_dialog::cma_toggle_changed);
+#else  // FC_QT6X_MODE
+      connect(cma_celeb_checkbox,
+              &QCheckBox::stateChanged, this, &city_dialog::cma_toggle_changed_depr);
+#endif // FC_QT6X_MODE
+    } else {
+      fc_assert(i == list_size - 1);
+
+      cma_max_growth = new QCheckBox;
+      slider_grid->addWidget(cma_max_growth, i + 1, 2 , 1 , 1);
+#ifdef FC_QT6X_MODE
+      connect(cma_max_growth,
+              &QCheckBox::checkStateChanged, this, &city_dialog::cma_toggle_changed);
+#else  // FC_QT6X_MODE
+      connect(cma_max_growth,
+              &QCheckBox::stateChanged, this, &city_dialog::cma_toggle_changed_depr);
+#endif // FC_QT6X_MODE
     }
 
-    some_label = new QLabel("0");
-    some_label->setMinimumWidth(25);
-    slider = new QSlider(Qt::Horizontal);
-    slider->setFocusPolicy(Qt::TabFocus);
-    slider->setRange(0, 25);
-    slider_tab[2 * i + 1] = slider;
-    slider->setProperty("FC", QVariant::fromValue((void *)some_label));
-    slider_grid->addWidget(some_label, i + 1, 3, 1, 1);
-    slider_grid->addWidget(slider, i + 1, 4, 1, 1);
-    connect(slider, &QAbstractSlider::valueChanged, this, &city_dialog::cma_slider);
+    if (i <= list_size - 2) {
+      some_label = new QLabel("0");
+      some_label->setMinimumWidth(25);
+      slider = new QSlider(Qt::Horizontal);
+      slider->setFocusPolicy(Qt::TabFocus);
+      slider->setRange(0, 25);
+      slider_tab[2 * i + 1] = slider;
+      slider->setProperty("FC", QVariant::fromValue((void *)some_label));
+      slider_grid->addWidget(some_label, i + 1, 3, 1, 1);
+      slider_grid->addWidget(slider, i + 1, 4, 1, 1);
+      connect(slider, &QAbstractSlider::valueChanged, this, &city_dialog::cma_slider);
+    }
   }
 
   cma_enable_but = new QPushButton();
   cma_enable_but->setFocusPolicy(Qt::TabFocus);
   connect(cma_enable_but, &QAbstractButton::pressed, this, &city_dialog::cma_enable);
-  slider_grid->addWidget(cma_enable_but, O_LAST + 4, 1, 1, 2);
+  slider_grid->addWidget(cma_enable_but, O_LAST + 4, 0, 1, 3);
   slider_grid->addWidget(qpush2, O_LAST + 4, 3, 1, 2);
 
   qsliderbox->setLayout(slider_grid);
@@ -1875,12 +1984,15 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   cma_result_pix = new QLabel;
 
   hbox = new QHBoxLayout;
+  QScrollArea *govA = new QScrollArea();
   hbox->addWidget(cma_result_pix);
   hbox->addWidget(cma_result);
   hbox->addStretch(10);
+  govA->setWidget(qsliderbox);
+  govA->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
   right_layout->addWidget(qgbox);
   right_layout->addLayout(hbox);
-  right_layout->addWidget(qsliderbox);
+  right_layout->addWidget(govA);
 
   split_widget1 = new QWidget;
   split_widget1->setLayout(worklist_layout);
@@ -1888,14 +2000,14 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   split_widget2->setLayout(units_layout);
   prod_unit_splitter->addWidget(split_widget1);
   prod_unit_splitter->addWidget(split_widget2);
-  prod_unit_splitter->setStretchFactor(0, 40);
-  prod_unit_splitter->setStretchFactor(1, 60);
+  prod_unit_splitter->setStretchFactor(0, 3);
+  prod_unit_splitter->setStretchFactor(1, 97);
   prod_unit_splitter->setOrientation(Qt::Horizontal);
   leftbot_layout->addWidget(prod_unit_splitter);
   top_widget = new QWidget;
   top_widget->setLayout(lefttop_layout);
-  top_widget->setSizePolicy(QSizePolicy::MinimumExpanding,
-                            QSizePolicy::Fixed);
+  top_widget->setSizePolicy(QSizePolicy::Minimum,
+                            QSizePolicy::Minimum);
   scroll_info = new QScrollArea();
   scroll_info->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
   scroll_unit = new QScrollArea();
@@ -1909,7 +2021,7 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   scroll_unit->setWidgetResizable(true);
   central_left_splitter->addWidget(scroll_info);
   central_left_splitter->addWidget(scroll_unit);
-  central_left_splitter->setStretchFactor(0, 60);
+  central_left_splitter->setStretchFactor(0, 40);
   central_left_splitter->setStretchFactor(1, 60);
   central_left_splitter->setOrientation(Qt::Vertical);
   left_layout->addWidget(central_left_splitter);
@@ -1920,8 +2032,8 @@ city_dialog::city_dialog(QWidget *parent): qfc_dialog(parent)
   split_widget2->setLayout(right_layout);
   central_splitter->addWidget(split_widget1);
   central_splitter->addWidget(split_widget2);
-  central_splitter->setStretchFactor(0, 80);
-  central_splitter->setStretchFactor(1, 20);
+  central_splitter->setStretchFactor(0, 99);
+  central_splitter->setStretchFactor(1, 1);
   central_splitter->setOrientation(Qt::Horizontal);
   single_page_layout->addWidget(central_splitter);
   setSizeGripEnabled(true);
@@ -1948,12 +2060,12 @@ void city_dialog::change_production(bool next)
   struct universal univ;
 
   pos = 0;
-  cprod = cid_encode(pcity->production);
-  targets_used = collect_eventually_buildable_targets(targets, pcity, false);
-  name_and_sort_items(targets, targets_used, items, false, pcity);
+  cprod = cid_encode(dlgcity->production);
+  targets_used = collect_eventually_buildable_targets(targets, dlgcity, false);
+  name_and_sort_items(targets, targets_used, items, false, dlgcity);
 
   for (item = 0; item < targets_used; item++) {
-    if (can_city_build_now(pcity, &items[item].item)) {
+    if (can_city_build_now(&(wld.map), dlgcity, &items[item].item)) {
       prod_list << cid_encode(items[item].item);
     }
   }
@@ -1974,18 +2086,27 @@ void city_dialog::change_production(bool next)
     pos = prod_list.size() - 1;
   }
   univ = cid_decode(static_cast<cid>(prod_list.at(pos)));
-  city_change_production(pcity, &univ);
+  city_change_production(dlgcity, &univ);
 }
 
 /************************************************************************//**
   Sets tooltip for happiness/pruction button switcher
 ****************************************************************************/
-void city_dialog::update_happiness_button()
+void city_dialog::update_tabs()
 {
-  if (happines_shown == false) {
-    happiness_button->setToolTip(_("Show happiness information"));
-  } else {
+  if (current_tab == happiness) {
     happiness_button->setToolTip(_("Show city production"));
+    counterss_button->setToolTip(_("Show counters information"));
+
+  } else {
+    happiness_button->setToolTip(_("Show happiness information"));
+
+    if (current_tab == counters) {
+      counterss_button->setToolTip(_("Show city production"));
+    }
+    else {
+      counterss_button->setToolTip(_("Show counters information"));
+    }
   }
 }
 
@@ -1994,57 +2115,94 @@ void city_dialog::update_happiness_button()
 ****************************************************************************/
 void city_dialog::show_happiness()
 {
+  QWidget *active_tab = current_tab == counters ? (QWidget*) counterss_frame : prod_unit_splitter;
   setUpdatesEnabled(false);
 
-  if (happines_shown == false) {
-    leftbot_layout->replaceWidget(prod_unit_splitter,
+
+  if (current_tab != happiness) {
+    leftbot_layout->replaceWidget(active_tab,
                                   happiness_widget,
                                   Qt::FindDirectChildrenOnly);
-    prod_unit_splitter->hide();
+    active_tab->hide();
     happiness_widget->show();
     happiness_widget->updateGeometry();
+    current_tab = happiness;
   } else {
+    /* We do not change prod_unit_splitter to current_tab,
+     * because happiness is active tab and clicked -
+     * switching to default */
     leftbot_layout->replaceWidget(happiness_widget,
                                   prod_unit_splitter,
                                   Qt::FindDirectChildrenOnly);
     prod_unit_splitter->show();
     prod_unit_splitter->updateGeometry();
     happiness_widget->hide();
+    current_tab = common;
   }
 
   setUpdatesEnabled(true);
   update();
-  happines_shown = !happines_shown;
-  update_happiness_button();
+  update_tabs();
 }
 
+/************************************************************************//**
+  Shows counters tab
+****************************************************************************/
+void city_dialog::show_counters()
+{
+  QWidget *active_tab = current_tab == happiness ? happiness_widget : prod_unit_splitter;
+  setUpdatesEnabled(false);
+
+
+  if (current_tab != counters) {
+    leftbot_layout->replaceWidget(active_tab,
+                                  counterss_frame,
+                                  Qt::FindDirectChildrenOnly);
+    active_tab->hide();
+    counterss_frame->show();
+    counterss_frame->updateGeometry();
+    current_tab = counters;
+  } else {
+    /* We do not change prod_unit_splitter to current_tab,
+     * because counters is active tab and clicked -
+     * switching to default */
+    leftbot_layout->replaceWidget(counterss_frame,
+                                  prod_unit_splitter,
+                                  Qt::FindDirectChildrenOnly);
+    prod_unit_splitter->show();
+    prod_unit_splitter->updateGeometry();
+    counterss_frame->hide();
+    current_tab = common;
+  }
+
+  setUpdatesEnabled(true);
+  update();
+  update_tabs();
+}
 
 /************************************************************************//**
   Updates buttons/widgets which should be enabled/disabled
 ****************************************************************************/
 void city_dialog::update_disabled()
 {
-  if (NULL == client.conn.playing
-      || city_owner(pcity) != client.conn.playing) {
+  struct player *pplayer = client_player();
+
+  if (pplayer == nullptr
+      || city_owner(dlgcity) != pplayer) {
     prev_city_but->setDisabled(true);
     next_city_but->setDisabled(true);
     buy_button->setDisabled(true);
     cma_enable_but->setDisabled(true);
     production_combo_p->setDisabled(true);
-    but_menu_worklist->setDisabled(true);
     current_units->setDisabled(true);
     supported_units->setDisabled(true);
     view->setDisabled(true);
-
-    if (!client_is_observer()) {
-    }
   } else {
     prev_city_but->setEnabled(true);
     next_city_but->setEnabled(true);
     buy_button->setEnabled(true);
     cma_enable_but->setEnabled(true);
     production_combo_p->setEnabled(true);
-    but_menu_worklist->setEnabled(true);
     current_units->setEnabled(true);
     supported_units->setEnabled(true);
     view->setEnabled(true);
@@ -2064,12 +2222,15 @@ void city_dialog::update_disabled()
 ****************************************************************************/
 void city_dialog::update_prod_buttons()
 {
+  struct player *pplayer = client_player();
+
   work_next_but->setDisabled(true);
   work_prev_but->setDisabled(true);
   work_add_but->setDisabled(true);
   work_rem_but->setDisabled(true);
 
-  if (client.conn.playing && city_owner(pcity) == client.conn.playing) {
+  if (pplayer != nullptr
+      && city_owner(dlgcity) == pplayer) {
     work_add_but->setEnabled(true);
 
     if (selected_row_p >= 0 && selected_row_p < p_table_p->rowCount()) {
@@ -2103,6 +2264,19 @@ city_dialog::~city_dialog()
   supported_units->clear_layout();
   removeEventFilter(this);
   ::city_dlg_created = false;
+
+  // Delete the one widget that currently does NOT have a parent
+  if (current_tab == common) {
+    delete happiness_widget;
+    delete counterss_frame;
+  }
+  else if (current_tab == counters) {
+    delete happiness_widget;
+    delete prod_unit_splitter;
+  }else {
+    delete counterss_frame;
+    delete prod_unit_splitter;
+  }
 }
 
 /************************************************************************//**
@@ -2121,13 +2295,14 @@ void city_dialog::hideEvent(QHideEvent *event)
 ****************************************************************************/
 void city_dialog::showEvent(QShowEvent *event)
 {
-  if (gui()->qt_settings.city_geometry.isNull() == false) {
+  if (!gui()->qt_settings.city_geometry.isNull()) {
     restoreGeometry(gui()->qt_settings.city_geometry);
     prod_unit_splitter->restoreState(gui()->qt_settings.city_splitter1);
     central_left_splitter->restoreState(gui()->qt_settings.city_splitter2);
     central_splitter->restoreState(gui()->qt_settings.city_splitter3);
   } else {
-    QRect rect = QApplication::desktop()->screenGeometry();
+    QRect rect = QApplication::primaryScreen()->availableGeometry();
+
     resize((rect.width() * 4) / 5, (rect.height() * 5) / 6);
   }
 }
@@ -2144,7 +2319,7 @@ void city_dialog::closeEvent(QCloseEvent *event)
 }
 
 /************************************************************************//**
-  Event filter for catching keybaord events
+  Event filter for catching keyboard events
 ****************************************************************************/
 bool city_dialog::eventFilter(QObject *obj, QEvent *event)
 {
@@ -2185,13 +2360,29 @@ bool city_dialog::eventFilter(QObject *obj, QEvent *event)
 ****************************************************************************/
 void city_dialog::city_rename()
 {
-  hud_input_box ask(gui()->central_wdg);
+  hud_input_box *ask;
+  const int city_id = dlgcity->id;
 
-  ask.set_text_title_definput(_("What should we rename the city to?"),
-                              _("Rename City"), city_name_get(pcity));
-  if (ask.exec() == QDialog::Accepted) {
-    ::city_rename(pcity, ask.input_edit.text().toLocal8Bit().data());
+  if (!can_client_issue_orders()) {
+    return;
   }
+
+  ask = new hud_input_box(gui()->central_wdg);
+  ask->set_text_title_definput(_("What should we rename the city to?"),
+                               _("Rename City"), city_name_get(dlgcity));
+  ask->setAttribute(Qt::WA_DeleteOnClose);
+  connect(ask, &hud_message_box::accepted, this, [=]() {
+    struct city *pcity = game_city_by_number(city_id);
+    QByteArray ask_bytes;
+
+    if (!pcity) {
+      return;
+    }
+
+    ask_bytes = ask->input_edit.text().toUtf8();
+    ::city_rename(pcity, ask_bytes.data());
+  });
+  ask->show();
 }
 
 /************************************************************************//**
@@ -2200,8 +2391,8 @@ void city_dialog::city_rename()
 void city_dialog::zoom_in()
 {
   zoom = zoom * 1.2;
-  if (pcity) {
-    view->set_pixmap(pcity, zoom);
+  if (dlgcity) {
+    view->set_pixmap(dlgcity, zoom);
   }
   updateGeometry();
   left_layout->update();
@@ -2213,8 +2404,8 @@ void city_dialog::zoom_in()
 void city_dialog::zoom_out()
 {
   zoom = zoom / 1.2;
-  if (pcity) {
-    view->set_pixmap(pcity, zoom);
+  if (dlgcity) {
+    view->set_pixmap(dlgcity, zoom);
   }
   updateGeometry();
   left_layout->update();
@@ -2225,19 +2416,22 @@ void city_dialog::zoom_out()
 ****************************************************************************/
 void city_dialog::save_cma()
 {
-  struct cm_parameter param;
-  QString text;
-  hud_input_box ask(gui()->central_wdg);
+  hud_input_box *ask = new hud_input_box(gui()->central_wdg);
 
-  ask.set_text_title_definput(_("What should we name the preset?"),
-                              _("Name new preset"),
-                              _("new preset"));
-  if (ask.exec() == QDialog::Accepted) {
-    text = ask.input_edit.text().toLocal8Bit().data();
+  ask->set_text_title_definput(_("What should we name the preset?"),
+                               _("Name new preset"),
+                               _("new preset"));
+  ask->setAttribute(Qt::WA_DeleteOnClose);
+  connect(ask, &hud_message_box::accepted, this,
+          CAPTURE_DEFAULT_THIS () {
+    struct cm_parameter param;
+    QByteArray ask_bytes = ask->input_edit.text().toUtf8();
+    QString text = ask_bytes.data();
     if (!text.isEmpty()) {
       param.allow_disorder = false;
       param.allow_specialists = true;
       param.require_happy = cma_celeb_checkbox->isChecked();
+      param.max_growth = cma_max_growth->isChecked();
       param.happy_factor = slider_tab[2 * O_LAST + 1]->value();
 
       for (int i = O_FOOD; i < O_LAST; i++) {
@@ -2245,10 +2439,12 @@ void city_dialog::save_cma()
         param.factor[i] = slider_tab[2 * i + 1]->value();
       }
 
-      cmafec_preset_add(text.toLocal8Bit().data(), &param);
+      ask_bytes = text.toUtf8();
+      cmafec_preset_add(ask_bytes.data(), &param);
       update_cma_tab();
     }
-  }
+  });
+  ask->show();
 }
 
 /************************************************************************//**
@@ -2256,8 +2452,9 @@ void city_dialog::save_cma()
 ****************************************************************************/
 void city_dialog::cma_enable()
 {
-  if (cma_is_city_under_agent(pcity, NULL)) {
-    cma_release_city(pcity);
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
+    cma_release_city(dlgcity);
+
     return;
   }
 
@@ -2275,6 +2472,7 @@ void city_dialog::cma_changed()
   param.allow_disorder = false;
   param.allow_specialists = true;
   param.require_happy = cma_celeb_checkbox->isChecked();
+  param.max_growth = cma_max_growth->isChecked();
   param.happy_factor = slider_tab[2 * O_LAST + 1]->value();
 
   for (int i = O_FOOD; i < O_LAST; i++) {
@@ -2282,7 +2480,7 @@ void city_dialog::cma_changed()
     param.factor[i] = slider_tab[2 * i + 1]->value();
   }
 
-  cma_put_city_under_agent(pcity, &param);
+  cma_put_city_under_agent(dlgcity, &param);
 }
 
 /************************************************************************//**
@@ -2292,12 +2490,15 @@ void city_dialog::cma_double_clicked(int row, int column)
 {
   const struct cm_parameter *param;
 
+  if (!can_client_issue_orders()) {
+    return;
+  }
   param = cmafec_preset_get_parameter(row);
-  if (cma_is_city_under_agent(pcity, NULL)) {
-    cma_release_city(pcity);
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
+    cma_release_city(dlgcity);
   }
 
-  cma_put_city_under_agent(pcity, param);
+  cma_put_city_under_agent(dlgcity, param);
   update_cma_tab();
 }
 
@@ -2325,9 +2526,9 @@ void city_dialog::cma_selected(const QItemSelection &sl,
   param = cmafec_preset_get_parameter(ind);
   update_sliders();
 
-  if (cma_is_city_under_agent(pcity, NULL)) {
-    cma_release_city(pcity);
-    cma_put_city_under_agent(pcity, param);
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
+    cma_release_city(dlgcity);
+    cma_put_city_under_agent(dlgcity, param);
   }
 }
 
@@ -2342,7 +2543,7 @@ void city_dialog::update_sliders()
   QVariant qvar;
   QLabel *label;
 
-  if (cma_is_city_under_agent(pcity, &param) == false) {
+  if (!cma_is_city_under_agent(dlgcity, &param)) {
     if (cma_table->currentRow() == -1 || cmafec_preset_num() == 0) {
       return;
     }
@@ -2374,6 +2575,9 @@ void city_dialog::update_sliders()
   cma_celeb_checkbox->blockSignals(true);
   cma_celeb_checkbox->setChecked(param.require_happy);
   cma_celeb_checkbox->blockSignals(false);
+  cma_max_growth->blockSignals(true);
+  cma_max_growth->setChecked(param.max_growth);
+  cma_max_growth->blockSignals(false);
 
   for (output = O_FOOD; output < 2 * O_LAST; output++) {
     slider_tab[output]->blockSignals(false);
@@ -2408,16 +2612,17 @@ void city_dialog::update_cma_tab()
     cma_table->setItem(0, 0, item);
   }
 
-  if (cma_is_city_under_agent(pcity, NULL)) {
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
     view->update();
-    s = QString(cmafec_get_short_descr_of_city(pcity));
+    s = QString(cmafec_get_short_descr_of_city(dlgcity));
     pix = style()->standardPixmap(QStyle::SP_DialogApplyButton);
     pix = pix.scaled(2 * pix.width(), 2 * pix.height(),
                      Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     cma_result_pix->setPixmap(pix);
     cma_result_pix->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    /* TRANS: %1 is custom string chosen by player */
-    cma_result->setText(QString(_("<h3>Governor Enabled<br>(%1)</h3>")).arg(s));
+    // TRANS: %1 is custom string chosen by player
+    cma_result->setText(QString(_("<h3>Governor Enabled<br>(%1)</h3>"))
+                        .arg(s.toHtmlEscaped()));
     cma_result->setAlignment(Qt::AlignCenter);
   } else {
     pix = style()->standardPixmap(QStyle::SP_DialogCancelButton);
@@ -2429,8 +2634,8 @@ void city_dialog::update_cma_tab()
     cma_result->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
   }
 
-  if (cma_is_city_under_agent(pcity, NULL)) {
-    cmafec_get_fe_parameter(pcity, &param);
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
+    cmafec_get_fe_parameter(dlgcity, &param);
     i = cmafec_preset_get_index_of_parameter(const_cast <struct
                                              cm_parameter *const >(&param));
     if (i >= 0 && i < cma_table->rowCount()) {
@@ -2452,8 +2657,7 @@ void city_dialog::update_cma_tab()
 void city_dialog::cma_remove()
 {
   int i;
-  hud_message_box ask(city_dlg);
-  int ret;
+  hud_message_box *ask;
 
   i = cma_table->currentRow();
 
@@ -2461,28 +2665,37 @@ void city_dialog::cma_remove()
     return;
   }
 
-  ask.set_text_title(_("Remove this preset?"), cmafec_preset_get_descr(i));
-  ask.setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
-  ask.setDefaultButton(QMessageBox::Cancel);
-  ret = ask.exec();
-
-  switch (ret) {
-  case QMessageBox::Cancel:
-    return;
-
-  case QMessageBox::Ok:
+  ask = new hud_message_box(city_dlg);
+  ask->set_text_title(_("Remove this preset?"), cmafec_preset_get_descr(i));
+  ask->setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
+  ask->setDefaultButton(QMessageBox::Cancel);
+  ask->setAttribute(Qt::WA_DeleteOnClose);
+  connect(ask, &hud_message_box::accepted, this,
+          CAPTURE_DEFAULT_THIS () {
     cmafec_preset_remove(i);
     update_cma_tab();
-    break;
+  });
+  ask->show();
+}
+
+/************************************************************************//**
+  CMA option 'celebrate' or 'max_growth' QCheckBox state has been changed.
+****************************************************************************/
+void city_dialog::cma_toggle_changed(Qt::CheckState state)
+{
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
+    cma_changed();
+    update_cma_tab();
   }
 }
 
 /************************************************************************//**
-  CMA option 'celebrate' qcheckbox state has been changed
+  CMA option 'celebrate' or 'max_growth' QCheckBox state has been changed.
+  This deprecated slot is used on Qt < 6.7.
 ****************************************************************************/
-void city_dialog::cma_celebrate_changed(int val)
+void city_dialog::cma_toggle_changed_depr(int state)
 {
-  if (cma_is_city_under_agent(pcity, NULL)) {
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
     cma_changed();
     update_cma_tab();
   }
@@ -2507,29 +2720,30 @@ void city_dialog::cma_slider(int value)
   label = reinterpret_cast<QLabel *>(qvar.value<void *>());
   label->setText(QString::number(value));
 
-  if (cma_is_city_under_agent(pcity, NULL)) {
+  if (cma_is_city_under_agent(dlgcity, nullptr)) {
     cma_changed();
     update_cma_tab();
   }
 }
 
 /************************************************************************//**
-  Received signal about changed qcheckbox - disband at size 1
+  Received signal about changed checkbox - allow disbanding city
 ****************************************************************************/
-void city_dialog::disband_state_changed(int state)
+void city_dialog::disband_state_changed(bool allow_disband)
 {
   bv_city_options new_options;
 
   BV_CLR_ALL(new_options);
 
-  if (state == Qt::Checked) {
+  if (allow_disband) {
     BV_SET(new_options, CITYO_DISBAND);
-  } else if (state == Qt::Unchecked) {
+  } else {
     BV_CLR(new_options, CITYO_DISBAND);
   }
 
   if (!client_is_observer()) {
-    dsend_packet_city_options_req(&client.conn, pcity->id, new_options);
+    dsend_packet_city_options_req(&client.conn, dlgcity->id,
+                                  new_options, dlgcity->wlcb);
   }
 }
 
@@ -2538,17 +2752,19 @@ void city_dialog::disband_state_changed(int state)
 ****************************************************************************/
 void city_dialog::cma_context_menu(const QPoint &p)
 {
-  QMenu cma_menu(this);
+  QMenu *cma_menu = new QMenu(this);
   QAction *cma_del_item;
-  QAction *act;
 
-  cma_del_item = cma_menu.addAction(_("Remove Governor"));
-  act = cma_menu.exec(QCursor::pos());
+  cma_menu->setAttribute(Qt::WA_DeleteOnClose);
+  cma_del_item = cma_menu->addAction(_("Remove Governor"));
+  connect(cma_menu, &QMenu::triggered, this,
+          CAPTURE_DEFAULT_THIS (QAction *act) {
+    if (act == cma_del_item) {
+      cma_remove();
+    }
+  });
 
-  if (act == cma_del_item) {
-    cma_remove();
-  }
-
+  cma_menu->popup(QCursor::pos());
 }
 
 /************************************************************************//**
@@ -2556,31 +2772,27 @@ void city_dialog::cma_context_menu(const QPoint &p)
 ****************************************************************************/
 void city_dialog::display_worklist_menu(const QPoint &p)
 {
-  bool worklist_defined = true;
-  cid c_id;
-  int which_menu;
-  QAction *act;
   QAction *action;
   QAction *disband;
   QAction *wl_save;
-  QAction wl_clear(_("Clear"), 0);
-  QAction wl_empty(_("(no worklists defined)"), 0);
+  QAction *wl_clear;
+  QAction *wl_empty;
   QMap<QString, cid> list;
   QMap<QString, cid>::const_iterator map_iter;
-  QMenu *add_menu;
+  QMenu *change_menu;
   QMenu *insert_menu;
-  QMenu list_menu(this);
+  QMenu *list_menu;
   QMenu *options_menu;
-  QVariant qvar;
+  int city_id = dlgcity->id;
 
   if (!can_client_issue_orders()) {
     return;
   }
-
-  add_menu = list_menu.addMenu(_("Change worklist"));
-  insert_menu = list_menu.addMenu(_("Insert worklist"));
-  connect(&wl_clear, &QAction::triggered, this, &city_dialog::clear_worklist);
-  list_menu.addAction(&wl_clear);
+  list_menu = new QMenu(this);
+  change_menu = list_menu->addMenu(_("Change worklist"));
+  insert_menu = list_menu->addMenu(_("Insert worklist"));
+  wl_clear = list_menu->addAction(_("Clear"));
+  connect(wl_clear, &QAction::triggered, this, &city_dialog::clear_worklist);
   list.clear();
 
   global_worklists_iterate(pgwl) {
@@ -2588,69 +2800,63 @@ void city_dialog::display_worklist_menu(const QPoint &p)
   } global_worklists_iterate_end;
 
   if (list.count() == 0) {
-    add_menu->addAction(&wl_empty);
-    insert_menu->addAction(&wl_empty);
-    worklist_defined = false;
+    wl_empty = change_menu->addAction(_("(no worklists defined)"));
+    insert_menu->addAction(wl_empty);
   }
 
   map_iter = list.constBegin();
 
   while (map_iter != list.constEnd()) {
-    action = add_menu->addAction(map_iter.key());
+    action = change_menu->addAction(map_iter.key());
     action->setData(map_iter.value());
-    action->setProperty("FC", 1);
+
     action = insert_menu->addAction(map_iter.key());
     action->setData(map_iter.value());
-    action->setProperty("FC", 2);
+
     map_iter++;
   }
 
-  wl_save = list_menu.addAction(_("Save worklist"));
-  options_menu = list_menu.addMenu(_("Options"));
-  disband = options_menu->addAction(_("Disband at size 1"));
+  wl_save = list_menu->addAction(_("Save worklist"));
+  connect(wl_save, &QAction::triggered, this, &city_dialog::save_worklist);
+  options_menu = list_menu->addMenu(_("Options"));
+  disband = options_menu->addAction(_("Allow disbanding city"));
   disband->setCheckable(true);
-  disband->setChecked(is_city_option_set(pcity, CITYO_DISBAND));
+  disband->setChecked(is_city_option_set(dlgcity, CITYO_DISBAND));
+  connect(disband, &QAction::triggered, this,
+          &city_dialog::disband_state_changed);
 
-  act = 0;
-  act = list_menu.exec(QCursor::pos());
+  connect(change_menu, &QMenu::triggered, this, [=](QAction *act) {
+    QVariant id = act->data();
+    struct city *pcity = game_city_by_number(city_id);
+    const struct worklist *worklist;
 
-  if (act) {
-    if (act == disband) {
-      int state;
-
-      if (disband->isChecked()) {
-        state = Qt::Checked;
-      } else {
-        state = Qt::Unchecked;
-      }
-
-      disband_state_changed(state);
-    }
-    if (act == wl_save) {
-      save_worklist();
-      return;
-    }
-    qvar = act->property("FC");
-
-    if (!qvar.isValid() || qvar.isNull() || !worklist_defined) {
+    if (!pcity) {
       return;
     }
 
-    which_menu = qvar.toInt();
-    qvar = act->data();
-    c_id = qvar.toInt();
+    fc_assert_ret(id.typeId() == QMetaType::Int);
 
-    if (which_menu == 1) { /* Change Worklist */
-      city_set_queue(pcity,
-                     global_worklist_get(global_worklist_by_id(c_id)));
-    } else if (which_menu == 2) { /* Insert Worklist */
-      if (worklist_defined) {
-        city_queue_insert_worklist(pcity, selected_row_p + 1,
-                                   global_worklist_get(global_worklist_by_id(
-                                         c_id)));
-      }
+    worklist = global_worklist_get(global_worklist_by_id(id.toInt()));
+    city_set_queue(pcity, worklist);
+  });
+
+  connect(insert_menu, &QMenu::triggered, this,
+          CAPTURE_DEFAULT_THIS (QAction *act) {
+    QVariant id = act->data();
+    struct city *pcity = game_city_by_number(city_id);
+    const struct worklist *worklist;
+
+    if (!pcity) {
+      return;
     }
-  }
+
+    fc_assert_ret(id.typeId() == QMetaType::Int);
+
+    worklist = global_worklist_get(global_worklist_by_id(id.toInt()));
+    city_queue_insert_worklist(pcity, selected_row_p + 1, worklist);
+  });
+
+  list_menu->popup(QCursor::pos());
 }
 
 /************************************************************************//**
@@ -2660,15 +2866,16 @@ void city_dialog::update_buy_button()
 {
   QString str;
   int value;
+  struct player *pplayer = client_player();
 
   buy_button->setDisabled(true);
 
-  if (!client_is_observer() && client.conn.playing != NULL) {
-    value = city_production_buy_gold_cost(pcity);
+  if (!client_is_observer() && pplayer != nullptr) {
+    value = dlgcity->client.buy_cost;
     str = QString(PL_("Buy (%1 gold)", "Buy (%1 gold)",
                       value)).arg(QString::number(value));
 
-    if (client.conn.playing->economic.gold >= value && value != 0) {
+    if (pplayer->economic.gold >= value && value != 0) {
       buy_button->setEnabled(true);
     }
   } else {
@@ -2687,7 +2894,7 @@ void city_dialog::update_citizens()
   int i, j, width, height;
   QPainter p;
   QPixmap *pix;
-  int num_citizens = get_city_citizen_types(pcity, FEELING_FINAL, categories);
+  int num_citizens = get_city_citizen_types(dlgcity, FEELING_FINAL, categories);
   int w = tileset_small_sprite_width(tileset) / gui()->map_scale;
   int h = tileset_small_sprite_height(tileset) / gui()->map_scale;
 
@@ -2707,27 +2914,27 @@ void city_dialog::update_citizens()
 
   for (j = 0, i = 0; i < num_citizens; i++, j++) {
     dest_rect.moveTo(i * w, 0);
-    pix = get_citizen_sprite(tileset, categories[j], j, pcity)->pm;
+    pix = get_citizen_sprite(tileset, categories[j], j, dlgcity)->pm;
     p.begin(citizen_pixmap);
     p.drawPixmap(dest_rect, *pix, source_rect);
     p.end();
   }
 
-  citizens_label->set_city(pcity);
+  citizens_label->set_city(dlgcity);
   citizens_label->setPixmap(*citizen_pixmap);
 
   lab_table[FEELING_FINAL]->setPixmap(*citizen_pixmap);
-  lab_table[FEELING_FINAL]->setToolTip(text_happiness_wonders(pcity));
+  lab_table[FEELING_FINAL]->setToolTip(text_happiness_wonders(dlgcity));
 
   for (int k = 0; k < FEELING_LAST - 1; k++) {
-    lab_table[k]->set_city(pcity);
-    num_citizens = get_city_citizen_types(pcity,
+    lab_table[k]->set_city(dlgcity);
+    num_citizens = get_city_citizen_types(dlgcity,
                                           static_cast<citizen_feeling>(k),
                                           categories);
 
     for (j = 0, i = 0; i < num_citizens; i++, j++) {
       dest_rect.moveTo(i * w, 0);
-      pix = get_citizen_sprite(tileset, categories[j], j, pcity)->pm;
+      pix = get_citizen_sprite(tileset, categories[j], j, dlgcity)->pm;
       p.begin(citizen_pixmap);
       p.drawPixmap(dest_rect, *pix, source_rect);
       p.end();
@@ -2737,23 +2944,23 @@ void city_dialog::update_citizens()
 
     switch (k) {
     case FEELING_BASE:
-      lab_table[k]->setToolTip(text_happiness_cities(pcity));
+      lab_table[k]->setToolTip(text_happiness_cities(dlgcity));
       break;
 
     case FEELING_LUXURY:
-      lab_table[k]->setToolTip(text_happiness_luxuries(pcity));
+      lab_table[k]->setToolTip(text_happiness_luxuries(dlgcity));
       break;
 
     case FEELING_EFFECT :
-      lab_table[k]->setToolTip(text_happiness_buildings(pcity));
+      lab_table[k]->setToolTip(text_happiness_buildings(dlgcity));
       break;
 
     case FEELING_NATIONALITY:
-      lab_table[k]->setToolTip(text_happiness_nationality(pcity));
+      lab_table[k]->setToolTip(text_happiness_nationality(dlgcity));
       break;
 
     case FEELING_MARTIAL:
-      lab_table[k]->setToolTip(text_happiness_units(pcity));
+      lab_table[k]->setToolTip(text_happiness_units(dlgcity));
       break;
 
     default:
@@ -2770,14 +2977,15 @@ void city_dialog::refresh()
   setUpdatesEnabled(false);
   production_combo_p->blockSignals(true);
 
-  if (pcity) {
-    view->set_pixmap(pcity, zoom);
+  if (dlgcity) {
+    view->set_pixmap(dlgcity, zoom);
     view->update();
     update_title();
     update_info_label();
     update_buy_button();
     update_citizens();
     update_building();
+    update_counters_table();
     update_improvements();
     update_units();
     update_nation_table();
@@ -2793,6 +3001,47 @@ void city_dialog::refresh()
   update();
 }
 
+/************************************************************************//**
+  Updates counters table
+****************************************************************************/
+void city_dialog::update_counters_table()
+{
+  QFont *small_font;
+
+  small_font = fc_font::instance()->get_font(fonts::notify_label);
+
+  qDeleteAll(counterss_frame->findChildren<QWidget*>("", Qt::FindDirectChildrenOnly));
+  city_counters_iterate(pcount) {
+    QString helptext;
+    char buf[1024];
+    QLabel *name, *value, *activated, *help;
+
+    name = new QLabel(name_translation_get(&pcount->name));
+    fc_snprintf(buf, sizeof(buf), _("Current value is: %d"),
+                dlgcity->counter_values[counter_index(pcount)]);
+    value = new QLabel(buf);
+    fc_snprintf(buf, sizeof(buf), _("Activated once value equal "
+                                    "or higher than: %d"),
+                pcount->checkpoint);
+    activated = new QLabel(buf);
+    if (pcount->helptext != nullptr) {
+      strvec_iterate(pcount->helptext, text_) {
+        helptext += text_;
+      } strvec_iterate_end;
+    }
+    help = new QLabel(helptext);
+
+    name->setFont(*small_font);
+    value->setFont(*small_font);
+    activated->setFont(*small_font);
+    help->setFont(*small_font);
+
+    counterss_layout->addWidget(name);
+    counterss_layout->addWidget(value);
+    counterss_layout->addWidget(activated);
+    counterss_layout->addWidget(help);
+  } city_counters_iterate_end;
+}
 
 /************************************************************************//**
   Updates nationality table in happiness tab
@@ -2801,7 +3050,7 @@ void city_dialog::update_nation_table()
 {
   QFont f = QApplication::font();
   QFontMetrics fm(f);
-  QPixmap *pix = NULL;
+  QPixmap *pix = nullptr;
   QPixmap pix_scaled;
   QString str;
   QStringList info_list;
@@ -2819,7 +3068,7 @@ void city_dialog::update_nation_table()
   info_list << _("#") << _("Flag") << _("Nation");
   nationality_table->setHorizontalHeaderLabels(info_list);
 
-  citizens_iterate(pcity, pslot, nationality) {
+  citizens_iterate(dlgcity, pslot, nationality) {
     nationality_table->insertRow(i);
 
     for (int j = 0; j < nationality_table->columnCount(); j++) {
@@ -2827,7 +3076,7 @@ void city_dialog::update_nation_table()
 
       switch (j) {
       case 0:
-        nationality_i = citizens_nation_get(pcity, pslot);
+        nationality_i = citizens_nation_get(dlgcity, pslot);
 
         if (nationality_i == 0) {
           str = "-";
@@ -2844,7 +3093,7 @@ void city_dialog::update_nation_table()
                                         nation_of_player
                                         (player_slot_get_player(pslot)));
 
-        if (sprite != NULL) {
+        if (sprite != nullptr) {
           pix = sprite->pm;
           pix_scaled = pix->scaledToHeight(h);
           item->setData(Qt::DecorationRole, pix_scaled);
@@ -2878,94 +3127,116 @@ void city_dialog::update_info_label()
 {
   int illness = 0;
   char buffer[512];
-  char buf[2 * NUM_INFO_FIELDS][512];
+  char buf_info[NUM_INFO_FIELDS][512];
+  char buf_tooltip[NUM_INFO_FIELDS][512];
   int granaryturns;
+  int spec;
 
-  enum { FOOD = 0, SHIELD = 2, TRADE = 4, GOLD = 6, LUXURY = 8, SCIENCE = 10,
-         GRANARY = 12, GROWTH = 14, CORRUPTION = 16, WASTE = 18,
-         CULTURE = 20, POLLUTION = 22, ILLNESS = 24
-       };
+  for (int i = 0; i < NUM_INFO_FIELDS; i++) {
+    buf_info[i][0] = '\0';
+    buf_tooltip[i][0] = '\0';
+  }
 
-  /* fill the buffers with the necessary info */
-  fc_snprintf(buf[FOOD], sizeof(buf[FOOD]), "%3d (%+4d)",
-              pcity->prod[O_FOOD], pcity->surplus[O_FOOD]);
-  fc_snprintf(buf[SHIELD], sizeof(buf[SHIELD]), "%3d (%+4d)",
-              pcity->prod[O_SHIELD] + pcity->waste[O_SHIELD],
-              pcity->surplus[O_SHIELD]);
-  fc_snprintf(buf[TRADE], sizeof(buf[TRADE]), "%3d (%+4d)",
-              pcity->surplus[O_TRADE] + pcity->waste[O_TRADE],
-              pcity->surplus[O_TRADE]);
-  fc_snprintf(buf[GOLD], sizeof(buf[GOLD]), "%3d (%+4d)",
-              pcity->prod[O_GOLD], pcity->surplus[O_GOLD]);
-  fc_snprintf(buf[LUXURY], sizeof(buf[LUXURY]), "%3d",
-              pcity->prod[O_LUXURY]);
-  fc_snprintf(buf[SCIENCE], sizeof(buf[SCIENCE]), "%3d",
-              pcity->prod[O_SCIENCE]);
-  fc_snprintf(buf[GRANARY], sizeof(buf[GRANARY]), "%4d/%-4d",
-              pcity->food_stock, city_granary_size(city_size_get(pcity)));
+  // Fill the buffers with the necessary info
+  spec = city_specialists(dlgcity);
+  fc_snprintf(buf_info[INFO_CITIZEN], sizeof(buf_info[INFO_CITIZEN]),
+              "%3d (%4d)", dlgcity->size, spec);
+  fc_snprintf(buf_tooltip[INFO_CITIZEN], sizeof(buf_tooltip[INFO_CITIZEN]),
+              _("Population: %d, Specialists: %d"),
+              dlgcity->size, spec);
+  fc_snprintf(buf_info[INFO_FOOD], sizeof(buf_info[INFO_FOOD]), "%3d (%+4d)",
+              dlgcity->prod[O_FOOD], dlgcity->surplus[O_FOOD]);
+  fc_snprintf(buf_info[INFO_SHIELD], sizeof(buf_info[INFO_SHIELD]),
+              "%3d (%+4d)", dlgcity->prod[O_SHIELD] + dlgcity->waste[O_SHIELD],
+              dlgcity->surplus[O_SHIELD]);
+  fc_snprintf(buf_info[INFO_TRADE], sizeof(buf_info[INFO_TRADE]), "%3d (%+4d)",
+              dlgcity->surplus[O_TRADE] + dlgcity->waste[O_TRADE],
+              dlgcity->surplus[O_TRADE]);
+  fc_snprintf(buf_info[INFO_GOLD], sizeof(buf_info[INFO_GOLD]), "%3d (%+4d)",
+              dlgcity->prod[O_GOLD], dlgcity->surplus[O_GOLD]);
+  fc_snprintf(buf_info[INFO_LUXURY], sizeof(buf_info[INFO_LUXURY]), "%3d",
+              dlgcity->prod[O_LUXURY]);
+  fc_snprintf(buf_info[INFO_SCIENCE], sizeof(buf_info[INFO_SCIENCE]), "%3d",
+              dlgcity->prod[O_SCIENCE]);
+  fc_snprintf(buf_info[INFO_GRANARY], sizeof(buf_info[INFO_GRANARY]),
+              "%4d/%-4d", dlgcity->food_stock,
+              city_granary_size(city_size_get(dlgcity)));
 
-  get_city_dialog_output_text(pcity, O_FOOD, buf[FOOD + 1],
-                              sizeof(buf[FOOD + 1]));
-  get_city_dialog_output_text(pcity, O_SHIELD, buf[SHIELD + 1],
-                              sizeof(buf[SHIELD + 1]));
-  get_city_dialog_output_text(pcity, O_TRADE, buf[TRADE + 1],
-                              sizeof(buf[TRADE + 1]));
-  get_city_dialog_output_text(pcity, O_GOLD, buf[GOLD + 1],
-                              sizeof(buf[GOLD + 1]));
-  get_city_dialog_output_text(pcity, O_SCIENCE, buf[SCIENCE + 1],
-                              sizeof(buf[SCIENCE + 1]));
-  get_city_dialog_output_text(pcity, O_LUXURY, buf[LUXURY + 1],
-                              sizeof(buf[LUXURY + 1]));
-  get_city_dialog_culture_text(pcity, buf[CULTURE + 1],
-                               sizeof(buf[CULTURE + 1]));
-  get_city_dialog_pollution_text(pcity, buf[POLLUTION + 1],
-                                 sizeof(buf[POLLUTION + 1]));
-  get_city_dialog_illness_text(pcity, buf[ILLNESS + 1],
-                               sizeof(buf[ILLNESS + 1]));
+  get_city_dialog_output_text(dlgcity, O_FOOD, buf_tooltip[INFO_FOOD],
+                              sizeof(buf_tooltip[INFO_FOOD]));
+  get_city_dialog_output_text(dlgcity, O_SHIELD, buf_tooltip[INFO_SHIELD],
+                              sizeof(buf_tooltip[INFO_SHIELD]));
+  get_city_dialog_output_text(dlgcity, O_TRADE, buf_tooltip[INFO_TRADE],
+                              sizeof(buf_tooltip[INFO_TRADE]));
+  get_city_dialog_output_text(dlgcity, O_GOLD, buf_tooltip[INFO_GOLD],
+                              sizeof(buf_tooltip[INFO_GOLD]));
+  get_city_dialog_output_text(dlgcity, O_SCIENCE, buf_tooltip[INFO_SCIENCE],
+                              sizeof(buf_tooltip[INFO_SCIENCE]));
+  get_city_dialog_output_text(dlgcity, O_LUXURY, buf_tooltip[INFO_LUXURY],
+                              sizeof(buf_tooltip[INFO_LUXURY]));
+  get_city_dialog_culture_text(dlgcity, buf_tooltip[INFO_CULTURE],
+                               sizeof(buf_tooltip[INFO_CULTURE]));
+  get_city_dialog_pollution_text(dlgcity, buf_tooltip[INFO_POLLUTION],
+                                 sizeof(buf_tooltip[INFO_POLLUTION]));
+  get_city_dialog_illness_text(dlgcity, buf_tooltip[INFO_ILLNESS],
+                               sizeof(buf_tooltip[INFO_ILLNESS]));
 
-  granaryturns = city_turns_to_grow(pcity);
+  granaryturns = city_turns_to_grow(dlgcity);
 
   if (granaryturns == 0) {
-    /* TRANS: city growth is blocked.  Keep short. */
-    fc_snprintf(buf[GROWTH], sizeof(buf[GROWTH]), _("blocked"));
+    // TRANS: city growth is blocked. Keep short.
+    fc_snprintf(buf_info[INFO_GROWTH], sizeof(buf_info[INFO_GROWTH]), _("blocked"));
   } else if (granaryturns == FC_INFINITY) {
-    /* TRANS: city is not growing.  Keep short. */
-    fc_snprintf(buf[GROWTH], sizeof(buf[GROWTH]), _("never"));
+    // TRANS: city is not growing. Keep short.
+    fc_snprintf(buf_info[INFO_GROWTH], sizeof(buf_info[INFO_GROWTH]), _("never"));
   } else {
     /* A negative value means we'll have famine in that many turns.
        But that's handled down below. */
-    /* TRANS: city growth turns.  Keep short. */
-    fc_snprintf(buf[GROWTH], sizeof(buf[GROWTH]),
+    // TRANS: city growth turns. Keep short.
+    fc_snprintf(buf_info[INFO_GROWTH], sizeof(buf_info[INFO_GROWTH]),
                 PL_("%d turn", "%d turns", abs(granaryturns)),
                 abs(granaryturns));
   }
 
-  fc_snprintf(buf[CORRUPTION], sizeof(buf[CORRUPTION]), "%4d",
-              pcity->waste[O_TRADE]);
-  fc_snprintf(buf[WASTE], sizeof(buf[WASTE]), "%4d", pcity->waste[O_SHIELD]);
-  fc_snprintf(buf[CULTURE], sizeof(buf[CULTURE]), "%4d",
-              pcity->client.culture);
-  fc_snprintf(buf[POLLUTION], sizeof(buf[POLLUTION]), "%4d",
-              pcity->pollution);
+  fc_snprintf(buf_info[INFO_CORRUPTION], sizeof(buf_info[INFO_CORRUPTION]),
+              "%4d", dlgcity->waste[O_TRADE]);
+  fc_snprintf(buf_info[INFO_WASTE], sizeof(buf_info[INFO_WASTE]), "%4d",
+              dlgcity->waste[O_SHIELD]);
+  fc_snprintf(buf_info[INFO_CULTURE], sizeof(buf_info[INFO_CULTURE]), "%4d",
+              dlgcity->client.culture);
+  fc_snprintf(buf_info[INFO_POLLUTION], sizeof(buf_info[INFO_POLLUTION]), "%4d",
+              dlgcity->pollution);
 
   if (!game.info.illness_on) {
-    fc_snprintf(buf[ILLNESS], sizeof(buf[ILLNESS]), " -.-");
+    fc_snprintf(buf_info[INFO_ILLNESS], sizeof(buf_info[INFO_ILLNESS]),
+                "  -.-");
   } else {
-    illness = city_illness_calc(pcity, NULL, NULL, NULL, NULL);
-    /* illness is in tenth of percent */
-    fc_snprintf(buf[ILLNESS], sizeof(buf[ILLNESS]), "%4.1f",
-                (float) illness / 10.0);
+    illness = city_illness_calc(dlgcity, nullptr, nullptr, nullptr, nullptr);
+    // Illness is in tenth of percent
+    fc_snprintf(buf_info[INFO_ILLNESS], sizeof(buf_info[INFO_ILLNESS]),
+                "%5.1f%%", (float) illness / 10.0);
+  }
+  if (dlgcity->steal) {
+    fc_snprintf(buf_info[INFO_STEAL], sizeof(buf_info[INFO_STEAL]),
+                PL_("%d time", "%d times", dlgcity->steal), dlgcity->steal);
+  } else {
+    fc_snprintf(buf_info[INFO_STEAL], sizeof(buf_info[INFO_STEAL]),
+                _("Not stolen"));
   }
 
-  get_city_dialog_output_text(pcity, O_FOOD, buffer, sizeof(buffer));
+  get_city_dialog_airlift_value(dlgcity, buf_info[INFO_AIRLIFT],
+                                sizeof(buf_info[INFO_AIRLIFT]));
+  get_city_dialog_airlift_text(dlgcity, buf_tooltip[INFO_AIRLIFT],
+                               sizeof(buf_tooltip[INFO_AIRLIFT]));
+
+  get_city_dialog_output_text(dlgcity, O_FOOD, buffer, sizeof(buffer));
 
   for (int i = 0; i < NUM_INFO_FIELDS; i++) {
-    int j = 2 * i;
+    qlt[i]->setText(QString(buf_info[i]));
 
-    qlt[i]->setText(QString(buf[2 * i]));
-
-    if (j != GROWTH && j != GRANARY && j != WASTE && j != CORRUPTION) {
-      qlt[i]->setToolTip(QString(buf[2 * i + 1]));
+    if (buf_tooltip[i][0]) {
+      qlt[i]->setToolTip("<pre>" + QString(buf_tooltip[i]).toHtmlEscaped()
+                         + "</pre>");
     }
   }
 }
@@ -2980,19 +3251,10 @@ void city_dialog::setup_ui(struct city *qcity)
 
   setContentsMargins(0, 0 ,0 ,0);
   setWindowIcon(q_icon);
-  pcity = qcity;
+  dlgcity = qcity;
   production_combo_p->blockSignals(true);
   refresh();
   production_combo_p->blockSignals(false);
-
-}
-
-/************************************************************************//**
-  Removes selected item from city worklist
-****************************************************************************/
-void city_dialog::delete_prod()
-{
-  display_worklist_menu(QCursor::pos());
 }
 
 /************************************************************************//**
@@ -3001,14 +3263,15 @@ void city_dialog::delete_prod()
 void city_dialog::dbl_click_p(QTableWidgetItem *item)
 {
   struct worklist queue;
-  city_get_queue(pcity, &queue);
+
+  city_get_queue(dlgcity, &queue);
 
   if (selected_row_p < 0 || selected_row_p > worklist_length(&queue)) {
     return;
   }
 
   worklist_remove(&queue, selected_row_p);
-  city_set_queue(pcity, &queue);
+  city_set_queue(dlgcity, &queue);
 }
 
 /************************************************************************//**
@@ -3021,19 +3284,22 @@ void city_dialog::update_units()
   char buf[256];
   int n;
   int happy_cost;
-  int free_unhappy = get_city_bonus(pcity, EFT_MAKE_CONTENT_MIL);
+  int free_unhappy = get_city_bonus(dlgcity, EFT_MAKE_CONTENT_MIL);
+  struct player *pplayer = client_player();
+  const struct civ_map *nmap = &(wld.map);
+
   supported_units->setUpdatesEnabled(false);
   supported_units->clear_layout();
 
-  if (NULL != client.conn.playing
-      && city_owner(pcity) != client.conn.playing) {
-    units = pcity->client.info_units_supported;
+  if (pplayer != nullptr
+      && city_owner(dlgcity) != pplayer) {
+    units = dlgcity->client.info_units_supported;
   } else {
-    units = pcity->units_supported;
+    units = dlgcity->units_supported;
   }
 
   unit_list_iterate(units, punit) {
-    happy_cost = city_unit_unhappiness(punit, &free_unhappy);
+    happy_cost = city_unit_unhappiness(nmap, punit, &free_unhappy);
     ui = new unit_item(this, punit, true, happy_cost);
     ui->init_pix();
     supported_units->add_item(ui);
@@ -3046,11 +3312,11 @@ void city_dialog::update_units()
   current_units->setUpdatesEnabled(true);
   current_units->clear_layout();
 
-  if (NULL != client.conn.playing
-      && city_owner(pcity) != client.conn.playing) {
-    units = pcity->client.info_units_present;
+  if (pplayer != nullptr
+      && city_owner(dlgcity) != pplayer) {
+    units = dlgcity->client.info_units_present;
   } else {
-    units = pcity->tile->units;
+    units = dlgcity->tile->units;
   }
 
   unit_list_iterate(units, punit) {
@@ -3090,29 +3356,33 @@ void city_dialog::item_selected(const QItemSelection &sl,
 ****************************************************************************/
 void city_dialog::next_city()
 {
-  int size, i, j;
-  struct city *other_pcity = NULL;
+  int size, i;
+  struct city *other_pcity = nullptr;
+  struct player *pplayer = client_player();
 
-  if (NULL == client.conn.playing) {
+  if (pplayer == nullptr) {
     return;
   }
 
-  size = city_list_size(client.conn.playing->cities);
+  size = city_list_size(pplayer->cities);
 
-  if (size == 1) {
+  if (size <= 1) {
     return;
   }
 
   for (i = 0; i < size; i++) {
-    if (pcity == city_list_get(client.conn.playing->cities, i)) {
+    if (dlgcity == city_list_get(pplayer->cities, i)) {
       break;
     }
   }
 
-  for (j = 1; j < size; j++) {
-    other_pcity = city_list_get(client.conn.playing->cities,
-                                (i + j + size) % size);
+  if (i >= size - 1) {
+    // Current city last in the list (size - 1) or disappeared (size)
+    other_pcity = city_list_get(pplayer->cities, 0);
+  } else {
+    other_pcity = city_list_get(pplayer->cities, i + 1);
   }
+
   center_tile_mapcanvas(other_pcity->tile);
   qtg_real_city_dialog_popup(other_pcity);
 }
@@ -3122,28 +3392,31 @@ void city_dialog::next_city()
 ****************************************************************************/
 void city_dialog::prev_city()
 {
-  int size, i, j;
-  struct city *other_pcity = NULL;
+  int size, i;
+  struct city *other_pcity = nullptr;
+  struct player *pplayer = client_player();
 
-  if (NULL == client.conn.playing) {
+  if (pplayer == nullptr) {
     return;
   }
 
-  size = city_list_size(client.conn.playing->cities);
+  size = city_list_size(pplayer->cities);
 
-  if (size == 1) {
+  if (size <= 1) {
     return;
   }
 
   for (i = 0; i < size; i++) {
-    if (pcity == city_list_get(client.conn.playing->cities, i)) {
+    if (dlgcity == city_list_get(pplayer->cities, i)) {
       break;
     }
   }
 
-  for (j = 1; j < size; j++) {
-    other_pcity = city_list_get(client.conn.playing->cities,
-                                (i - j + size) % size);
+  if (i == 0 || i == size) {
+    // Current city in the beginning of the list or disappeared
+    other_pcity = city_list_get(pplayer->cities, size - 1);
+  } else {
+    other_pcity = city_list_get(pplayer->cities, i - 1);
   }
 
   center_tile_mapcanvas(other_pcity->tile);
@@ -3157,22 +3430,22 @@ void city_dialog::update_building()
 {
   char buf[32];
   QString str;
-  int cost = city_production_build_shield_cost(pcity);
+  int cost = city_production_build_shield_cost(dlgcity);
 
-  get_city_dialog_production(pcity, buf, sizeof(buf));
+  get_city_dialog_production(dlgcity, buf, sizeof(buf));
   production_combo_p->setRange(0, cost);
-  production_combo_p->set_pixmap(&pcity->production);
-  if (pcity->shield_stock >= cost) {
+  production_combo_p->set_pixmap(&dlgcity->production);
+  if (dlgcity->shield_stock >= cost) {
     production_combo_p->setValue(cost);
   } else {
-    production_combo_p->setValue(pcity->shield_stock);
+    production_combo_p->setValue(dlgcity->shield_stock);
   }
   production_combo_p->setAlignment(Qt::AlignCenter);
   str = QString(buf);
   str = str.simplified();
 
   production_combo_p->setFormat(QString("(%p%) %2\n%1")
-                                .arg(city_production_name_translation(pcity),
+                                .arg(city_production_name_translation(dlgcity),
                                      str));
 
   production_combo_p->updateGeometry();
@@ -3185,15 +3458,16 @@ void city_dialog::update_building()
 void city_dialog::buy()
 {
   char buf[1024], buf2[1024];
-  int ret;
-  const char *name = city_production_name_translation(pcity);
-  int value = city_production_buy_gold_cost(pcity);
-  hud_message_box ask(city_dlg);
+  const char *name = city_production_name_translation(dlgcity);
+  int value = dlgcity->client.buy_cost;
+  hud_message_box *ask;
+  int city_id = dlgcity->id;
 
   if (!can_client_issue_orders()) {
     return;
   }
 
+  ask = new hud_message_box(city_dlg);
   fc_snprintf(buf2, ARRAY_SIZE(buf2), PL_("Treasury contains %d gold.",
                                         "Treasury contains %d gold.",
                                         client_player()->economic.gold),
@@ -3201,20 +3475,20 @@ void city_dialog::buy()
   fc_snprintf(buf, ARRAY_SIZE(buf), PL_("Buy %s for %d gold?",
                                         "Buy %s for %d gold?", value),
               name, value);
-  ask.set_text_title(QString(buf), QString(buf2));
-  ask.setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
-  ask.setDefaultButton(QMessageBox::Cancel);
-  ret = ask.exec();
+  ask->set_text_title(buf, buf2);
+  ask->setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
+  ask->setDefaultButton(QMessageBox::Cancel);
+  ask->setAttribute(Qt::WA_DeleteOnClose);
+  connect(ask, &hud_message_box::accepted, this, [=]() {
+    struct city *pcity = game_city_by_number(city_id);
 
-  switch (ret) {
-  case QMessageBox::Cancel:
-    return;
-    break;
+    if (!pcity) {
+      return;
+    }
 
-  case QMessageBox::Ok:
     city_buy_production(pcity);
-    break;
-  }
+  });
+  ask->show();
 }
 
 /************************************************************************//**
@@ -3224,7 +3498,7 @@ void city_dialog::update_improvements()
 {
   QFont f = QApplication::font();
   QFontMetrics fm(f);
-  QPixmap *pix = NULL;
+  QPixmap *pix = nullptr;
   QPixmap pix_scaled;
   QString str, tooltip;
   QTableWidgetItem *qitem;
@@ -3240,47 +3514,50 @@ void city_dialog::update_improvements()
   city_buildings->clear_layout();
 
   h = fm.height() + 6;
-  targets_used = collect_already_built_targets(targets, pcity);
-  name_and_sort_items(targets, targets_used, items, false, pcity);
+  targets_used = collect_already_built_targets(targets, dlgcity);
+  name_and_sort_items(targets, targets_used, items, false, dlgcity);
 
   for (item = 0; item < targets_used; item++) {
     struct universal target = items[item].item;
 
-    ui = new impr_item(this, target.value.building, pcity);
+    ui = new impr_item(this, target.value.building, dlgcity);
     ui->init_pix();
     city_buildings->add_item(ui);
 
     fc_assert_action(VUT_IMPROVEMENT == target.kind, continue);
     sprite = get_building_sprite(tileset, target.value.building);
-    upkeep = upkeep + city_improvement_upkeep(pcity, target.value.building);
+    upkeep = upkeep + city_improvement_upkeep(dlgcity, target.value.building);
     if (sprite != nullptr) {
       pix = sprite->pm;
       pix_scaled = pix->scaledToHeight(h);
     }
   }
 
-  city_get_queue(pcity, &queue);
+  city_get_queue(dlgcity, &queue);
   p_table_p->setRowCount(worklist_length(&queue));
 
   for (int i = 0; i < worklist_length(&queue); i++) {
     struct universal target = queue.entries[i];
+
     tooltip = "";
 
     if (VUT_UTYPE == target.kind) {
       str = utype_values_translation(target.value.utype);
-      cost = utype_build_shield_cost(target.value.utype);
-      tooltip = get_tooltip_unit(target.value.utype).trimmed();
-      sprite = get_unittype_sprite(tileset, target.value.utype,
+      cost = utype_build_shield_cost(dlgcity, nullptr, target.value.utype);
+      tooltip = get_tooltip_unit(target.value.utype, true).trimmed();
+      sprite = get_unittype_sprite(get_tileset(), target.value.utype,
+                                   ACTIVITY_LAST,
                                    direction8_invalid());
     } else {
-      str = city_improvement_name_translation(pcity, target.value.building);
+      str = city_improvement_name_translation(dlgcity, target.value.building);
       sprite = get_building_sprite(tileset, target.value.building);
-      tooltip = get_tooltip_improvement(target.value.building).trimmed();
+      tooltip = get_tooltip_improvement(target.value.building,
+                                        dlgcity, true).trimmed();
 
-      if (improvement_has_flag(target.value.building, IF_GOLD)) {
+      if (is_convert_improvement(target.value.building)) {
         cost = -1;
       } else {
-        cost = impr_build_shield_cost(target.value.building);
+        cost = impr_build_shield_cost(dlgcity, target.value.building);
       }
     }
 
@@ -3344,7 +3621,7 @@ void city_dialog::production_changed(int index)
 
     id = qvar.toInt();
     univ = cid_production(id);
-    city_change_production(pcity, &univ);
+    city_change_production(dlgcity, &univ);
   }
 }
 
@@ -3356,7 +3633,8 @@ void city_dialog::show_targets()
 {
   production_widget *pw;
   int when = 1;
-  pw = new production_widget(this, pcity, future_targets->isChecked(),
+
+  pw = new production_widget(this, dlgcity, future_targets->isChecked(),
                              when, selected_row_p, show_units->isChecked(),
                              false, show_wonders->isChecked(),
                              show_buildings->isChecked());
@@ -3371,7 +3649,8 @@ void city_dialog::show_targets_worklist()
 {
   production_widget *pw;
   int when = 4;
-  pw = new production_widget(this, pcity, future_targets->isChecked(),
+
+  pw = new production_widget(this, dlgcity, future_targets->isChecked(),
                              when, selected_row_p, show_units->isChecked(),
                              false, show_wonders->isChecked(),
                              show_buildings->isChecked());
@@ -3390,7 +3669,7 @@ void city_dialog::clear_worklist()
   }
 
   worklist_init(&empty);
-  city_set_worklist(pcity, &empty);
+  city_set_worklist(dlgcity, &empty);
 }
 
 /************************************************************************//**
@@ -3407,11 +3686,11 @@ void city_dialog::worklist_up()
   }
 
   target = new universal;
-  city_get_queue(pcity, &queue);
+  city_get_queue(dlgcity, &queue);
   worklist_peek_ith(&queue, target, selected_row_p);
   worklist_remove(&queue, selected_row_p);
   worklist_insert(&queue, target, selected_row_p - 1);
-  city_set_queue(pcity, &queue);
+  city_set_queue(dlgcity, &queue);
   index = p_table_p->model()->index(selected_row_p - 1, 0);
   p_table_p->setCurrentIndex(index);
   delete target;
@@ -3449,11 +3728,11 @@ void city_dialog::worklist_down()
   }
 
   target = new universal;
-  city_get_queue(pcity, &queue);
+  city_get_queue(dlgcity, &queue);
   worklist_peek_ith(&queue, target, selected_row_p);
   worklist_remove(&queue, selected_row_p);
   worklist_insert(&queue, target, selected_row_p + 1);
-  city_set_queue(pcity, &queue);
+  city_set_queue(dlgcity, &queue);
   index = p_table_p->model()->index(selected_row_p + 1, 0);
   p_table_p->setCurrentIndex(index);
   delete target;
@@ -3464,22 +3743,30 @@ void city_dialog::worklist_down()
 ****************************************************************************/
 void city_dialog::save_worklist()
 {
-  struct worklist queue;
-  struct global_worklist *gw;
-  QString text;
-  hud_input_box ask(gui()->central_wdg);
+  hud_input_box *ask = new hud_input_box(gui()->central_wdg);
+  int city_id = dlgcity->id;
 
-  ask.set_text_title_definput(_("What should we name new worklist?"),
-                              _("Save current worklist"),
-                              _("New worklist"));
-  if (ask.exec() == QDialog::Accepted) {
-    text = ask.input_edit.text().toLocal8Bit().data();
+  ask->set_text_title_definput(_("What should we name new worklist?"),
+                               _("Save current worklist"),
+                               _("New worklist"));
+  ask->setAttribute(Qt::WA_DeleteOnClose);
+  connect(ask, &hud_message_box::accepted, [=]() {
+    struct global_worklist *gw;
+    struct worklist queue;
+    QByteArray ask_bytes;
+    QString text;
+    struct city *pcity = game_city_by_number(city_id);
+
+    ask_bytes = ask->input_edit.text().toUtf8();
+    text = ask_bytes.data();
     if (!text.isEmpty()) {
-      gw = global_worklist_new(text.toLocal8Bit().data());
+      ask_bytes = text.toUtf8();
+      gw = global_worklist_new(ask_bytes.data());
       city_get_queue(pcity, &queue);
       global_worklist_set(gw, &queue);
     }
-  }
+  });
+  ask->show();
 }
 
 /************************************************************************//**
@@ -3489,24 +3776,26 @@ void city_dialog::update_title()
 {
   QString buf;
 
-  lcity_name->setText(QString(city_name_get(pcity)));
+  // Defeat keyboard shortcut mnemonics
+  lcity_name->setText(QString(city_name_get(dlgcity))
+                      .replace("&", "&&"));
 
-  if (city_unhappy(pcity)) {
-    /* TRANS: city dialog title */
-    buf = QString(_("%1 - %2 citizens - DISORDER")).arg(city_name_get(pcity),
-          population_to_text(city_population(pcity)));
-  } else if (city_celebrating(pcity)) {
-    /* TRANS: city dialog title */
-    buf = QString(_("%1 - %2 citizens - celebrating")).arg(city_name_get(pcity),
-          population_to_text(city_population(pcity)));
-  } else if (city_happy(pcity)) {
-    /* TRANS: city dialog title */
-    buf = QString(_("%1 - %2 citizens - happy")).arg(city_name_get(pcity),
-          population_to_text(city_population(pcity)));
+  if (city_unhappy(dlgcity)) {
+    // TRANS: city dialog title
+    buf = QString(_("%1 - %2 citizens - DISORDER")).arg(city_name_get(dlgcity),
+          population_to_text(city_population(dlgcity)));
+  } else if (city_celebrating(dlgcity)) {
+    // TRANS: city dialog title
+    buf = QString(_("%1 - %2 citizens - celebrating")).arg(city_name_get(dlgcity),
+          population_to_text(city_population(dlgcity)));
+  } else if (city_happy(dlgcity)) {
+    // TRANS: city dialog title
+    buf = QString(_("%1 - %2 citizens - happy")).arg(city_name_get(dlgcity),
+          population_to_text(city_population(dlgcity)));
   } else {
-    /* TRANS: city dialog title */
-    buf = QString(_("%1 - %2 citizens")).arg(city_name_get(pcity),
-          population_to_text(city_population(pcity)));
+    // TRANS: city dialog title
+    buf = QString(_("%1 - %2 citizens")).arg(city_name_get(dlgcity),
+          population_to_text(city_population(dlgcity)));
   }
 
   setWindowTitle(buf);
@@ -3589,10 +3878,10 @@ void city_font_update()
 
   l = city_dlg->findChildren<QLabel *>();
 
-  f = fc_font::instance()->get_font(fonts::city_label);
+  f = fc_font::instance()->get_font(fonts::notify_label);
 
   for (int i = 0; i < l.size(); ++i) {
-    if (l.at(i)->property(fonts::city_label).isValid()) {
+    if (l.at(i)->property(fonts::notify_label).isValid()) {
       l.at(i)->setFont(*f);
     }
   }
@@ -3625,7 +3914,7 @@ bool qtg_city_dialog_is_open(struct city *pcity)
     return false;
   }
 
-  if (city_dlg->pcity == pcity && city_dlg->isVisible()) {
+  if (city_dlg->dlgcity == pcity && city_dlg->isVisible()) {
     return true;
   }
 
@@ -3651,6 +3940,7 @@ bool fc_tooltip::eventFilter(QObject *obj, QEvent *ev)
     help_event = static_cast<QHelpEvent *>(ev);
     QPoint pos = help_event->pos();
     QModelIndex index = view->indexAt(pos);
+    QPoint hpos;
 
     if (!index.isValid()) {
       return false;
@@ -3658,8 +3948,11 @@ bool fc_tooltip::eventFilter(QObject *obj, QEvent *ev)
 
     item_tooltip = view->model()->data(index, Qt::ToolTipRole).toString();
     rect = view->visualRect(index);
-    rect.setX(rect.x() + help_event->globalPos().x());
-    rect.setY(rect.y() + help_event->globalPos().y());
+
+    hpos = help_event->globalPos();
+
+    rect.setX(rect.x() + hpos.x());
+    rect.setY(rect.y() + hpos.y());
 
     if (!item_tooltip.isEmpty()) {
       QToolTip::showText(help_event->globalPos(), item_tooltip, view, rect);
@@ -3673,22 +3966,28 @@ bool fc_tooltip::eventFilter(QObject *obj, QEvent *ev)
   return false;
 }
 
-QString bold(QString text)
+/************************************************************************//**
+  'text' is assumed to have already been HTML-escaped if necessary
+****************************************************************************/
+static QString bold(QString text)
 {
   return QString("<b>" + text + "</b>");
 }
 
 /************************************************************************//**
   Returns improvement properties to append in tooltip
+  ext is used to get extra info from help
 ****************************************************************************/
-QString get_tooltip_improvement(impr_type *building, struct city *pcity)
+QString get_tooltip_improvement(const impr_type *building, struct city *pcity,
+                                bool ext)
 {
   QString def_str;
   QString upkeep;
   QString s1, s2, str;
   const char *req = skip_intl_qualifier_prefix(_("?tech:None"));
+  struct player *pplayer = client_player();
 
-  if (pcity !=  nullptr) {
+  if (pcity != nullptr) {
     upkeep = QString::number(city_improvement_upkeep(pcity, building));
   } else {
     upkeep = QString::number(building->upkeep);
@@ -3703,64 +4002,105 @@ QString get_tooltip_improvement(impr_type *building, struct city *pcity)
   str = _("Obsolete by:");
   str = str + " " + s2;
   def_str = "<p style='white-space:pre'><b>"
-            + QString(improvement_name_translation(building))
+            + QString(improvement_name_translation(building)).toHtmlEscaped()
             + "</b>\n";
-  def_str += QString(_("Cost: %1, Upkeep: %2\n"))
-             .arg(impr_build_shield_cost(building))
-             .arg(upkeep);
+  if (pcity != nullptr) {
+    def_str += QString(_("Cost: %1, Upkeep: %2\n"))
+               .arg(impr_build_shield_cost(pcity, building))
+               .arg(upkeep).toHtmlEscaped();
+  } else {
+    int cost_est = impr_estimate_build_shield_cost(pplayer,
+                                                   nullptr, building);
+
+    def_str += QString(_("Cost Estimate: %1, Upkeep: %2\n"))
+               .arg(cost_est)
+               .arg(upkeep).toHtmlEscaped();
+  }
   if (s1.compare(s2) != 0) {
-    def_str = def_str + str + "\n";
+    def_str = def_str + str.toHtmlEscaped() + "\n";
   }
   def_str = def_str + "\n";
+  if (ext) {
+    char buffer[8192];
+
+    str = helptext_building(buffer, sizeof(buffer), pplayer,
+                            nullptr, building);
+    str = cut_helptext(str);
+    str = split_text(str, true);
+    str = str.trimmed();
+    def_str = def_str + str.toHtmlEscaped();
+  }
   return def_str;
 }
 
 /************************************************************************//**
   Returns unit properties to append in tooltip
+  ext is used to get extra info from help
 ****************************************************************************/
-QString get_tooltip_unit(struct unit_type *unit)
+QString get_tooltip_unit(const struct unit_type *utype, bool ext)
 {
   QString def_str;
   QString obsolete_str;
-  struct unit_type *obsolete;
+  QString str;
+  const struct unit_type *obsolete;
   struct advance *tech;
 
-  def_str = "<b>" + QString(utype_name_translation(unit)) + "</b>\n";
-  obsolete = unit->obsoleted_by;
+  def_str = "<b>"
+    + QString(utype_name_translation(utype)).toHtmlEscaped()
+    + "</b>\n";
+  obsolete = utype->obsoleted_by;
   if (obsolete) {
-    tech = obsolete->require_advance;
+    // FIXME: Don't give the impression that primary tech is (always) the only one.
+    tech = utype_primary_tech_req(obsolete);
     obsolete_str = QString("</td></tr><tr><td colspan=\"3\">");
-    if (tech && tech != advance_by_number(0)) {
+    if (tech && tech != advance_by_number(A_NONE)) {
+      /* TRANS: this and nearby literal strings are interpreted
+       * as (Qt) HTML */
       obsolete_str = obsolete_str + QString(_("Obsoleted by %1 (%2)."))
-                                      .arg(utype_name_translation(obsolete))
-                                      .arg(advance_name_translation(tech));
+          .arg(utype_name_translation(obsolete))
+          .arg(advance_name_translation(tech)).toHtmlEscaped();
     } else {
       obsolete_str = obsolete_str + QString(_("Obsoleted by %1."))
-                     .arg(utype_name_translation(obsolete));
+          .arg(utype_name_translation(obsolete)).toHtmlEscaped();
     }
   }
   def_str += "<table width=\"100\%\"><tr><td>"
              + bold(QString(_("Attack:"))) + " "
-             + QString::number(unit->attack_strength)
+             + QString::number(utype->attack_strength).toHtmlEscaped()
              + QString("</td><td>") + bold(QString(_("Defense:"))) + " "
-             + QString::number(unit->defense_strength)
+             + QString::number(utype->defense_strength).toHtmlEscaped()
              + QString("</td><td>") + bold(QString(_("Move:"))) + " "
-             + QString(move_points_text(unit->move_rate, TRUE))
+             + QString(move_points_text(utype->move_rate, TRUE)).toHtmlEscaped()
              + QString("</td></tr><tr><td>")
              + bold(QString(_("Cost:"))) + " "
-             + QString::number(utype_build_shield_cost(unit))
+             + QString::number(utype_build_shield_cost_base(utype))
+               .toHtmlEscaped()
              + QString("</td><td colspan=\"2\">")
              + bold(QString(_("Basic Upkeep:")))
-             + " " + QString(helptext_unit_upkeep_str(unit))
+             + " " + QString(helptext_unit_upkeep_str(utype)).toHtmlEscaped()
              + QString("</td></tr><tr><td>")
              + bold(QString(_("Hitpoints:"))) + " "
-             + QString::number(unit->hp)
-             + QString("</td><td>") + bold(QString(_("FirePower:"))) + " "
-             + QString::number(unit->firepower)
+             + QString::number(utype->hp).toHtmlEscaped()
+             + QString("</td><td>") + bold(QString(_("Firepower:"))) + " "
+             + QString::number(utype->firepower).toHtmlEscaped()
              + QString("</td><td>") + bold(QString(_("Vision:"))) + " "
-             + QString::number((int) sqrt((double) unit->vision_radius_sq))
+             + QString::number((int) sqrt((double) utype->vision_radius_sq))
+               .toHtmlEscaped()
              + obsolete_str
              + QString("</td></tr></table><p style='white-space:pre'>");
+  if (ext) {
+    char buffer[8192];
+    char buf2[1];
+
+    buf2[0] = '\0';
+    str = helptext_unit(buffer, sizeof(buffer), client_player(),
+                        buf2, utype, TRUE);
+    str = cut_helptext(str);
+    str = split_text(str, true);
+    str = str.trimmed().toHtmlEscaped();
+    def_str = def_str + str;
+  }
+
   return def_str;
 };
 
@@ -3773,30 +4113,31 @@ QString get_tooltip(QVariant qvar)
   QStringList sl;
   char buffer[8192];
   char buf2[1];
+  struct universal *target;
+  struct player *pplayer = client_player();
 
   buf2[0] = '\0';
-  struct universal *target;
   target = reinterpret_cast<universal *>(qvar.value<void *>());
 
-  if (target == NULL) {
+  if (target == nullptr) {
   } else if (VUT_UTYPE == target->kind) {
     def_str = get_tooltip_unit(target->value.utype);
-    str = helptext_unit(buffer, sizeof(buffer), client.conn.playing,
-                        buf2, target->value.utype);
+    str = helptext_unit(buffer, sizeof(buffer), pplayer,
+                        buf2, target->value.utype, TRUE);
   } else {
-    if (!improvement_has_flag(target->value.building, IF_GOLD)) {
+    if (!is_convert_improvement(target->value.building)) {
       def_str = get_tooltip_improvement(target->value.building);
     }
 
-    str = helptext_building(buffer, sizeof(buffer), client.conn.playing,
-                            NULL, target->value.building);
+    str = helptext_building(buffer, sizeof(buffer), pplayer,
+                            nullptr, target->value.building);
   }
 
-  /* Remove all lines from help which has '*' in first 3 chars */
+  // Remove all lines from help which has '*' in first 3 chars
   ret_str = cut_helptext(str);
   ret_str = split_text(ret_str, true);
   ret_str = ret_str.trimmed();
-  ret_str = def_str + ret_str;
+  ret_str = def_str + ret_str.toHtmlEscaped();
 
   return ret_str;
 }
@@ -3830,7 +4171,7 @@ void city_production_delegate::paint(QPainter *painter,
   QRect rect2;
   struct sprite *sprite;
   bool useless = false;
-  bool is_coinage = false;
+  bool is_convert = false;
   bool is_neutral = false;
   bool is_sea = false;
   bool is_flying = false;
@@ -3838,7 +4179,7 @@ void city_production_delegate::paint(QPainter *painter,
   QPixmap pix_dec(option.rect.width(), option.rect.height());
   QStyleOptionViewItem opt;
   color col;
-  QIcon icon = qapp->style()->standardIcon(QStyle::SP_DialogCancelButton);
+  QIcon icon = current_app()->style()->standardIcon(QStyle::SP_DialogCancelButton);
   bool free_sprite = false;
   struct unit_class *pclass;
 
@@ -3848,13 +4189,13 @@ void city_production_delegate::paint(QPainter *painter,
 
   qvar = index.data();
 
-  if (qvar.isNull()) {
+  if (!qvar.isValid()) {
     return;
   }
 
   target = reinterpret_cast<universal *>(qvar.value<void *>());
 
-  if (target == NULL) {
+  if (target == nullptr) {
     col.qcolor = Qt::white;
     sprite = qtg_create_sprite(100, 100, &col);
     free_sprite = true;
@@ -3866,34 +4207,40 @@ void city_production_delegate::paint(QPainter *painter,
     is_neutral = utype_has_flag(target->value.utype, UTYF_CIVILIAN);
     pclass = utype_class(target->value.utype);
     if (!uclass_has_flag(pclass, UCF_TERRAIN_DEFENSE)
-        && !uclass_has_flag(pclass, UCF_CAN_FORTIFY)
+        && !utype_can_do_action_result(target->value.utype, ACTRES_FORTIFY)
         && !uclass_has_flag(pclass, UCF_ZOC)) {
       is_sea = true;
     }
 
     if ((utype_fuel(target->value.utype)
          && !uclass_has_flag(pclass, UCF_TERRAIN_DEFENSE)
-        && !uclass_has_flag(pclass, UCF_CAN_PILLAGE)
-        && !uclass_has_flag(pclass, UCF_CAN_FORTIFY)
-        && !uclass_has_flag(pclass, UCF_ZOC))
-        || uclass_has_flag(pclass, UCF_MISSILE)) {
-      if (is_sea == true) {
+         && !utype_can_do_action_result(target->value.utype, ACTRES_PILLAGE)
+         && !utype_can_do_action_result(target->value.utype, ACTRES_FORTIFY)
+         && !uclass_has_flag(pclass, UCF_ZOC))
+        /* FIXME: Assumed to be flying since only missiles can do suicide
+         * attacks in classic-like rulesets. This isn't true for all
+         * rulesets. Not a high priority to fix since all is_flying and
+         * is_sea is used for is to set a color. */
+        || utype_is_consumed_by_action_result(ACTRES_ATTACK,
+                                              target->value.utype)) {
+      if (is_sea) {
         is_sea = false;
       }
       is_flying = true;
     }
 
-    sprite = get_unittype_sprite(tileset, target->value.utype,
+    sprite = get_unittype_sprite(get_tileset(), target->value.utype,
+                                 ACTIVITY_LAST,
                                  direction8_invalid());
   } else {
     is_unit = false;
     name = improvement_name_translation(target->value.building);
     sprite = get_building_sprite(tileset, target->value.building);
     useless = is_improvement_redundant(pcity, target->value.building);
-    is_coinage = improvement_has_flag(target->value.building, IF_GOLD);
+    is_convert = (target->value.building->genus == IG_CONVERT);
   }
 
-  if (sprite != NULL) {
+  if (sprite != nullptr) {
     pix = sprite->pm;
     pix_scaled = pix->scaledToHeight(item_height - 2, Qt::SmoothTransformation);
 
@@ -3929,7 +4276,7 @@ void city_production_delegate::paint(QPainter *painter,
     QItemDelegate::drawDecoration(painter, option, option.rect, pix_dec);
   }
 
-  if (is_coinage) {
+  if (is_convert) {
     pix_dec.fill(QColor(255, 255, 0, 70));
     QItemDelegate::drawDecoration(painter, option, option.rect, pix_dec);
   }
@@ -3942,7 +4289,7 @@ void city_production_delegate::paint(QPainter *painter,
 
   painter->restore();
 
-  if (free_sprite == TRUE) {
+  if (free_sprite) {
     qtg_free_sprite(sprite);
   }
 }
@@ -3992,8 +4339,8 @@ production_item::production_item(struct universal *ptarget,
 ****************************************************************************/
 production_item::~production_item()
 {
-  /* allocated as renegade in model */
-  if (target != NULL) {
+  // Allocated as renegade in model
+  if (target != nullptr) {
     delete target;
   }
 }
@@ -4044,17 +4391,20 @@ city_production_model::~city_production_model()
 ****************************************************************************/
 QVariant city_production_model::data(const QModelIndex &index, int role) const
 {
-  if (!index.isValid()) return QVariant();
+  if (!index.isValid()) {
+    return QVariant();
+  }
 
   if (index.row() >= 0 && index.row() < rowCount() && index.column() >= 0
       && index.column() < columnCount()
       && (index.column() + index.row() * 3 < city_target_list.count())) {
-    int r, c, t ,new_index;
+    int r, c, t, new_index;
+
     r = index.row();
     c = index.column();
     t = r * 3 + c;
     new_index = t / 3 + rowCount() * c;
-    /* Exception, shift whole column */
+    // Exception, shift whole column
     if ((c == 2) && city_target_list.count() % 3 == 1) {
       new_index = t / 3 + rowCount() * c - 1;
     }
@@ -4093,36 +4443,39 @@ void city_production_model::populate()
   name_and_sort_items(targets, targets_used, items, false, mcity);
 
   for (item = 0; item < targets_used; item++) {
-    if (future_t || can_city_build_now(mcity, &items[item].item)) {
+    if (future_t || can_city_build_now(&(wld.map), mcity, &items[item].item)) {
       renegade = new universal(items[item].item);
 
-      /* renagade deleted in production_item destructor */
+      // Renegade deleted in production_item destructor
       if (VUT_UTYPE == renegade->kind) {
         str = utype_name_translation(renegade->value.utype);
-        sh.setX(qMax(sh.x(), fm.width(str)));
+        sh.setX(qMax(sh.x(), fm.horizontalAdvance(str)));
 
-        if (show_units == true) {
+        if (show_units) {
           pi = new production_item(renegade, this);
           city_target_list << pi;
+        } else {
+          delete renegade;
         }
       } else {
         str = improvement_name_translation(renegade->value.building);
-        sh.setX(qMax(sh.x(), fm.width(str)));
+        sh.setX(qMax(sh.x(), fm.horizontalAdvance(str)));
 
         if ((is_wonder(renegade->value.building) && show_wonders)
             || (is_improvement(renegade->value.building) && show_buildings)
-            || (improvement_has_flag(renegade->value.building, IF_GOLD))
+            || (is_convert_improvement(renegade->value.building))
             || (is_special_improvement(renegade->value.building)
-            && show_buildings)) {
+                && show_buildings)) {
           pi = new production_item(renegade, this);
           city_target_list << pi;
+        } else {
+          delete renegade;
         }
       }
     }
   }
 
-  renegade = NULL;
-  pi = new production_item(renegade, this);
+  pi = new production_item(nullptr, this);
   city_target_list << pi;
   sh.setX(2 * sh.y() + sh.x());
   sh.setX(qMin(sh.x(), 250));
@@ -4161,8 +4514,9 @@ production_widget::production_widget(QWidget *parent, struct city *pcity,
                                      bool show_buildings): QTableView()
 {
   QPoint pos, sh;
-  int desk_width = QApplication::desktop()->width();
-  int desk_height = QApplication::desktop()->height();
+  QRect rect = QApplication::primaryScreen()->availableGeometry();
+  int desk_width = rect.width();
+  int desk_height = rect.height();
   fc_tt = new fc_tooltip(this);
   setAttribute(Qt::WA_DeleteOnClose);
   setWindowFlags(Qt::Popup);
@@ -4279,21 +4633,21 @@ void production_widget::prod_selected(const QItemSelection &sl,
   }
   index = indexes.at(0);
   qvar = index.data(Qt::UserRole);
-  if (qvar.isNull()) {
+  if (!qvar.isValid()) {
     return;
   }
   target = reinterpret_cast<universal *>(qvar.value<void *>());
-  if (target != NULL) {
+  if (target != nullptr) {
     city_get_queue(pw_city, &queue);
     switch (when_change) {
-    case 0: /* Change current target */
+    case 0: // Change current target
       city_change_production(pw_city, target);
       if (city_can_buy(pw_city) && buy_it) {
         city_buy_production(pw_city);
       }
       break;
 
-    case 1:                 /* Change current (selected on list)*/
+    case 1:                 // Change current (selected on list)
       if (curr_selection < 0 || curr_selection > worklist_length(&queue)) {
         city_change_production(pw_city, target);
       } else {
@@ -4303,7 +4657,7 @@ void production_widget::prod_selected(const QItemSelection &sl,
       }
       break;
 
-    case 2:                 /* Insert before */
+    case 2:                 // Insert before
       if (curr_selection < 0 || curr_selection > worklist_length(&queue)) {
         curr_selection = 0;
       }
@@ -4313,7 +4667,7 @@ void production_widget::prod_selected(const QItemSelection &sl,
       city_set_queue(pw_city, &queue);
       break;
 
-    case 3:                 /* Insert after */
+    case 3:                 // Insert after
       if (curr_selection < 0 || curr_selection > worklist_length(&queue)) {
         city_queue_insert(pw_city, -1, target);
         break;
@@ -4323,7 +4677,7 @@ void production_widget::prod_selected(const QItemSelection &sl,
       city_set_queue(pw_city, &queue);
       break;
 
-    case 4:                 /* Add last */
+    case 4:                 // Add last
       city_queue_insert(pw_city, -1, target);
       break;
 
@@ -4345,4 +4699,3 @@ production_widget::~production_widget()
   viewport()->removeEventFilter(fc_tt);
   removeEventFilter(this);
 }
-

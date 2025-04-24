@@ -32,6 +32,7 @@
 /* common */
 #include "game.h"
 #include "fc_types.h" /* bv_player */
+#include "nation.h"
 #include "unitlist.h"
 
 /* client */
@@ -51,7 +52,7 @@
 
 #include "gotodlg.h"
 
-static struct ADVANCED_DLG *pGotoDlg = NULL;
+static struct advanced_dialog *goto_dlg = NULL;
 bv_player all_players;
 static bool GOTO = TRUE;
 
@@ -60,10 +61,10 @@ static void update_goto_dialog(void);
 /**********************************************************************//**
   User interacted with goto dialog window.
 **************************************************************************/
-static int goto_dialog_window_callback(struct widget *pWindow)
+static int goto_dialog_window_callback(struct widget *pwindow)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
-    move_window_group(pGotoDlg->pBeginWidgetList, pWindow);
+  if (PRESSED_EVENT(main_data.event)) {
+    move_window_group(goto_dlg->begin_widget_list, pwindow);
   }
 
   return -1;
@@ -72,9 +73,9 @@ static int goto_dialog_window_callback(struct widget *pWindow)
 /**********************************************************************//**
   Close goto dialog.
 **************************************************************************/
-static int exit_goto_dialog_callback(struct widget *pWidget)
+static int exit_goto_dialog_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
+  if (PRESSED_EVENT(main_data.event)) {
     popdown_goto_airlift_dialog();
     flush_dirty();
   }
@@ -85,10 +86,10 @@ static int exit_goto_dialog_callback(struct widget *pWidget)
 /**********************************************************************//**
   Toggle whether player cities are listed as possible destinations.
 **************************************************************************/
-static int toggle_goto_nations_cities_dialog_callback(struct widget *pWidget)
+static int toggle_goto_nations_cities_dialog_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
-    int plr_id = player_index(player_by_number(MAX_ID - pWidget->ID));
+  if (PRESSED_EVENT(main_data.event)) {
+    int plr_id = player_index(player_by_number(MAX_ID - pwidget->id));
 
     if (BV_ISSET(all_players, plr_id)) {
       BV_CLR(all_players, plr_id);
@@ -104,19 +105,19 @@ static int toggle_goto_nations_cities_dialog_callback(struct widget *pWidget)
 /**********************************************************************//**
   User has selected city for unit to go to.
 **************************************************************************/
-static int goto_city_callback(struct widget *pWidget)
+static int goto_city_callback(struct widget *pwidget)
 {
-  if (Main.event.button.button == SDL_BUTTON_LEFT) {
-    struct city *pDestcity = game_city_by_number(MAX_ID - pWidget->ID);
-  
-    if (pDestcity) {
-      struct unit *pUnit = head_of_units_in_focus();
+  if (PRESSED_EVENT(main_data.event)) {
+    struct city *pdestcity = game_city_by_number(MAX_ID - pwidget->id);
 
-      if (pUnit) {
+    if (pdestcity) {
+      struct unit *punit = head_of_units_in_focus();
+
+      if (punit) {
         if (GOTO) {
-          send_goto_tile(pUnit, pDestcity->tile);
+          send_goto_tile(punit, pdestcity->tile);
         } else {
-          request_unit_airlift(pUnit, pDestcity);
+          request_unit_airlift(punit, pdestcity);
         }
       }
     }
@@ -133,71 +134,72 @@ static int goto_city_callback(struct widget *pWidget)
 **************************************************************************/
 static void update_goto_dialog(void)
 {
-  struct widget *pBuf = NULL, *pAdd_Dock, *pLast;
-  SDL_Surface *pLogo = NULL;
+  struct widget *buf = NULL, *add_dock, *last;
+  SDL_Surface *logo = NULL;
   utf8_str *pstr;
-  char cBuf[128];
+  char cbuf[128];
   int n = 0;
   struct player *owner = NULL;
 
-  if (pGotoDlg->pEndActiveWidgetList) {
-    pAdd_Dock = pGotoDlg->pEndActiveWidgetList->next;
-    pGotoDlg->pBeginWidgetList = pAdd_Dock;
-    del_group(pGotoDlg->pBeginActiveWidgetList, pGotoDlg->pEndActiveWidgetList);
-    pGotoDlg->pActiveWidgetList = NULL;
+  if (goto_dlg->end_active_widget_list) {
+    add_dock = goto_dlg->end_active_widget_list->next;
+    goto_dlg->begin_widget_list = add_dock;
+    del_group(goto_dlg->begin_active_widget_list,
+              goto_dlg->end_active_widget_list);
+    goto_dlg->active_widget_list = NULL;
   } else {
-    pAdd_Dock = pGotoDlg->pBeginWidgetList;
+    add_dock = goto_dlg->begin_widget_list;
   }
 
-  pLast = pAdd_Dock;
+  last = add_dock;
 
-  players_iterate(pPlayer) {
-    if (!BV_ISSET(all_players, player_index(pPlayer))) {
+  players_iterate(pplayer) {
+    if (!BV_ISSET(all_players, player_index(pplayer))) {
       continue;
     }
 
-    city_list_iterate(pPlayer->cities, pCity) {
+    city_list_iterate(pplayer->cities, pcity) {
 
-      /* FIXME: should use unit_can_airlift_to(). */
-      if (!GOTO && !pCity->airlift) {
-	continue;
+      /* FIXME: Should use unit_can_airlift_to(). */
+      if (!GOTO && !pcity->airlift) {
+        continue;
       }
 
-      fc_snprintf(cBuf, sizeof(cBuf), "%s (%d)", city_name_get(pCity),
-                  city_size_get(pCity));
+      fc_snprintf(cbuf, sizeof(cbuf), "%s (%d)", city_name_get(pcity),
+                  city_size_get(pcity));
 
-      pstr = create_utf8_from_char(cBuf, adj_font(12));
+      pstr = create_utf8_from_char_fonto(cbuf, FONTO_ATTENTION);
       pstr->style |= TTF_STYLE_BOLD;
 
-      if (!player_owns_city(owner, pCity)) {
-        pLogo = get_nation_flag_surface(nation_of_player(city_owner(pCity)));
-        pLogo = crop_visible_part_from_surface(pLogo);
+      if (!player_owns_city(owner, pcity)) {
+        logo = get_nation_flag_surface(nation_of_player(city_owner(pcity)));
+        logo = crop_visible_part_from_surface(logo);
       }
 
-      pBuf = create_iconlabel(pLogo, pGotoDlg->pEndWidgetList->dst, pstr,
-    	(WF_RESTORE_BACKGROUND|WF_DRAW_TEXT_LABEL_WITH_SPACE));
+      buf = create_iconlabel(logo, goto_dlg->end_widget_list->dst, pstr,
+        (WF_RESTORE_BACKGROUND|WF_DRAW_TEXT_LABEL_WITH_SPACE));
 
-      if (!player_owns_city(owner, pCity)) {
-        set_wflag(pBuf, WF_FREE_THEME);
-        owner = city_owner(pCity);
+      if (!player_owns_city(owner, pcity)) {
+        set_wflag(buf, WF_FREE_THEME);
+        owner = city_owner(pcity);
       }
 
-      pBuf->string_utf8->fgcol =
-	    *(get_player_color(tileset, city_owner(pCity))->color);
-      pBuf->action = goto_city_callback;
+      buf->string_utf8->fgcol =
+            *(get_player_color(tileset, city_owner(pcity))->color);
+      buf->action = goto_city_callback;
 
-      if (GOTO || pCity->airlift) {
-        set_wstate(pBuf, FC_WS_NORMAL);
+      if (GOTO || pcity->airlift) {
+        set_wstate(buf, FC_WS_NORMAL);
       }
 
-      fc_assert((MAX_ID - pCity->id) > 0);
-      pBuf->ID = MAX_ID - pCity->id;
+      fc_assert((MAX_ID - pcity->id) > 0);
+      buf->id = MAX_ID - pcity->id;
 
-      DownAdd(pBuf, pAdd_Dock);
-      pAdd_Dock = pBuf;
+      widget_add_as_prev(buf, add_dock);
+      add_dock = buf;
 
-      if (n > (pGotoDlg->pScroll->active - 1)) {
-        set_wflag(pBuf, WF_HIDDEN);
+      if (n > (goto_dlg->scroll->active - 1)) {
+        set_wflag(buf, WF_HIDDEN);
       }
 
       n++;
@@ -205,37 +207,37 @@ static void update_goto_dialog(void)
   } players_iterate_end;
 
   if (n > 0) {
-    pGotoDlg->pBeginWidgetList = pBuf;
+    goto_dlg->begin_widget_list = buf;
 
-    pGotoDlg->pBeginActiveWidgetList = pGotoDlg->pBeginWidgetList;
-    pGotoDlg->pEndActiveWidgetList = pLast->prev;
-    pGotoDlg->pActiveWidgetList = pGotoDlg->pEndActiveWidgetList;
-    pGotoDlg->pScroll->count = n;
+    goto_dlg->begin_active_widget_list = goto_dlg->begin_widget_list;
+    goto_dlg->end_active_widget_list = last->prev;
+    goto_dlg->active_widget_list = goto_dlg->end_active_widget_list;
+    goto_dlg->scroll->count = n;
 
-    if (n > pGotoDlg->pScroll->active) {
-      show_scrollbar(pGotoDlg->pScroll);
-      pGotoDlg->pScroll->pScrollBar->size.y = pGotoDlg->pEndWidgetList->area.y +
-        pGotoDlg->pScroll->pUp_Left_Button->size.h;
-      pGotoDlg->pScroll->pScrollBar->size.h = scrollbar_size(pGotoDlg->pScroll);
+    if (n > goto_dlg->scroll->active) {
+      show_scrollbar(goto_dlg->scroll);
+      goto_dlg->scroll->pscroll_bar->size.y = goto_dlg->end_widget_list->area.y +
+        goto_dlg->scroll->up_left_button->size.h;
+      goto_dlg->scroll->pscroll_bar->size.h = scrollbar_size(goto_dlg->scroll);
     } else {
-      hide_scrollbar(pGotoDlg->pScroll);
+      hide_scrollbar(goto_dlg->scroll);
     }
 
     setup_vertical_widgets_position(1,
-                                    pGotoDlg->pEndWidgetList->area.x,
-                                    pGotoDlg->pEndWidgetList->area.y,
-                                    pGotoDlg->pScroll->pUp_Left_Button->size.x -
-                                    pGotoDlg->pEndWidgetList->area.x - adj_size(2),
-                                    0, pGotoDlg->pBeginActiveWidgetList,
-                                    pGotoDlg->pEndActiveWidgetList);
+                                    goto_dlg->end_widget_list->area.x,
+                                    goto_dlg->end_widget_list->area.y,
+                                    goto_dlg->scroll->up_left_button->size.x -
+                                    goto_dlg->end_widget_list->area.x - adj_size(2),
+                                    0, goto_dlg->begin_active_widget_list,
+                                    goto_dlg->end_active_widget_list);
 
   } else {
-    hide_scrollbar(pGotoDlg->pScroll);
+    hide_scrollbar(goto_dlg->scroll);
   }
 
-  /* redraw */
-  redraw_group(pGotoDlg->pBeginWidgetList, pGotoDlg->pEndWidgetList, 0);
-  widget_flush(pGotoDlg->pEndWidgetList);
+  /* Redraw */
+  redraw_group(goto_dlg->begin_widget_list, goto_dlg->end_widget_list, 0);
+  widget_flush(goto_dlg->end_widget_list);
 }
 
 /**********************************************************************//**
@@ -244,138 +246,142 @@ static void update_goto_dialog(void)
 static void popup_goto_airlift_dialog(void)
 {
   SDL_Color bg_color = {0, 0, 0, 96};
-  struct widget *pBuf, *pWindow;
+  struct widget *buf, *pwindow;
   utf8_str *pstr;
-  SDL_Surface *pFlag, *pEnabled, *pDisabled;
+  SDL_Surface *flag, *enabled, *disabled;
   SDL_Rect dst;
   int i, col, block_x, x, y;
   SDL_Rect area;
 
-  if (pGotoDlg) {
+  if (goto_dlg) {
     return;
   }
 
-  pGotoDlg = fc_calloc(1, sizeof(struct ADVANCED_DLG));
+  goto_dlg = fc_calloc(1, sizeof(struct advanced_dialog));
 
-  pstr = create_utf8_from_char(_("Select destination"), adj_font(12));
+  pstr = create_utf8_from_char_fonto(_("Select destination"),
+                                     FONTO_ATTENTION);
   pstr->style |= TTF_STYLE_BOLD;
 
-  pWindow = create_window_skeleton(NULL, pstr, 0);
+  pwindow = create_window_skeleton(NULL, pstr, 0);
 
-  pWindow->action = goto_dialog_window_callback;
-  set_wstate(pWindow, FC_WS_NORMAL);
+  pwindow->action = goto_dialog_window_callback;
+  set_wstate(pwindow, FC_WS_NORMAL);
 
-  add_to_gui_list(ID_WINDOW, pWindow);
-  pGotoDlg->pEndWidgetList = pWindow;
+  add_to_gui_list(ID_WINDOW, pwindow);
+  goto_dlg->end_widget_list = pwindow;
 
-  area = pWindow->area;
+  area = pwindow->area;
 
   /* ---------- */
-  /* create exit button */
-  pBuf = create_themeicon(current_theme->Small_CANCEL_Icon, pWindow->dst,
-                          WF_WIDGET_HAS_INFO_LABEL | WF_RESTORE_BACKGROUND);
-  pBuf->info_label = create_utf8_from_char(_("Close Dialog (Esc)"),
-                                           adj_font(12));
-  pBuf->action = exit_goto_dialog_callback;
-  set_wstate(pBuf, FC_WS_NORMAL);
-  pBuf->key = SDLK_ESCAPE;
-  area.w = MAX(area.w, pBuf->size.w) + adj_size(10);
+  /* Create exit button */
+  buf = create_themeicon(current_theme->small_cancel_icon, pwindow->dst,
+                         WF_WIDGET_HAS_INFO_LABEL | WF_RESTORE_BACKGROUND);
+  buf->info_label = create_utf8_from_char_fonto(_("Close Dialog (Esc)"),
+                                                FONTO_ATTENTION);
+  buf->action = exit_goto_dialog_callback;
+  set_wstate(buf, FC_WS_NORMAL);
+  buf->key = SDLK_ESCAPE;
+  area.w = MAX(area.w, buf->size.w) + adj_size(10);
 
-  add_to_gui_list(ID_BUTTON, pBuf);
+  add_to_gui_list(ID_BUTTON, buf);
 
   col = 0;
   /* --------------------------------------------- */
-  players_iterate(pPlayer) {
-    if (pPlayer != client.conn.playing
-        && DS_NO_CONTACT == player_diplstate_get(client.conn.playing, pPlayer)->type) {
+  players_iterate(pplayer) {
+    if (pplayer != client.conn.playing
+        && DS_NO_CONTACT == player_diplstate_get(client.conn.playing, pplayer)->type) {
       continue;
     }
 
-    pFlag = ResizeSurfaceBox(get_nation_flag_surface(pPlayer->nation),
-                             adj_size(30), adj_size(30), 1, TRUE, FALSE);
+    flag = resize_surface_box(get_nation_flag_surface(pplayer->nation),
+                              adj_size(30), adj_size(30), 1, TRUE, FALSE);
 
-    pEnabled = create_icon_theme_surf(pFlag);
-    fill_rect_alpha(pFlag, NULL, &bg_color);
-    pDisabled = create_icon_theme_surf(pFlag);
-    FREESURFACE(pFlag);
+    enabled = create_icon_theme_surf(flag);
+    fill_rect_alpha(flag, NULL, &bg_color);
+    disabled = create_icon_theme_surf(flag);
+    FREESURFACE(flag);
 
-    pBuf = create_checkbox(pWindow->dst,
-                           BV_ISSET(all_players, player_index(pPlayer)),
-                           WF_FREE_THEME | WF_RESTORE_BACKGROUND
-                           | WF_WIDGET_HAS_INFO_LABEL);
-    set_new_checkbox_theme(pBuf, pEnabled, pDisabled);
+    buf = create_checkbox(pwindow->dst,
+                          BV_ISSET(all_players, player_index(pplayer)),
+                          WF_FREE_THEME | WF_RESTORE_BACKGROUND
+                          | WF_WIDGET_HAS_INFO_LABEL);
+    set_new_checkbox_theme(buf, enabled, disabled);
 
-    pBuf->info_label =
-        create_utf8_from_char(nation_adjective_for_player(pPlayer),
-                               adj_font(12));
-    pBuf->info_label->style &= ~SF_CENTER;
-    set_wstate(pBuf, FC_WS_NORMAL);
+    buf->info_label
+      = create_utf8_from_char_fonto(nation_adjective_for_player(pplayer),
+                                    FONTO_ATTENTION);
+    buf->info_label->style &= ~SF_CENTER;
+    set_wstate(buf, FC_WS_NORMAL);
 
-    pBuf->action = toggle_goto_nations_cities_dialog_callback;
-    add_to_gui_list(MAX_ID - player_number(pPlayer), pBuf);
+    buf->action = toggle_goto_nations_cities_dialog_callback;
+    add_to_gui_list(MAX_ID - player_number(pplayer), buf);
     col++;
   } players_iterate_end;
 
-  pGotoDlg->pBeginWidgetList = pBuf;
+  goto_dlg->begin_widget_list = buf;
 
-  create_vertical_scrollbar(pGotoDlg, 1, adj_size(320) / adj_size(30), TRUE, TRUE);
-  hide_scrollbar(pGotoDlg->pScroll);
+  create_vertical_scrollbar(goto_dlg, 1, adj_size(320) / adj_size(30), TRUE, TRUE);
+  hide_scrollbar(goto_dlg->scroll);
 
   area.w = MAX(area.w, adj_size(300));
   area.h = adj_size(320);
 
-  resize_window(pWindow, NULL, NULL,
-                (pWindow->size.w - pWindow->area.w) + area.w,
-                (pWindow->size.h - pWindow->area.h) + area.h);
+  resize_window(pwindow, NULL, NULL,
+                (pwindow->size.w - pwindow->area.w) + area.w,
+                (pwindow->size.h - pwindow->area.h) + area.h);
 
   /* background */
   col = (col + 15) / 16; /* number of flag columns */
 
-  pFlag = ResizeSurface(current_theme->Block,
-                        (col * pBuf->size.w + (col - 1) * adj_size(5) + adj_size(10)),
+  flag = resize_surface(current_theme->block,
+                        (col * buf->size.w + (col - 1) * adj_size(5) + adj_size(10)),
                         area.h, 1);
 
-  block_x = dst.x = area.x + area.w - pFlag->w;
+  block_x = dst.x = area.x + area.w - flag->w;
   dst.y = area.y;
-  alphablit(pFlag, NULL, pWindow->theme, &dst, 255);
-  FREESURFACE(pFlag);
+  alphablit(flag, NULL, pwindow->theme, &dst, 255);
+  FREESURFACE(flag);
 
-  widget_set_position(pWindow,
-                      (main_window_width() - pWindow->size.w) / 2,
-                      (main_window_height() - pWindow->size.h) / 2);
+  widget_set_position(pwindow,
+                      (main_window_width() - pwindow->size.w) / 2,
+                      (main_window_height() - pwindow->size.h) / 2);
 
   /* exit button */
-  pBuf = pWindow->prev;
-  pBuf->size.x = area.x + area.w - pBuf->size.w - 1;
-  pBuf->size.y = pWindow->size.y + adj_size(2);
+  buf = pwindow->prev;
+  buf->size.x = area.x + area.w - buf->size.w - 1;
+  buf->size.y = pwindow->size.y + adj_size(2);
 
   /* nations buttons */
-  pBuf = pBuf->prev;
+  buf = buf->prev;
   i = 0;
   x = block_x + adj_size(5);
   y = area.y + adj_size(1);
-  while (pBuf) {
-    pBuf->size.x = x;
-    pBuf->size.y = y;
+  fc_assert(col > 0);
+  if (col > 0) {
+    while (buf) {
+      buf->size.x = x;
+      buf->size.y = y;
 
-    if (!((i + 1) % col)) {
-      x = block_x + adj_size(5);
-      y += pBuf->size.h + adj_size(1);
-    } else {
-      x += pBuf->size.w + adj_size(5);
+      if (!((i + 1) % col)) {
+        x = block_x + adj_size(5);
+        y += buf->size.h + adj_size(1);
+      } else {
+        x += buf->size.w + adj_size(5);
+      }
+
+      if (buf == goto_dlg->begin_widget_list) {
+        break;
+      }
+
+      i++;
+      buf = buf->prev;
     }
-
-    if (pBuf == pGotoDlg->pBeginWidgetList) {
-      break;
-    }
-
-    i++;
-    pBuf = pBuf->prev;
   }
 
-  setup_vertical_scrollbar_area(pGotoDlg->pScroll,
-	                        block_x, area.y,
-  	                        area.h, TRUE);
+  setup_vertical_scrollbar_area(goto_dlg->scroll,
+                                block_x, area.y,
+                                area.h, TRUE);
 
   update_goto_dialog();
 }
@@ -417,11 +423,11 @@ void popup_airlift_dialog(void)
 **************************************************************************/
 void popdown_goto_airlift_dialog(void)
 {
-  if (pGotoDlg) {
-    popdown_window_group_dialog(pGotoDlg->pBeginWidgetList,
-                                pGotoDlg->pEndWidgetList);
-    FC_FREE(pGotoDlg->pScroll);
-    FC_FREE(pGotoDlg);
+  if (goto_dlg) {
+    popdown_window_group_dialog(goto_dlg->begin_widget_list,
+                                goto_dlg->end_widget_list);
+    FC_FREE(goto_dlg->scroll);
+    FC_FREE(goto_dlg);
   }
   GOTO = TRUE;
 }

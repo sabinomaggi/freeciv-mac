@@ -2,9 +2,9 @@
 ; description.
 
 [datafile]
-description="<modpack> governments data for Freeciv"
-options="+Freeciv-ruleset-Devel-2017.Jan.02"
-format_version=20
+description = "<modpack> governments data for Freeciv"
+options = "+Freeciv-ruleset-3.4-Devel-2025.Jan.17"
+format_version = 50
 
 [governments]
 during_revolution = "Anarchy"
@@ -18,8 +18,8 @@ during_revolution = "Anarchy"
 ; output when reading this file.
 ;
 ; For the "official" rulesets, the order of these sections should not
-; be changed because that would break backward compatability with
-; savegames.  (In particular, if Fundamentalism is added to default
+; be changed because that would break backward compatibility with
+; savegames. (In particular, if Fundamentalism is added to default
 ; ruleset, should be added at end.)
 ;
 ; Notes on fields:
@@ -31,14 +31,24 @@ during_revolution = "Anarchy"
 ;                to rename an item after a ruleset has been released, you
 ;                should set "rule_name" to the original value of "name".
 ; reqs         = requirements for this government (see README.effects)
-; graphic      = tag specifing preferred graphic
+; graphic      = tag specifying preferred graphic
 ; graphic_alt  = alternate graphics tag if preferred is not found;
 ;                should be a standard tag if preferred is not;
 ;                otherwise may be "-"
+; sound        = Sound tag for the audio to play when player switch
+;                to government.
+; sound_alt    = Alternative sound tag, in case primary one is not found.
+; sound_alt2   = Second alternative sound tag, in case neither primary tag
+;                nor the first alt tag is found.
 ; ai_better    = AI will not consider this government for use if the
 ;                government listed here is available
-; ruler_titles = ruler titles by nation, "-" is default, and non-matched
-;                nations are ignored
+; ruler_male_title   = The default male ruler title for the government type.
+;                      It's a format string where name of the ruler is marked
+;                      by '%s'.
+;                      Individual nations may override this by their
+;                      own title.
+; ruler_female_title = The default female ruler title for the government type.
+;                      See above ruler_male_title.
 ; helptext     = optional help text string; should escape all raw newlines
 ;                so that xgettext parsing works
 ;
@@ -51,6 +61,9 @@ name        = _("Anarchy")
 ; No reqs
 graphic     = "gov.anarchy"
 graphic_alt = "-"
+sound       = "g_anarchy"
+sound_alt   = "-"
+sound_alt2  = "-"
 
 ruler_male_title = _("Usurper %s")
 ruler_female_title = _("?female:Usurper %s")
@@ -69,6 +82,9 @@ reqs =
    }
 graphic     = "gov.despotism"
 graphic_alt = "-"
+sound       = "g_generic"
+sound_alt   = "-"
+sound_alt2  = "-"
 
 ruler_male_title = _("Leader %s")
 ruler_female_title = _("Leader %s")
@@ -97,6 +113,8 @@ helptext = _("\
 ;                           effect_value = (ui_value + offset) * (factor/100)
 ;                           Optional; by default offset=0, factor=100, so
 ;                           that UI values are used as-is.
+; minimum_turns           = how often multiplier can be changed, or: how long one is stuck
+;                           with the given value after changing to it
 ; reqs                    = requirements for adjusting this policy (see README.effects)
 ; helptext                = optional help text string; should escape all raw
 ;                           newlines so that xgettext parsing works

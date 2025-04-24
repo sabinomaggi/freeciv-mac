@@ -2,7 +2,7 @@
 [spec]
 
 ; Format and options of this spec file:
-options = "+Freeciv-spec-Devel-2015-Mar-25"
+options = "+Freeciv-spec-3.3-Devel-2023.Apr.05"
 
 [info]
 
@@ -12,6 +12,7 @@ artists = "
     Yautja
     CapTVK
     GriffonSpade
+    Canik
 "
 
 [file]
@@ -52,41 +53,41 @@ tiles = { "row", "column", "tag"
 
 ; Terrain special resources:
 
- 0,  2, "ts.oasis"
- 0,  4, "ts.oil"
+ 0,  2, "ts.oasis:0"
+ 0,  4, "ts.oil:0"
 
- 1,  2, "ts.buffalo"
- 1,  4, "ts.wheat"
+ 1,  2, "ts.buffalo:0"
+ 1,  4, "ts.wheat:0"
 
- 2,  2, "ts.pheasant"
- 2,  4, "ts.silk"
+ 2,  2, "ts.pheasant:0"
+ 2,  4, "ts.silk:0"
 
- 3,  2, "ts.coal"
- 3,  4, "ts.wine"
+ 3,  2, "ts.coal:0"
+ 3,  4, "ts.wine:0"
 
- 4,  2, "ts.gold"
- 4,  4, "ts.iron"
+ 4,  2, "ts.gold:0"
+ 4,  4, "ts.iron:0"
 
- 5,  2, "ts.tundra_game"
- 5,  4, "ts.furs"
+ 5,  2, "ts.tundra_game:0"
+ 5,  4, "ts.furs:0"
 
- 6,  2, "ts.arctic_ivory"
- 6,  4, "ts.arctic_oil"
+ 6,  2, "ts.arctic_ivory:0"
+ 6,  4, "ts.arctic_oil:0"
 
- 7,  2, "ts.peat"
- 7,  4, "ts.spice"
+ 7,  2, "ts.peat:0"
+ 7,  4, "ts.spice:0"
 
- 8,  2, "ts.gems"
- 8,  4, "ts.fruit"
+ 8,  2, "ts.gems:0"
+ 8,  4, "ts.fruit:0"
 
- 9,  2, "ts.fish"
- 9,  4, "ts.whales"
+ 9,  2, "ts.fish:0"
+ 9,  4, "ts.whales:0"
 
- 10, 2, "ts.seals"
- 10, 4, "ts.forest_game"
+ 10, 2, "ts.seals:0"
+ 10, 4, "ts.forest_game:0"
 
- 11, 2, "ts.horses"
- 11, 4, "ts.grassland_resources", "ts.river_resources"
+ 11, 2, "ts.horses:0"
+ 11, 4, "ts.grassland_resources:0", "ts.river_resources:0"
 
 ; Roads
  12, 0, "road.road_isolated"
@@ -111,14 +112,15 @@ tiles = { "row", "column", "tag"
  13, 8, "road.rail_nw"
 
 ; Other extras
- 0,  6, "tx.oil_mine"
+ 0,  6, "tx.oil_mine:0"
  1,  6, "tx.irrigation"
  2,  6, "tx.farmland"
- 3,  6, "tx.mine"
- 4,  6, "tx.pollution"
- 5,  6, "tx.village"
- 6,  6, "tx.fallout"
- 7,  6, "tx.oil_rig"
+ 3,  6, "tx.mine:0"
+ 4,  6, "tx.pollution:0"
+ 5,  6, "tx.village:0"
+ 6,  6, "tx.fallout:0"
+ 7,  6, "tx.oil_rig:0"
+ 8,  6, "tx.nets:0"
 
  15,  0, "t.dither_tile"
  15,  0, "tx.darkness"
@@ -129,6 +131,7 @@ tiles = { "row", "column", "tag"
  15,  3, "t.blend.lake"
  15,  4, "user.attention"
  15,  5, "tx.fog"
+ 15,  6, "user.infratile"
 
 ;goto path sprites
  14,  7, "path.exhausted_mp"    ; tip of path, no MP left

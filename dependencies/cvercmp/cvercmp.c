@@ -1,6 +1,6 @@
 /*********************************************************
 *                                                        *
-* (c) 2011-2015 Marko Lindqvist                          *
+* (c) 2011-2016 Marko Lindqvist                          *
 *                                                        *
 * Version contributed to Freeciv has been made available *
 * under GNU Public License; either version 2, or         *
@@ -17,6 +17,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* utility */
+#include "support.h"
 
 #include "cvercmp.h"
 
@@ -134,7 +137,7 @@ static enum cvercmp_type cvercmp_tokens(const char *token1, const char *token2)
         solution = true;
       }
     } else {
-      int alphacmp = strcasecmp(t1[i], t2[i]);
+      int alphacmp = fc_strcasecmp(t1[i], t2[i]);
 
       if (alphacmp) {
         enum cvercmp_prever pre1 = cvercmp_parse_prever(t1[i]);
@@ -200,7 +203,7 @@ enum cvercmp_type cvercmp_cmp(const char *ver1, const char *ver2)
   char **tokens2 = cvercmp_ver_tokenize(ver2);
 
   for (i = 0; (tokens1[i] != NULL && tokens2[i] != NULL) && !solution; i++) {
-    if (strcasecmp(tokens1[i], tokens2[i])) {
+    if (fc_strcasecmp(tokens1[i], tokens2[i])) {
       /* Parts are not equal */
       result = cvercmp_tokens(tokens1[i], tokens2[i]);
       solution = true;
@@ -237,11 +240,11 @@ static char **cvercmp_ver_tokenize(const char *ver)
     num++;
   }
 
-  tokens = calloc(sizeof(char *), num + 1);
+  tokens = (char **) calloc(sizeof(char *), num + 1);
 
   for (i = 0, idx = 0; i < num; i++) {
     tokenlen = cvercmp_next_token(ver + idx);
-    tokens[i] = malloc(sizeof(char) * (tokenlen + 1));
+    tokens[i] = (char *) malloc(sizeof(char) * (tokenlen + 1));
     strncpy(tokens[i], ver + idx, tokenlen);
     tokens[i][tokenlen] = '\0';
     idx += tokenlen + 1; /* Skip character separating tokens. */
@@ -281,12 +284,14 @@ static char **cvercmp_ver_subtokenize(const char *ver)
     num++;
   }
 
-  tokens = calloc(sizeof(char *), num + 1);
+  tokens = (char **) calloc(sizeof(char *), num + 1);
 
   for (i = 0, idx = 0; i < num; i++) {
     tokenlen = cvercmp_next_subtoken(ver + idx);
-    tokens[i] = malloc(sizeof(char) * (tokenlen + 1));
-    strncpy(tokens[i], ver + idx, tokenlen);
+    tokens[i] = (char *) malloc(sizeof(char) * (tokenlen + 1));
+    if (tokenlen > 0) {
+      strncpy(tokens[i], ver + idx, tokenlen);
+    }
     tokens[i][tokenlen] = '\0';
     idx += tokenlen;
   }
@@ -321,7 +326,7 @@ static enum cvercmp_prever cvercmp_parse_prever(const char *ver)
   int i;
 
   for (i = 0; preverstrs[i].str != NULL; i++) {
-    if (!strcasecmp(ver, preverstrs[i].str)) {
+    if (!fc_strcasecmp(ver, preverstrs[i].str)) {
       return preverstrs[i].prever;
     }
   }

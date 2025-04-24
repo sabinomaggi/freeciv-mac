@@ -31,7 +31,7 @@ Webbplats:
 
 Freecivs webbplats är:
 
-  http://www.freeciv.org/
+  https://www.freeciv.org/
 
 Här kan man få de senaste nyheterna, utgåvorna och uppdateringarna,
 hitta information om Freecivs diskussionslistor samt se metaservern
@@ -95,7 +95,7 @@ Server:
   |  Vissa kommandon tar ett eller flera argument, åtskilda av
   |  blanksteg.  I många fall kan kommandon och kommandoargument
   |  förkortas. Valmöjligheter är inställningar som styr servern medan
-  |  den är i gång. 
+  |  den är i gång.
   |
   |  För att ta reda på hur man får mer information om kommandon och
   |  valmöjligheter, använd "help help".
@@ -170,7 +170,7 @@ Klient:
 
   Andra uppsättningar kan hämtas från:
 
-       http://www.freeciv.org/wiki/Tilesets
+       https://www.freeciv.org/wiki/Tilesets
 
   Klienter kan ges tillåtelse att utföra serverkommandon. Skriv
   följande vid serverprompten för att endast ge dem tillåtelse att
@@ -235,7 +235,7 @@ Tillkännage spelet:
 Om man vill ha andra motståndare än lokala vänner och datorstyrda
 spelare kan man besöka Freecivs metaserver:
 
-  http://meta.freeciv.org/
+  https://meta.freeciv.org/
 
 Det är en lista över freecivservrar. För att få sin server att anmäla
 sig där kör man civserver med kommandoradsargumentet "--meta" eller
@@ -320,7 +320,7 @@ kan man titta i filen "HOWTOPLAY.sv".
 Se freecivhandboken på följande adress för mycket mer information om
 klienten, servern och spelet:
 
-  http://www.freeciv.org/wiki/Manual
+  https://www.freeciv.org/wiki/Manual
 
 
 Avsluta spelet:
@@ -456,7 +456,7 @@ Vi har fyra diskussionslistor:
                    listan utan bara ta emot.
   freeciv-i18n     Översättning av Freeciv.
                    Samtal om översättning av Freecivkoden,
-                   dokumentation och websida till andra språk än 
+                   dokumentation och websida till andra språk än
                    engelska.
   freeciv-dev      Programmering och annan utveckling.
   freeciv-commits  Kungörelser om ändringar i SVN-trädet.
@@ -474,9 +474,9 @@ Internet Relay Chat (IRC)
 =========================
 
 Flera spelare och utvecklare håller till på #freeciv och #freeciv-dev
-på Freenode. Försök ansluta till servern:
+på Libera.Chat. Försök ansluta till servern:
 
-	irc.freenode.net
+	irc.libera.chat
 
 
 Slutligen:

@@ -15,7 +15,7 @@ S'ha de fer el següent:
  - Comprovar que no sigui un problema ja conegut. Per una llista que es
    manté sempre al dia, veure:
 
-        http://www.freeciv.org/wiki/Known_Bugs
+        https://www.freeciv.org/wiki/Known_Bugs
 
  - Mirar el web de Freeciv, per assegurar-se que estàs jugant amb la
    versió més nova. (Potser ja l'hem solucionat).
@@ -31,7 +31,7 @@ S'ha de fer el següent:
 
    Si et surten missatges de GDK/GTK, com per exemple:
 
-     Gtk-CRITICAL **: file gtkobject.c: line 1163 (gtk_object_ref): 
+     Gtk-CRITICAL **: file gtkobject.c: line 1163 (gtk_object_ref):
      assertion oject->ref_count > 0' failed.
 
    si us plau reinicia el client i afegeix "-- --g-fatal-warnings" a
@@ -76,7 +76,7 @@ S'ha de fer el següent:
    - Si és un problema de traducció, s'hauria de dir al Contacte Primari per
      l'idioma. Per veure els seus noms i adreces, vés a:
 
-        http://www.freeciv.org/wiki/Localization
+        https://www.freeciv.org/wiki/Localization
 
 
 INFORMACIÓ ADDICIONAL:
@@ -84,8 +84,8 @@ INFORMACIÓ ADDICIONAL:
 
 Per més informació, com sempre, la web de Freeciv:
 
-        http://www.freeciv.org/
+        https://www.freeciv.org/
 
 i ara, la versió catalana:
 
-        http://www.freeciv.org/wiki-ca/
+        https://www.freeciv.org/wiki-ca/

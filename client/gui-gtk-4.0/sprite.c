@@ -22,6 +22,7 @@
 
 /* client/gui-gtk-4.0 */
 #include "colors.h"
+#include "mapview.h"
 
 #include "sprite.h"
 
@@ -64,7 +65,7 @@ struct sprite *crop_sprite(struct sprite *source,
   cr = cairo_create(new->surface);
   cairo_rectangle(cr, 0, 0, width, height);
   cairo_clip(cr);
-  
+
   cairo_set_source_surface(cr, source->surface, -x, -y);
   cairo_paint(cr);
   if (mask) {
@@ -162,14 +163,14 @@ static void surf_destroy_callback(void *data)
 }
 
 /************************************************************************//**
-  Load the given graphics file into a sprite.  This function loads an
+  Load the given graphics file into a sprite. This function loads an
   entire image file, which may later be broken up into individual sprites
-  with crop_sprite.
+  with crop_sprite().
 ****************************************************************************/
-struct sprite *load_gfxfile(const char *filename)
+struct sprite *load_gfxfile(const char *filename, bool svgflag)
 {
   struct sprite *spr;
-  GError *err = NULL;;
+  GError *err = NULL;
   GdkPixbuf *pb = gdk_pixbuf_new_from_file(filename, &err);
   int width;
   int height;
@@ -188,6 +189,8 @@ struct sprite *load_gfxfile(const char *filename)
   }
 
   spr = fc_malloc(sizeof(*spr));
+  spr->surface = NULL;
+
   width = gdk_pixbuf_get_width(pb);
   height = gdk_pixbuf_get_height(pb);
   pbdata = gdk_pixbuf_get_pixels(pb);
@@ -198,7 +201,8 @@ struct sprite *load_gfxfile(const char *filename)
   cairo_stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, width);
   if (cairo_stride <= 0) {
     log_error("Cairo does not give stride for width %d", width);
-    free(spr);
+    free_sprite(spr);
+
     return NULL;
   }
 
@@ -220,8 +224,10 @@ struct sprite *load_gfxfile(const char *filename)
           data[j * 4 + 0] = tmp;
         } else {
           tmp = MULTI_UNc(pbdata[j * channels + 2], pbdata[j * channels + 3]);
-          data[j * 4 + 1] = MULTI_UNc(pbdata[j * channels + 1], pbdata[j * channels + 3]);
-          data[j * 4 + 2] = MULTI_UNc(pbdata[j * channels + 0], pbdata[j * channels + 3]);
+          data[j * 4 + 1] = MULTI_UNc(pbdata[j * channels + 1],
+                                      pbdata[j * channels + 3]);
+          data[j * 4 + 2] = MULTI_UNc(pbdata[j * channels + 0],
+                                      pbdata[j * channels + 3]);
           data[j * 4 + 0] = tmp;
           data[j * 4 + 3] = pbdata[j * channels + 3];
         }
@@ -244,9 +250,10 @@ struct sprite *load_gfxfile(const char *filename)
 
   spr->surface = cairo_image_surface_create_for_data(cairo_data, CAIRO_FORMAT_ARGB32,
                                                      width, height, cairo_stride);
-  if (spr->surface == NULL || cairo_surface_status(spr->surface) != CAIRO_STATUS_SUCCESS) {
+  if (spr->surface == NULL
+      || cairo_surface_status(spr->surface) != CAIRO_STATUS_SUCCESS) {
     log_error("Cairo image surface creation error");
-    free(spr);
+    free_sprite(spr);
     free(cairo_data);
 
     return NULL;
@@ -268,9 +275,12 @@ struct sprite *load_gfxfile(const char *filename)
 /************************************************************************//**
   Free a sprite and all associated image data.
 ****************************************************************************/
-void free_sprite(struct sprite * s)
+void free_sprite(struct sprite *s)
 {
-  cairo_surface_destroy(s->surface);
+  if (s->surface != NULL) {
+    cairo_surface_destroy(s->surface);
+  }
+
   free(s);
 }
 
@@ -286,7 +296,7 @@ struct sprite *sprite_scale(struct sprite *src, int new_w, int new_h)
 
   get_sprite_dimensions(src, &width, &height);
 
-  new->surface = cairo_surface_create_similar(src->surface, 
+  new->surface = cairo_surface_create_similar(src->surface,
       CAIRO_CONTENT_COLOR_ALPHA, new_w, new_h);
 
   cr = cairo_create(new->surface);
@@ -306,10 +316,10 @@ struct sprite *sprite_scale(struct sprite *src, int new_w, int new_h)
 /************************************************************************//**
   Method returns the bounding box of a sprite. It assumes a rectangular
   object/mask. The bounding box contains the border (pixel which have
-  unset pixel as neighbours) pixel.
+  unset pixel as neighbors) pixel.
 ****************************************************************************/
-void sprite_get_bounding_box(struct sprite * sprite, int *start_x,
-			     int *start_y, int *end_x, int *end_y)
+void sprite_get_bounding_box(struct sprite *sprite, int *start_x,
+                             int *start_y, int *end_x, int *end_y)
 {
   unsigned char *data = cairo_image_surface_get_data(sprite->surface);
   int width = cairo_image_surface_get_width(sprite->surface);
@@ -325,46 +335,46 @@ void sprite_get_bounding_box(struct sprite * sprite, int *start_x,
 
   fc_assert(cairo_image_surface_get_format(sprite->surface) == CAIRO_FORMAT_ARGB32);
 
-  /* parses mask image for the first column that contains a visible pixel */
+  /* Parses mask image for the first column that contains a visible pixel */
   *start_x = -1;
   for (i = 0; i < width && *start_x == -1; i++) {
     for (j = 0; j < height; j++) {
       if (data[(j * width + i) * 4 + endian]) {
-	*start_x = i;
-	break;
+        *start_x = i;
+        break;
       }
     }
   }
 
-  /* parses mask image for the last column that contains a visible pixel */
+  /* Parses mask image for the last column that contains a visible pixel */
   *end_x = -1;
   for (i = width - 1; i >= *start_x && *end_x == -1; i--) {
     for (j = 0; j < height; j++) {
       if (data[(j * width + i) * 4 + endian]) {
-	*end_x = i;
-	break;
+        *end_x = i;
+        break;
       }
     }
   }
 
-  /* parses mask image for the first row that contains a visible pixel */
+  /* Parses mask image for the first row that contains a visible pixel */
   *start_y = -1;
   for (i = 0; i < height && *start_y == -1; i++) {
     for (j = *start_x; j <= *end_x; j++) {
       if (data[(i * width + j) * 4 + endian]) {
-	*start_y = i;
-	break;
+        *start_y = i;
+        break;
       }
     }
   }
 
-  /* parses mask image for the last row that contains a visible pixel */
+  /* Parses mask image for the last row that contains a visible pixel */
   *end_y = -1;
   for (i = height - 1; i >= *end_y && *end_y == -1; i--) {
     for (j = *start_x; j <= *end_x; j++) {
       if (data[(i * width + j) * 4 + endian]) {
-	*end_y = i;
-	break;
+        *end_y = i;
+        break;
       }
     }
   }
@@ -419,7 +429,7 @@ GdkPixbuf *surface_get_pixbuf(cairo_surface_t *surf, int width, int height)
   rowstride = gdk_pixbuf_get_rowstride(pb);
 
   tmpsurf = cairo_image_surface_create_for_data(pixels, CAIRO_FORMAT_ARGB32,
-						width, height, rowstride);
+                                                width, height, rowstride);
 
   cr = cairo_create(tmpsurf);
   cairo_save(cr);
@@ -470,4 +480,114 @@ GdkPixbuf *surface_get_pixbuf(cairo_surface_t *surf, int width, int height)
   cairo_surface_destroy(tmpsurf);
 
   return pb;
+}
+
+/************************************************************************//**
+  Create a pixbuf containing a representative image for the given extra
+  type, to be used as an icon in the GUI.
+
+  May return NULL on error.
+
+  NB: You must call g_object_unref on the non-NULL return value when you
+  no longer need it.
+****************************************************************************/
+GdkPixbuf *create_extra_pixbuf(const struct extra_type *pextra)
+{
+  struct drawn_sprite sprs[80];
+  int count, w, h, canvas_x, canvas_y;
+  GdkPixbuf *pixbuf;
+  struct canvas canvas = FC_STATIC_CANVAS_INIT;
+  cairo_t *cr;
+
+  w = tileset_tile_width(tileset);
+  h = tileset_tile_height(tileset);
+
+  canvas.surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+  canvas_x = 0;
+  canvas_y = 0;
+
+  cr = cairo_create(canvas.surface);
+  cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+
+  count = fill_basic_extra_sprite_array(tileset, sprs, pextra);
+  put_drawn_sprites(&canvas, 1.0, canvas_x, canvas_y, count, sprs, FALSE);
+
+  pixbuf = surface_get_pixbuf(canvas.surface, w, h);
+  cairo_surface_destroy(canvas.surface);
+
+  return pixbuf;
+}
+
+/************************************************************************//**
+  Create a GtkPicture from cairo surface.
+****************************************************************************/
+GtkWidget *picture_new_from_surface(cairo_surface_t *surf)
+{
+  GdkPixbuf *pb;
+  GtkWidget *pic;
+
+  pb = surface_get_pixbuf(surf,
+                          cairo_image_surface_get_width(surf),
+                          cairo_image_surface_get_height(surf));
+
+  pic = gtk_picture_new_for_pixbuf(pb);
+  g_object_unref(pb);
+
+  return pic;
+}
+
+/************************************************************************//**
+  Set a GtkPicture from cairo surface.
+****************************************************************************/
+void picture_set_from_surface(GtkPicture *pic, cairo_surface_t *surf)
+{
+  GdkPixbuf *pb;
+  GdkTexture *texture;
+  GdkPaintable *empty;
+
+  pb = surface_get_pixbuf(surf,
+                          cairo_image_surface_get_width(surf),
+                          cairo_image_surface_get_height(surf));
+
+  /* Workaround to gtk bug that gtk_picture_set_paintable() does
+   * not work if the new paintable is of the same size as current */
+  empty = gdk_paintable_new_empty(1, 1);
+  gtk_picture_set_paintable(pic, empty);
+
+  texture = gdk_texture_new_for_pixbuf(pb);
+  gtk_picture_set_paintable(pic, GDK_PAINTABLE(texture));
+  g_object_unref(texture);
+  g_object_unref(pb);
+}
+
+/************************************************************************//**
+  Return a sprite image of a number.
+****************************************************************************/
+struct sprite *load_gfxnumber(int num)
+{
+  int width, height;
+  char buf[10];
+  struct sprite *spr;
+  struct color *sprcolor = color_alloc(0xff, 0xff, 0x00);
+  struct color *textcolor = color_alloc(0x00, 0x00, 0x00);
+  cairo_t *cr;
+  int border = 2;
+
+  fc_snprintf(buf, sizeof(buf), "%d", num);
+  get_text_size(&width, &height, FONT_CITY_PROD, buf);
+
+  spr = create_sprite(width + border * 2, height + border * 2, sprcolor);
+
+  cr = cairo_create(spr->surface);
+
+  surface_put_text(cr, border, border, 1.0, FONT_CITY_PROD, textcolor, buf);
+
+  cairo_destroy(cr);
+
+  color_free(textcolor);
+  color_free(sprcolor);
+
+  return spr;
 }

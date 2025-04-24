@@ -17,12 +17,16 @@
 
 /* client */
 #include "gui_main_g.h"
+#include "options.h"
+
+#define GUI_NAME_FULL  "gui-gtk-3.22"
+#define GUI_NAME_SHORT "gtk3.22"
 
 #define GUI_GTK_OPTION(optname) gui_options.gui_gtk3_22_##optname
 #define GUI_GTK_OPTION_STR(optname) "gui_gtk3_22_" #optname
 #define GUI_GTK_DEFAULT_THEME_NAME FC_GTK3_22_DEFAULT_THEME_NAME
 
-/* network string charset conversion */
+/* Network string charset conversion */
 gchar *ntoh_str(const gchar *netstr);
 
 extern PangoFontDescription *city_names_style;
@@ -83,6 +87,13 @@ int screen_width(void);
 int screen_height(void);
 struct video_mode *resolution_request_get(void);
 
+void fullscreen_opt_refresh(struct option *poption);
+
 bool is_gui_up(void);
 
-#endif  /* FC__GUI_MAIN_H */
+gboolean fc_lost_focus(GtkWidget *w, GdkEventKey *ev, gpointer data);
+gboolean fc_gained_focus(GtkWidget *w, GdkEventKey *ev, gpointer data);
+
+void update_turn_done_tooltip(void);
+
+#endif /* FC__GUI_MAIN_H */

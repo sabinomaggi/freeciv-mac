@@ -19,8 +19,10 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* common */
+#include "diptreaty.h"
 #include "fc_types.h"
 #include "featured_text.h"
+#include "packets_gen.h"
 #include "tile.h"
 
 /* client/include */
@@ -30,24 +32,24 @@ extern "C" {
 /* client */
 #include "tilespec.h"
 
+struct act_confirmation_data;
+
 struct gui_funcs {
   void (*ui_init)(void);
-  void (*ui_main)(int argc, char *argv[]);
+  int (*ui_main)(int argc, char *argv[]);
   void (*ui_exit)(void);
 
   enum gui_type (*get_gui_type)(void);
   void (*insert_client_build_info)(char *outbuf, size_t outlen);
-  void (*adjust_default_options)(void);
 
   void (*version_message)(const char *vertext);
   void (*real_output_window_append)(const char *astring,
                                     const struct text_tag_list *tags,
                                     int conn_id);
 
-  bool (*is_view_supported)(enum ts_type type);
   void (*tileset_type_set)(enum ts_type type);
-  void (*free_intro_radar_sprites)(void);
-  struct sprite * (*load_gfxfile)(const char *filename);
+  struct sprite * (*load_gfxfile)(const char *filename, bool svgflag);
+  struct sprite * (*load_gfxnumber)(int num);
   struct sprite * (*create_sprite)(int width, int height, struct color *pcolor);
   void (*get_sprite_dimensions)(struct sprite *sprite, int *width, int *height);
   struct sprite * (*crop_sprite)(struct sprite *source,
@@ -64,6 +66,7 @@ struct gui_funcs {
   void (*canvas_free)(struct canvas *store);
   void (*canvas_set_zoom)(struct canvas *store, float zoom);
   bool (*has_zoom_support)(void);
+  void (*canvas_mapview_init)(struct canvas *store);
   void (*canvas_copy)(struct canvas *dest, struct canvas *src,
                       int src_x, int src_y, int dest_x, int dest_y, int width,
                       int height);
@@ -74,6 +77,10 @@ struct gui_funcs {
   void (*canvas_put_sprite_full)(struct canvas *pcanvas,
                                  int canvas_x, int canvas_y,
                                  struct sprite *psprite);
+  void (*canvas_put_sprite_full_scaled)(struct canvas *pcanvas,
+                                        int canvas_x, int canvas_y,
+                                        int canvas_w, int canvas_h,
+                                        struct sprite *psprite);
   void (*canvas_put_sprite_fogged)(struct canvas *pcanvas,
                                    int canvas_x, int canvas_y,
                                    struct sprite *psprite,
@@ -97,12 +104,14 @@ struct gui_funcs {
                           enum client_font font, struct color *pcolor,
                           const char *text);
 
+  void (*map_canvas_size_refresh)(void);
+
   void (*set_rulesets)(int num_rulesets, char **rulesets);
   void (*options_extra_init)(void);
   void (*server_connect)(void);
   void (*add_net_input)(int sock);
   void (*remove_net_input)(void);
-  void (*real_conn_list_dialog_update)(void);
+  void (*real_conn_list_dialog_update)(void *unused);
   void (*close_connection_dialog)(void);
   void (*add_idle_callback)(void (callback)(void *), void *data);
   void (*sound_bell)(void);
@@ -114,8 +123,6 @@ struct gui_funcs {
   void (*set_unit_icons_more_arrow)(bool onoff);
   void (*real_focus_units_changed)(void);
   void (*gui_update_font)(const char *font_name, const char *font_value);
-  void (*set_city_names_font_sizes)(int my_city_names_font_size,
-                                    int my_city_productions_font_size);
 
   void (*editgui_refresh)(void);
   void (*editgui_notify_object_created)(int tag, int id);
@@ -128,6 +135,7 @@ struct gui_funcs {
                             int attacker_hp, int defender_hp,
                             bool make_att_veteran, bool make_def_veteran);
   void (*update_timeout_label)(void);
+  void (*start_turn)(void);
   void (*real_city_dialog_popup)(struct city *pcity);
   void (*real_city_dialog_refresh)(struct city *pcity);
   void (*popdown_city_dialog)(struct city *pcity);
@@ -138,10 +146,36 @@ struct gui_funcs {
 
   bool (*request_transport)(struct unit *pcargo, struct tile *ptile);
 
+  void (*update_infra_dialog)(void);
+
   void (*gui_load_theme)(const char *directory, const char *theme_name);
   void (*gui_clear_theme)(void);
   char **(*get_gui_specific_themes_directories)(int *count);
-  char **(*get_useable_themes_in_directory)(const char *directory, int *count);
+  char **(*get_usable_themes_in_directory)(const char *directory, int *count);
+
+  void (*gui_init_meeting)(struct treaty *ptreaty, struct player *they,
+                           struct player *initiator);
+  void (*gui_recv_cancel_meeting)(struct treaty *ptreaty, struct player *they,
+                                  struct player *initiator);
+  void (*gui_prepare_clause_updt)(struct treaty *ptreaty, struct player *they);
+  void (*gui_recv_create_clause)(struct treaty *ptreaty, struct player *they);
+  void (*gui_recv_remove_clause)(struct treaty *ptreaty, struct player *they);
+  void (*gui_recv_accept_treaty)(struct treaty *ptreaty, struct player *they);
+
+  void (*request_action_confirmation)(const char *expl,
+                                      struct act_confirmation_data *data);
+
+  void (*real_science_report_dialog_update)(void *unused);
+  void (*science_report_dialog_redraw)(void);
+  void (*science_report_dialog_popup)(bool raise);
+  void (*real_economy_report_dialog_update)(void *unused);
+  void (*real_units_report_dialog_update)(void *unused);
+  void (*endgame_report_dialog_start)(const struct packet_endgame_report *packet);
+  void (*endgame_report_dialog_player)(const struct packet_endgame_player *packet);
+
+  void (*popup_image)(const char *tag);
+
+  void (*setup_gui_properties)(void);
 };
 
 struct gui_funcs *get_gui_funcs(void);

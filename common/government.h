@@ -52,9 +52,13 @@ struct ruler_title;     /* Opaque type. */
 struct government {
   Government_type_id item_number;
   struct name_translation name;
-  bool disabled;
+  bool ruledit_disabled;
+  void *ruledit_dlg;
   char graphic_str[MAX_LEN_NAME];
   char graphic_alt[MAX_LEN_NAME];
+  char sound_str[MAX_LEN_NAME];
+  char sound_alt[MAX_LEN_NAME];
+  char sound_alt2[MAX_LEN_NAME];
   struct requirement_vector reqs;
   struct ruler_title_hash *ruler_titles;
   int changed_to_times;
@@ -101,6 +105,8 @@ ruler_title_female_untranslated_name(const struct ruler_title *pruler_title);
 
 const char *ruler_title_for_player(const struct player *pplayer,
                                    char *buf, size_t buf_len);
+const char *default_title_for_player(const struct player *pplayer,
+                                     char *buf, size_t buf_len);
 
 /* Ancillary routines */
 bool can_change_to_government(struct player *pplayer,
@@ -120,18 +126,18 @@ struct iterator *government_iter_init(struct government_iter *it);
                   NAME_pgov, government_iter_sizeof, government_iter_init)
 #define governments_iterate_end generic_iterate_end
 
-#define governments_active_iterate(_p)                                  \
+#define governments_re_active_iterate(_p)                               \
   governments_iterate(_p) {                                             \
-    if (!_p->disabled) {
+    if (!_p->ruledit_disabled) {
 
-#define governments_active_iterate_end                                  \
+#define governments_re_active_iterate_end                               \
     }                                                                   \
   } governments_iterate_end;
+
+bool untargeted_revolution_allowed(void);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-bool untargeted_revolution_allowed(void);
-
-#endif  /* FC__GOVERNMENT_H */
+#endif /* FC__GOVERNMENT_H */

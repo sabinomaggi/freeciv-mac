@@ -71,7 +71,7 @@ static bv_handicap handicap_of_skill_level(enum ai_level level)
      BV_SET(handicap, H_PRODCHGPEN);
      break;
    case AI_LEVEL_NOVICE:
-   case AI_LEVEL_HANDICAPPED:
+   case AI_LEVEL_RESTRICTED:
      BV_SET(handicap, H_RATES);
      BV_SET(handicap, H_TARGETS);
      BV_SET(handicap, H_HUTS);
@@ -118,15 +118,15 @@ static bv_handicap handicap_of_skill_level(enum ai_level level)
 
 #ifdef FREECIV_DEBUG
    case AI_LEVEL_EXPERIMENTAL:
+     /* H_EXPERIMENTAL + whatever Hard has */
      BV_SET(handicap, H_EXPERIMENTAL);
-     break;
+     fc__fallthrough; /* Falling through to hard */
 #endif /* FREECIV_DEBUG */
 
    case AI_LEVEL_CHEATING:
-     BV_SET(handicap, H_RATES);
-     break;
    case AI_LEVEL_HARD:
-     /* No handicaps */
+     /* No actual handicaps */
+     BV_SET(handicap, H_RATES);
      break;
   case AI_LEVEL_COUNT:
     fc_assert(level != AI_LEVEL_COUNT);
@@ -138,16 +138,16 @@ static bv_handicap handicap_of_skill_level(enum ai_level level)
 
 /**********************************************************************//**
   Return the AI fuzziness (0 to 1000) corresponding to a given skill
-  level (1 to 10).  See ai_fuzzy() in common/player.c
+  level (1 to 10). See ai_fuzzy()
 **************************************************************************/
 static int fuzzy_of_skill_level(enum ai_level level)
 {
   fc_assert(ai_level_is_valid(level));
 
-  switch(level) {
+  switch (level) {
   case AI_LEVEL_AWAY:
     return 0;
-  case AI_LEVEL_HANDICAPPED:
+  case AI_LEVEL_RESTRICTED:
   case AI_LEVEL_NOVICE:
     return 400;
   case AI_LEVEL_EASY:
@@ -178,10 +178,10 @@ static int science_cost_of_skill_level(enum ai_level level)
 {
   fc_assert(ai_level_is_valid(level));
 
-  switch(level) {
+  switch (level) {
   case AI_LEVEL_AWAY:
     return 100;
-  case AI_LEVEL_HANDICAPPED:
+  case AI_LEVEL_RESTRICTED:
   case AI_LEVEL_NOVICE:
     return 250;
   case AI_LEVEL_EASY:
@@ -209,10 +209,10 @@ static int expansionism_of_skill_level(enum ai_level level)
 {
   fc_assert(ai_level_is_valid(level));
 
-  switch(level) {
+  switch (level) {
   case AI_LEVEL_AWAY:
     return 0;
-  case AI_LEVEL_HANDICAPPED:
+  case AI_LEVEL_RESTRICTED:
   case AI_LEVEL_NOVICE:
   case AI_LEVEL_EASY:
     return 10;
@@ -288,7 +288,7 @@ char *ai_level_help(const char *cmdname)
   } /* no level currently has >100, so no string yet */
 
   switch (level) {
-  case AI_LEVEL_HANDICAPPED:
+  case AI_LEVEL_RESTRICTED:
     /* TRANS: describing an AI skill level */
     astr_add_line(&help,
                   _("\nThis skill level has the same features as 'Novice', "
@@ -322,18 +322,18 @@ char *ai_level_help(const char *cmdname)
 
 /**********************************************************************//**
   Return the value normal_decision (a boolean), except if the AI is fuzzy,
-  then sometimes flip the value.  The intention of this is that instead of
+  then sometimes flip the value. The intention of this is that instead of
     if (condition) { action }
   you can use
     if (ai_fuzzy(pplayer, condition)) { action }
   to sometimes flip a decision, to simulate an AI with some confusion,
   indecisiveness, forgetfulness etc. In practice its often safer to use
-    if (condition && ai_fuzzy(pplayer,1)) { action }
+    if (condition && ai_fuzzy(pplayer, TRUE)) { action }
   for an action which only makes sense if condition holds, but which a
-  fuzzy AI can safely "forget".  Note that for a non-fuzzy AI, or for a
-  human player being helped by the AI (eg, autosettlers), you can ignore
+  fuzzy AI can safely "forget". Note that for a non-fuzzy AI, or for a
+  human player being helped by the AI (eg, autoworkers), you can ignore
   the "ai_fuzzy(pplayer," part, and read the previous example as:
-    if (condition && 1) { action }
+    if (condition && TRUE) { action }
   --dwp
 **************************************************************************/
 bool ai_fuzzy(const struct player *pplayer, bool normal_decision)

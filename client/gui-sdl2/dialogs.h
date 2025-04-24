@@ -37,13 +37,13 @@ void popup_advanced_terrain_dialog(struct tile *ptile, Uint16 pos_x,
                                    Uint16 pos_y);
 void popdown_advanced_terrain_dialog(void);
 
-const char *sdl_get_tile_defense_info_text(struct tile *pTile);
-void put_window_near_map_tile(struct widget *pWindow,
+const char *sdl_get_tile_defense_info_text(struct tile *ptile);
+void put_window_near_map_tile(struct widget *pwindow,
                               int window_width, int window_height,
                               struct tile *ptile);
-void popup_unit_upgrade_dlg(struct unit *pUnit, bool city);
-void popup_unit_disband_dlg(struct unit *pUnit, bool city);
-void popup_revolution_dialog(void);
+void popup_unit_upgrade_dlg(struct unit *punit, bool city);
+void popup_unit_disband_dlg(struct unit *punit, bool city);
+void popup_government_dialog(void);
 void popdown_notify_goto_dialog(void);
 
 void nationset_changed(void);
