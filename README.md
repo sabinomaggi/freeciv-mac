@@ -1,4 +1,4 @@
-### Original README
+## Original README
 
 Freeciv
 =======
@@ -20,7 +20,7 @@ Community forum: [forum.freeciv.org](https://forum.freeciv.org/)
 
 
 
-### Specific info for macOS
+## Specific info for macOS
 
 0. Add the following lines at the end of the `.gitignore` file:
 
