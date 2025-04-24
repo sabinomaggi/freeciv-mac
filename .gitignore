@@ -30,5 +30,5 @@
 # Specifc additions for macOS version
 # !freeciv-app/lib/*.a
 # !freeciv-app/lib/*.la
-!/build/*
-!/freeciv-app/*
+/build/*
+/freeciv-app/*
