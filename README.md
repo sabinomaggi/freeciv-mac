@@ -22,6 +22,21 @@ Community forum: [forum.freeciv.org](https://forum.freeciv.org/)
 
 ## Specific info for macOS
 
+### Releases for macOS
+
+Precompiled versions of Freeciv for macOS on ARM (Apple Silicon) processors, using either the GTK3 or SDL2 toolkits, are available in the [Releases](https://github.com/sabinomaggi/freeciv-mac/releases) section.
+
+To install, download your preferred `.zip` file, extract it, and drag the application icon into the `Applications` folder.
+
+To remove Freeciv for macOS, first move the application to the `Trash` and then remove the hidden `.freeciv` folder from the user HOME directory, either by using the Terminal,
+```
+rm -r .freeciv
+```
+or alternatively, opening a new Finder window to the HOME directory, pressing `CMD-SHIFT-.` to reveal hidden files, deleting the `.freeciv` directory, and then pressing `CMD-SHIFT-.` again to hide the hidden files.
+
+
+### How to compile Freeciv for macOS
+
 0. Add the following lines at the end of the `.gitignore` file:
 
 ```
@@ -110,3 +125,4 @@ cp -p -r data ./freeciv-app
 ```
 
 TODO ...
+
